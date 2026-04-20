@@ -12,9 +12,9 @@ dist/
 simulate device/
 
 # Old single-file version (superseded by Vite project)
-app.jsx
-styles.css
-Smart Home Control Center.html
+/app.jsx
+/styles.css
+/Smart Home Control Center.html
 
 # Editor
 .vscode/
