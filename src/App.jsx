@@ -86,12 +86,11 @@ export default function App() {
     root.style.setProperty('--accent-c', tweaks.accentChroma)
   }, [tweaks])
 
-  // ── MQTT real-time connection ────────────────────────────────────────────────
+// ── MQTT real-time connection ────────────────────────────────────────────────
   useEffect(() => {
     if (!settings.mqtt.broker) return
     let client
     try {
-      // ใช้ clientId แบบสุ่มเพื่อป้องกันการชนกัน (clash) บน public broker
       client = mqtt.connect(settings.mqtt.broker, {
         clientId: 'synapta_web_' + Math.random().toString(16).substring(2, 10),
         keepalive: 30,
@@ -109,11 +108,20 @@ export default function App() {
         const val = message.toString()
         console.log(`[MQTT] Received: ${topic} -> ${val}`)
         setSensorCache(prev => ({ ...prev, [topic]: val }))
+
         setDevices(p =>
           p.map(d => {
+            // ดึง Base Topic มาเตรียมประกอบร่าง
+            const base = settings.mqtt.baseTopic || ''
+            // เช็คว่าถ้า User กรอกมาเต็มอยู่แล้ว ก็ไม่ต้องเติม แต่ถ้ากรอกแค่ Suffix ให้เอา Base ไปต่อหน้า
+            const fullSub = d.subTopic?.startsWith(base) ? d.subTopic : `${base}/${d.subTopic}`.replace(/\/\/+/g, '/')
+            const fullPub = d.pubTopic?.startsWith(base) ? d.pubTopic : `${base}/${d.pubTopic}`.replace(/\/\/+/g, '/')
+
+            // ตรวจสอบความถูกต้องโดยเทียบจากชื่อเต็ม
             const match =
-              (d.subTopic && topic === d.subTopic) ||
-              (d.pubTopic && topic === d.pubTopic)
+              (d.subTopic && (topic === fullSub || topic === d.subTopic)) ||
+              (d.pubTopic && (topic === fullPub || topic === d.pubTopic))
+
             if (!match) return d
             if (d.type === 'digital')
               return { ...d, on: val === 'true' || val === '1' || val === 'on' || val === 'ON' }
@@ -124,19 +132,34 @@ export default function App() {
         )
       })
 
-      client.on('error', (err) => {
-        console.error('[MQTT] Connection Error:', err)
-      })
-
-      client.on('offline', () => {
-        console.warn('[MQTT] Client went offline')
-      })
+      client.on('error', (err) => { console.error('[MQTT] Connection Error:', err) })
+      client.on('offline', () => { console.warn('[MQTT] Client went offline') })
 
     } catch (err) {
       console.error('MQTT setup error:', err)
     }
     return () => { if (client) { client.end(); setMqttClient(null) } }
   }, [settings.mqtt.broker, settings.mqtt.baseTopic])
+
+  // ── Device state + MQTT publish ─────────────────────────────────────────────
+  const updateDevice = useCallback(
+    (next, isFinal = true) => {
+      setDevices(p => p.map(d => (d.id === next.id ? next : d)))
+      if (mqttClient && next.pubTopic && isFinal !== false) {
+        const payload = next.type === 'digital' ? (next.on ? 'true' : 'false') : String(next.value)
+        
+        // ประกอบร่างตอน Publish ออกไปให้ด้วย
+        const base = settings.mqtt.baseTopic || ''
+        const fullTopic = next.pubTopic.startsWith(base)
+          ? next.pubTopic
+          : `${base}/${next.pubTopic}`.replace(/\/\/+/g, '/')
+
+        mqttClient.publish(fullTopic, payload)
+        console.log(`[MQTT] Published: ${fullTopic} -> ${payload}`)
+      }
+    },
+    [mqttClient, settings.mqtt.baseTopic],
+  )
 
   // ── Device state + MQTT publish ─────────────────────────────────────────────
   const updateDevice = useCallback(
