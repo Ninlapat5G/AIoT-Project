@@ -46,8 +46,8 @@ export const DEFAULT_SETTINGS = {
     },
   ],
   mqtt: {
-    broker: 'ws://broker.hivemq.com:8000/mqtt',
-    port: '8000',
+    broker: 'wss://broker.hivemq.com:8884/mqtt',
+    port: '8884',
     baseTopic: 'Mylab/smarthome',
   },
 }

@@ -56,8 +56,12 @@ export default function App() {
     const saved = cookieLoad()
     let merged = saved ? { ...DEFAULT_SETTINGS, ...saved } : DEFAULT_SETTINGS
     if (merged.mqtt) {
-      merged.mqtt.broker   = 'ws://broker.hivemq.com:8000/mqtt'
-      merged.mqtt.port     = '8000'
+      // Force WSS so the app works on HTTPS deployments (Vercel etc.)
+      // ws:// is blocked by browsers when the page is served over HTTPS (mixed content)
+      if (merged.mqtt.broker?.startsWith('ws://')) {
+        merged.mqtt.broker = merged.mqtt.broker.replace('ws://', 'wss://').replace(':8000/', ':8884/')
+        merged.mqtt.port   = '8884'
+      }
     }
     if (!saved?.prompt_v3) {
       merged.systemPrompt  = DEFAULT_SETTINGS.systemPrompt
