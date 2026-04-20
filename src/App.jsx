@@ -86,7 +86,7 @@ export default function App() {
     root.style.setProperty('--accent-c', tweaks.accentChroma)
   }, [tweaks])
 
-// ── MQTT real-time connection ────────────────────────────────────────────────
+  // ── MQTT real-time connection ────────────────────────────────────────────────
   useEffect(() => {
     if (!settings.mqtt.broker) return
     let client
@@ -111,13 +111,10 @@ export default function App() {
 
         setDevices(p =>
           p.map(d => {
-            // ดึง Base Topic มาเตรียมประกอบร่าง
             const base = settings.mqtt.baseTopic || ''
-            // เช็คว่าถ้า User กรอกมาเต็มอยู่แล้ว ก็ไม่ต้องเติม แต่ถ้ากรอกแค่ Suffix ให้เอา Base ไปต่อหน้า
             const fullSub = d.subTopic?.startsWith(base) ? d.subTopic : `${base}/${d.subTopic}`.replace(/\/\/+/g, '/')
             const fullPub = d.pubTopic?.startsWith(base) ? d.pubTopic : `${base}/${d.pubTopic}`.replace(/\/\/+/g, '/')
 
-            // ตรวจสอบความถูกต้องโดยเทียบจากชื่อเต็ม
             const match =
               (d.subTopic && (topic === fullSub || topic === d.subTopic)) ||
               (d.pubTopic && (topic === fullPub || topic === d.pubTopic))
@@ -148,7 +145,6 @@ export default function App() {
       if (mqttClient && next.pubTopic && isFinal !== false) {
         const payload = next.type === 'digital' ? (next.on ? 'true' : 'false') : String(next.value)
         
-        // ประกอบร่างตอน Publish ออกไปให้ด้วย
         const base = settings.mqtt.baseTopic || ''
         const fullTopic = next.pubTopic.startsWith(base)
           ? next.pubTopic
@@ -159,19 +155,6 @@ export default function App() {
       }
     },
     [mqttClient, settings.mqtt.baseTopic],
-  )
-
-  // ── Device state + MQTT publish ─────────────────────────────────────────────
-  const updateDevice = useCallback(
-    (next, isFinal = true) => {
-      setDevices(p => p.map(d => (d.id === next.id ? next : d)))
-      if (mqttClient && next.pubTopic && isFinal !== false) {
-        const payload = next.type === 'digital' ? (next.on ? 'true' : 'false') : String(next.value)
-        mqttClient.publish(next.pubTopic, payload)
-        console.log(`[MQTT] Published: ${next.pubTopic} -> ${payload}`)
-      }
-    },
-    [mqttClient],
   )
 
   // ── Tool executor ────────────────────────────────────────────────────────────
