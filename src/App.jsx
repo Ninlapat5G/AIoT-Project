@@ -172,11 +172,19 @@ export default function App() {
         }
 
         const device   = devicesRef.current.find(d => d.pubTopic === topic || d.pubTopic?.endsWith('/' + topic))
-        const fullTopic = device ? device.pubTopic : topic
+        const rawTopic = device ? device.pubTopic : topic
+
+        const base = settings.mqtt.baseTopic || ''
+        const fullTopic = rawTopic.startsWith(base)
+          ? rawTopic
+          : `${base}/${rawTopic}`.replace(/\/\/+/g, '/')
 
         return new Promise(resolve => {
           mqttClient.publish(fullTopic, String(payload), err => {
             if (err) { resolve({ success: false, error: err.message }); return }
+            
+            console.log(`[MQTT AI Tool] Published: ${fullTopic} -> ${payload}`)
+            
             if (device) {
               setDevices(p =>
                 p.map(d => {
@@ -193,15 +201,21 @@ export default function App() {
       }
 
       if (name === 'mqtt_read') {
-        const topicToRead = typeof args === 'string' ? args.trim() : args?.topic
-        const val = sensorCache[topicToRead]
-        if (val !== undefined) return { success: true, topic: topicToRead, value: val }
-        return { success: false, note: `No data cached for topic: ${topicToRead}` }
+        let topicToRead = typeof args === 'string' ? args.trim() : args?.topic
+        
+        const base = settings.mqtt.baseTopic || ''
+        const fullTopicRead = topicToRead.startsWith(base)
+          ? topicToRead
+          : `${base}/${topicToRead}`.replace(/\/\/+/g, '/')
+
+        const val = sensorCache[fullTopicRead]
+        if (val !== undefined) return { success: true, topic: fullTopicRead, value: val }
+        return { success: false, note: `No data cached for topic: ${fullTopicRead}` }
       }
 
       return { success: false, error: `Unknown tool ${name}` }
     },
-    [mqttClient, sensorCache, devicesRef],
+    [mqttClient, sensorCache, devicesRef, settings.mqtt.baseTopic],
   )
 
   // ── Send message (two-phase agent) ──────────────────────────────────────────
