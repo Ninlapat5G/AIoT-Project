@@ -175,7 +175,8 @@ export default function App() {
     }
 
     if (name === 'mqtt_read') {
-      const topic     = typeof args === 'string' ? args.trim() : args?.topic
+      const topic = typeof args === 'string' ? args.trim() : args?.topic
+      if (!topic) return { success: false, error: 'No topic specified' }
       const base      = settings.mqtt.baseTopic || ''
       const fullTopic = topic.startsWith(base) ? topic : `${base}/${topic}`.replace(/\/\/+/g, '/')
       const val       = sensorCache[fullTopic]

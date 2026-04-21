@@ -1,23 +1,26 @@
 import { useState, useEffect } from 'react'
-import { motion, useMotionValue, useTransform, animate } from 'framer-motion'
+import { motion, useMotionValue, animate } from 'framer-motion'
 import Icon from './ui/Icon'
 import Toggle from './ui/Toggle'
 import Slider from './ui/Slider'
 
 function AnimatedReadout({ value }) {
-  const mv = useMotionValue(value)
-  const display = useTransform(mv, v => String(Math.round(v)).padStart(3, '0'))
-  const pct     = useTransform(mv, v => `${Math.round((Math.round(v) / 255) * 100)}%`)
+  const mv      = useMotionValue(value)
+  const [num, setNum] = useState(value)
 
   useEffect(() => {
-    const ctrl = animate(mv, value, { duration: 0.45, ease: [0.16, 1, 0.3, 1] })
-    return ctrl.stop
+    const ctrl = animate(mv, value, {
+      duration: 0.45,
+      ease: [0.16, 1, 0.3, 1],
+      onUpdate: v => setNum(Math.round(v)),
+    })
+    return () => ctrl.stop()
   }, [value, mv])
 
   return (
     <div className="sh-card-readout">
-      <motion.span className="sh-card-val mono">{display}</motion.span>
-      <motion.span className="sh-card-unit mono">/ 255 · {pct}</motion.span>
+      <span className="sh-card-val mono">{String(num).padStart(3, '0')}</span>
+      <span className="sh-card-unit mono">/ 255 · {Math.round((num / 255) * 100)}%</span>
     </div>
   )
 }
