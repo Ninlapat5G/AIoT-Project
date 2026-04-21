@@ -1,7 +1,7 @@
 # AIoT Smart Home Dashboard
 
 ระบบควบคุมบ้านอัจฉริยะ พร้อม AI Assistant ที่สั่งงานอุปกรณ์ IoT ผ่าน MQTT แบบ Real-time
-สร้างด้วย React + Tailwind CSS + Framer Motion และ Typhoon LLM (ภาษาไทย)
+สร้างด้วย React + Tailwind CSS + Framer Motion และ LLM ที่รองรับ OpenAI-compatible API
 
 ---
 
@@ -11,22 +11,35 @@
 แทนที่จะต้องกดปุ่มหรือเลื่อน Slider เอง — เพียงพิมพ์ว่า _"เปิดไฟห้องนั่งเล่น"_ หรือ _"หรี่แสงลงครึ่งนึง"_
 AI จะเข้าใจและส่งคำสั่งผ่าน MQTT ไปยังอุปกรณ์จริงโดยอัตโนมัติ
 
+ทุกคนสามารถใช้งานได้ฟรี เพียงนำ API Key ของตัวเองมาใส่ใน Settings (BYOK — Bring Your Own Key)
+
+---
+
+## Architecture
+
 ```
 ผู้ใช้พิมพ์คำสั่ง
        │
        ▼
-[Phase A] Tool Routing Agent (temp 0.1)
-  - รับ device list พร้อม MQTT topic ทั้งหมด
-  - ตัดสินใจว่าต้องเรียก tool อะไร (mqtt_publish / mqtt_read)
-  - ไม่ตอบโต้ผู้ใช้โดยตรง
-       │
-       ▼  ผลลัพธ์จาก tool
-[Phase B] Persona Agent (temp 0.7)
-  - รับสถานะบ้านปัจจุบัน + ผลจาก tool
-  - ตอบเป็นภาษาไทยแบบเป็นกันเอง พร้อม Emoji
+┌─────────────────────────────────┐
+│       Mini Agent Graph          │
+│                                 │
+│  [router node]  temp=0.1        │
+│   วิเคราะห์คำสั่ง → เลือก tool  │
+│       │                         │
+│       ├─ มี tool call           │
+│       │       ▼                 │
+│  [tool_executor node]           │
+│   mqtt_publish / mqtt_read      │
+│       │                         │
+│       └──────────────┐          │
+│                      ▼          │
+│  [responder node]  temp=0.7     │
+│   ตอบภาษาไทย แบบ streaming     │
+└─────────────────────────────────┘
        │
        ▼
-แสดงคำตอบ + Device Card อัปเดตทันที (real-time MQTT)
+แสดงคำตอบแบบ streaming + Device Card อัปเดต real-time (MQTT QoS 2)
 ```
 
 ---
@@ -38,10 +51,11 @@ AI จะเข้าใจและส่งคำสั่งผ่าน MQTT
 | UI Framework | React 18 + Vite 5 |
 | Styling | Tailwind CSS v3 + CSS custom properties (`oklch`) |
 | Animation | Framer Motion (spring, stagger, AnimatePresence) |
-| IoT Protocol | MQTT over WebSocket — `mqtt.js` v5 |
-| AI / LLM | OpenAI-compatible API (ค่าเริ่มต้น: Typhoon v2) |
-| Storage | Browser Cookies (ไม่มี backend) |
-| Deployment | Vercel |
+| IoT Protocol | MQTT over WebSocket — `mqtt.js` v5 · **QoS 2** |
+| AI / LLM | OpenAI-compatible API (ค่าเริ่มต้น: Typhoon v2 70B) |
+| Agent | Mini graph engine — router → tool_executor → responder |
+| Storage | `localStorage` (ไม่มี backend, ไม่มี server) |
+| Deployment | Vercel (static site) |
 
 ---
 
@@ -49,24 +63,24 @@ AI จะเข้าใจและส่งคำสั่งผ่าน MQTT
 
 ```
 src/
-├── App.jsx                   # Root — จัดการ state, MQTT, AI agent loop
-├── data.js                   # ข้อมูลเริ่มต้น (devices, settings)
+├── App.jsx                   # Root — state, MQTT, agent loop, streaming
+├── data.js                   # ค่าเริ่มต้น (devices, settings, areas)
 ├── index.css                 # Tailwind + ระบบ theme (dark/light, oklch)
 ├── utils/
-│   ├── agent.js              # เรียก API สองเฟส (routing + persona)
-│   └── storage.js            # บันทึก/โหลด settings ผ่าน cookie
+│   ├── agent.js              # Mini graph engine + LLM client (streaming)
+│   └── storage.js            # localStorage helpers (settings/devices/areas)
 └── components/
     ├── ui/
     │   ├── Icon.jsx           # SVG icons
     │   ├── Toggle.jsx         # Toggle พร้อม spring animation
-    │   └── Slider.jsx         # Slider 0–255 พร้อม drag
+    │   └── Slider.jsx         # Slider 0–max พร้อม drag (รองรับ 255/1023)
     ├── chat/
-    │   ├── ChatBubble.jsx     # Message bubble พร้อม slide animation
+    │   ├── ChatBubble.jsx     # Message bubble
     │   └── ToolPill.jsx       # แสดง tool call + ผลลัพธ์ พร้อม live indicator
-    ├── Nav.jsx                # Sidebar + mobile drawer + bottom nav
-    ├── DeviceCard.jsx         # Card ควบคุมอุปกรณ์ (digital/analog)
+    ├── Nav.jsx                # Sidebar + mobile drawer + MQTT status จริง
+    ├── DeviceCard.jsx         # Card ควบคุมอุปกรณ์ (digital/analog + animated readout)
     ├── ChatPage.jsx           # หน้า AI Chat
-    ├── SettingsPage.jsx       # หน้า Settings
+    ├── SettingsPage.jsx       # หน้า Settings (5 sections)
     └── TweaksPanel.jsx        # Live theme editor
 ```
 
@@ -82,116 +96,100 @@ src/
 ### รันในเครื่อง
 
 ```bash
-# ติดตั้ง dependencies
 npm install
-
-# รัน dev server (http://localhost:5173)
-npm run dev
-
-# Build สำหรับ production
-npm run build
+npm run dev      # http://localhost:5173
+npm run build    # production build
 ```
 
 ### ตั้งค่าครั้งแรก
 
 1. เปิดแอป → ไปที่หน้า **Settings**
-2. กรอกข้อมูล:
-   - **API Endpoint** — `https://api.opentyphoon.ai/v1` (ค่าเริ่มต้น)
-   - **API Key** — key ที่ได้จาก Typhoon หรือ OpenAI
-   - **Model** — `typhoon-v2-70b-instruct` (ค่าเริ่มต้น)
-3. กด **Save configuration**
-4. ไปที่หน้า **AI Chat** แล้วลองพิมพ์คำสั่ง เช่น _"เปิดไฟห้องนั่งเล่น"_
-
-> settings ทั้งหมดบันทึกเป็น browser cookie — ไม่ต้องมี .env หรือ server
+2. กรอก **API Endpoint**, **API Key**, **Model**
+3. กด **Save configuration** — ข้อมูลบันทึกใน `localStorage`
+4. ไปที่หน้า **AI Chat** แล้วลองพิมพ์ เช่น _"เปิดไฟห้องนั่งเล่น"_
 
 ---
 
-## วิธีใช้งาน
+## ฟีเจอร์ระบบ
 
 ### หน้า Devices
 
-- ดูสถานะอุปกรณ์ทั้งหมดแบบ real-time
-- **Digital device** (เช่น หลอดไฟ) — กด toggle เพื่อเปิด/ปิด
-- **Analog device** (เช่น หลอดหรี่) — ลาก slider 0–255 เพื่อปรับความสว่าง
-- กดไอคอน ⚙ บน card เพื่อแก้ไขชื่อ, ห้อง, และ MQTT topic
-- กด **Edit** ที่ filter bar เพื่อเพิ่ม/ลบห้อง
+- ดูสถานะอุปกรณ์ทั้งหมดแบบ real-time ผ่าน MQTT
+- **Digital device** — toggle เปิด/ปิด
+- **Analog device** — slider พร้อม animated readout (รองรับ max 255 หรือ 1023 สำหรับ ESP32/Arduino)
+- กด ⚙ เพื่อแก้ไขชื่อ, ห้อง, ประเภท, max value, MQTT topic
+- กด **+ Add Device** เพื่อเพิ่มอุปกรณ์ใหม่
+- กด **Edit** ที่ filter bar เพื่อจัดการห้อง
 
 ### หน้า AI Chat
 
-พิมพ์คำสั่งเป็นภาษาไทย (หรืออังกฤษก็ได้) เช่น:
+ตอบกลับแบบ **streaming** (เห็นคำตอบทีละตัวอักษร)
 
 | ตัวอย่างคำสั่ง | ผลลัพธ์ |
 |---|---|
-| `เปิดไฟห้องนั่งเล่น` | publish `true` ไปที่ topic ของ Arc Floor Lamp |
+| `เปิดไฟห้องนั่งเล่น` | publish `true` ไปที่ topic ของ lamp |
 | `ปิดไฟทั้งหมด` | publish `false` ทุก digital device |
-| `หรี่แสงลงครึ่งนึง` | publish `128` ไปที่ Ceiling Dimmer |
-| `ไฟห้องนั่งเล่นเปิดอยู่ไหม` | AI อ่านสถานะจาก cache แล้วตอบ |
-| `dim bedroom to 80%` | คำนวณ `204/255` แล้ว publish |
-
-เมื่อ AI เรียก tool จะเห็น **Tool Call card** แสดง topic และ payload ก่อนที่อุปกรณ์จะตอบสนอง
+| `หรี่แสงลงครึ่งนึง` | publish `128` ไปที่ dimmer |
+| `ไฟเปิดอยู่ไหม` | อ่านสถานะจาก sensor cache แล้วตอบ |
 
 ### หน้า Settings
 
-- **Profile** — ชื่อและบทบาทที่ AI จะเรียกใช้ในบทสนทนา
-- **Language Model** — endpoint, API key, model, system prompt
-- **Skills** — เปิด/ปิด tool (mqtt_publish, mqtt_read) หรือเพิ่ม tool ใหม่
-- **MQTT Broker** — URL, port, base topic
+| Section | รายละเอียด |
+|---|---|
+| 01 Profile | ชื่อและบทบาทที่ AI ใช้ในบทสนทนา |
+| 02 Language Model | Endpoint · API Key · Model · System Prompt |
+| 03 Skills | เปิด/ปิด tool หรือเพิ่ม custom tool |
+| 04 MQTT Broker | URL · Port · Base Topic · สถานะการเชื่อมต่อจริง |
+| 05 Data | ปุ่ม **Clear all local data** (รีเซ็ตทุกอย่างกลับ default) |
 
-### Tweaks Panel (ไอคอน ✦ ที่ nav)
+### MQTT
 
-ปรับ theme แบบ live:
+- ใช้ **QoS 2** (exactly-once delivery) ทั้ง publish และ subscribe
+- เมื่อเชื่อมต่อสำเร็จ จะ subscribe `baseTopic/#` ทันที — ถ้าอุปกรณ์ส่ง retained message ไว้ สถานะปัจจุบันจะอัปเดตอัตโนมัติ
+- สถานะ MQTT แสดงจริงใน Nav sidebar และ Settings (CONNECTING / ONLINE / ERROR / OFFLINE)
+
+### Tweaks Panel (ไอคอน ✦)
+
 - Dark / Light mode
-- Accent Hue (สีหลัก 0–360°)
-- Accent Chroma (ความเข้มของสี)
+- Accent Hue (0–360°) · Chroma
 - Density (compact / comfortable)
 - Grid overlay
 
+### Storage
+
+ข้อมูลทั้งหมดเก็บใน **`localStorage`** ของเบราว์เซอร์ ไม่ผ่าน server
+
+| Key | เก็บอะไร |
+|---|---|
+| `sh_settings` | endpoint, apiKey, model, systemPrompt, profile, skills, mqtt |
+| `sh_devices` | รายการอุปกรณ์ทั้งหมด พร้อม state และ MQTT topics |
+| `sh_areas` | รายการห้องที่กำหนดเอง |
+
 ---
 
-## MQTT Topics
+## MQTT Topics (ค่าเริ่มต้น)
 
 Broker: `wss://broker.hivemq.com:8884/mqtt` (public, ไม่ต้อง login)
+Base Topic: `Mylab/smarthome`
 
 | Topic | ทิศทาง | ความหมาย |
 |---|---|---|
-| `Mylab/smarthome/living-room/liv-lamp/set` | Publish | สั่งเปิด/ปิดหลอดไฟ (`true`/`false`) |
-| `Mylab/smarthome/living-room/liv-lamp/state` | Subscribe | รับสถานะจริงจากอุปกรณ์ |
-| `Mylab/smarthome/living-room/liv-dim/set` | Publish | สั่งหรี่แสง (`0`–`255`) |
+| `Mylab/smarthome/living-room/liv-lamp/set` | Publish | สั่งเปิด/ปิด (`true`/`false`) |
+| `Mylab/smarthome/living-room/liv-lamp/state` | Subscribe | รับสถานะจากอุปกรณ์ |
+| `Mylab/smarthome/living-room/liv-dim/set` | Publish | สั่ง dimmer (`0`–`255`) |
 | `Mylab/smarthome/living-room/liv-dim/state` | Subscribe | รับค่า dimmer ปัจจุบัน |
-| `Mylab/smarthome/#` | Subscribe | ทุก topic ใต้ base topic |
-
----
-
-## Python Simulation Scripts
-
-สำหรับทดสอบโดยไม่มีอุปกรณ์จริง (อยู่ในโฟลเดอร์ `simulate device/`)
-
-```bash
-# ติดตั้ง library
-pip install paho-mqtt
-
-# ทดสอบ publish คำสั่ง
-python mqtt_pub.py
-
-# ทดสอบ subscribe ดูข้อความ
-python mqtt_sub.py
-```
-
-สคริปต์เชื่อมต่อผ่าน **WSS (port 8884)** เหมือนกับ web app พอดี
-ข้อความที่ส่งจาก Python จะปรากฏใน Device Card บน web app ทันที
 
 ---
 
 ## Deploy บน Vercel
 
-repo นี้มี `vercel.json` พร้อมสำหรับ deploy แล้ว
+```bash
+# clone แล้ว deploy ได้เลย
+```
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/Ninlapat5G/AIoT-Project)
 
-หรือ connect GitHub repo ใน Vercel dashboard ได้เลย — Vercel จะ detect ว่าเป็น Vite อัตโนมัติ
-
-> **หมายเหตุ:** ต้องใช้ `wss://` (port 8884) เท่านั้นเมื่อ deploy บน HTTPS
-> เพราะ browser บล็อก `ws://` (mixed content policy)
+> ต้องใช้ `wss://` (port 8884) เมื่อ deploy บน HTTPS — broker.hivemq.com รองรับอยู่แล้ว
 
 ---
 
