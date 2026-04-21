@@ -8,27 +8,25 @@ export default function ChatPage({
   messages, onSend, thinking, executing, onClear, modelName, skillCount, msgCount,
 }) {
   const [draft, setDraft] = useState('')
-  const [isListening, setIsListening] = useState(false) // 👈 เพิ่ม State สำหรับสถานะไมค์
+  const [isListening, setIsListening] = useState(false)
   const scrollRef = useRef(null)
-  const recognitionRef = useRef(null) // 👈 เพิ่ม Ref สำหรับเก็บตัวอัดเสียง
+  const recognitionRef = useRef(null)
 
-  // 👈 ตั้งค่าระบบฟังเสียง (Speech Recognition) ตอนโหลดคอมโพเนนต์
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
-      recognition.continuous = false; // ให้หยุดฟังเองเมื่อเราพูดจบประโยค
+      recognition.continuous = false;
       recognition.interimResults = false;
-      recognition.lang = 'th-TH'; // 🇹🇭 กำหนดให้ฟังเป็นภาษาไทยตรงนี้เลย!
+      recognition.lang = 'th-TH';
 
       recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
-        // เอาข้อความที่ฟังได้ มาต่อท้ายข้อความเดิม (ถ้ามี)
         setDraft((prev) => (prev ? prev + ' ' + transcript : transcript));
       };
 
       recognition.onend = () => {
-        setIsListening(false); // ปิดไฟสถานะไมค์ตอนพูดจบ
+        setIsListening(false);
       };
 
       recognition.onerror = (event) => {
@@ -49,7 +47,6 @@ export default function ChatPage({
     if (draft.trim()) { onSend(draft.trim()); setDraft('') }
   }
 
-  // 👈 ฟังก์ชันสลับเปิด/ปิดไมค์
   const toggleListening = () => {
     if (!recognitionRef.current) {
       alert("เบราว์เซอร์นี้ไม่รองรับการพิมพ์ด้วยเสียงน้า ลองเปลี่ยนไปใช้ Chrome ดูนะฮะ 🥺");
@@ -124,7 +121,7 @@ export default function ChatPage({
           className="sh-composer"
           onSubmit={e => { e.preventDefault(); submit() }}
         >
-          <div className="sh-composer-row">
+          <div className="sh-composer-row" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <textarea
               value={draft}
               onChange={e => setDraft(e.target.value)}
@@ -134,30 +131,35 @@ export default function ChatPage({
                   submit()
                 }
               }}
-              placeholder="สั่งงานบ้าน… เช่น 'เปิดไฟห้องนั่งเล่น' หรือ 'dim bedroom to 80'"
+              placeholder={isListening ? "กำลังตั้งใจฟังอยู่ฮะ... 🎙️" : "สั่งงานบ้าน… เช่น 'เปิดไฟห้องนั่งเล่น'"}
               rows={1}
+              style={{ flex: 1 }}
             />
 
-            {/* 👈 ปุ่มไมโครโฟน */}
+            {/* ปุ่มไมโครโฟน */}
             <motion.button
               type="button"
-              className="sh-mic-btn"
+              className="sh-send"
               onClick={toggleListening}
+              animate={
+                isListening
+                  ? { scale: [1, 1.15, 1], backgroundColor: ['#ef4444', '#dc2626', '#ef4444'], color: '#ffffff' }
+                  : { scale: 1 }
+              }
+              transition={{ repeat: isListening ? Infinity : 0, duration: 1.2 }}
               whileTap={{ scale: 0.9 }}
               whileHover={{ scale: 1.05 }}
               style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '0 8px',
-                color: isListening ? '#ef4444' : 'inherit' // เป็นสีแดงตอนกำลังฟัง
+                backgroundColor: isListening ? '#ef4444' : 'transparent',
+                color: isListening ? '#ffffff' : 'inherit',
+                border: isListening ? 'none' : ''
               }}
               title="พิมพ์ด้วยเสียง"
             >
               <Icon name="mic" size={15} />
             </motion.button>
 
-            {/* ปุ่มส่งข้อความเดิม */}
+            {/* ปุ่มส่งข้อความ */}
             <motion.button
               type="submit"
               className="sh-send"
