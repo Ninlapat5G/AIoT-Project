@@ -98,7 +98,7 @@ ${JSON.stringify(deviceList, null, 2)}`
 
   const data = await llm.chat(
     [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }],
-    { tools: tools.length ? tools : undefined, tool_choice: 'auto', temperature: 0.1 },
+    { tools: tools.length ? tools : undefined, tool_choice: 'auto', temperature: 0.1, max_tokens: 4096 },
   )
 
   const msg = data.choices?.[0]?.message
@@ -153,7 +153,7 @@ ${toolContext}`
   let reply = ''
   await llm.stream(
     [{ role: 'system', content: systemPrompt }, ...apiHistory, { role: 'user', content: text }],
-    { temperature: 0.7 },
+    { temperature: 0.7, max_tokens: 4096 },
     chunk => { reply += chunk; onStream?.(chunk) },
   )
 
