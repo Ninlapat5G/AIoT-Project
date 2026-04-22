@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo } from 'react'
 import { motion, useMotionValue, animate } from 'framer-motion'
 import Icon from './ui/Icon'
 import Toggle from './ui/Toggle'
 import Slider from './ui/Slider'
 
 function AnimatedReadout({ value, max = 255 }) {
-  const mv          = useMotionValue(value)
+  const mv = useMotionValue(value)
   const [num, setNum] = useState(value)
 
   useEffect(() => {
@@ -28,15 +28,26 @@ function AnimatedReadout({ value, max = 255 }) {
 }
 
 export const cardVariants = {
-  hidden:  { opacity: 0, y: 16, scale: 0.97 },
-  visible: { opacity: 1, y: 0,  scale: 1 },
+  hidden: { opacity: 0, y: 16, scale: 0.97 },
+  visible: { opacity: 1, y: 0, scale: 1 },
 }
 
 const MAX_OPTIONS = [255, 1023]
 
-function EditCard({ device, onUpdate, onRemove, areas, onCancel }) {
+const TOPIC_RE = /[#+]/
+
+function topicError(t) {
+  if (!t) return null
+  if (TOPIC_RE.test(t)) return 'ห้ามใช้ # หรือ + ใน publish topic'
+  return null
+}
+
+const EditCard = memo(function EditCard({ device, onUpdate, onRemove, areas, onCancel }) {
   const [draft, setDraft] = useState(device)
   const set = patch => setDraft(d => ({ ...d, ...patch }))
+
+  const pubErr = topicError(draft.pubTopic)
+  const hasErr = !!pubErr
 
   return (
     <motion.div
@@ -110,8 +121,14 @@ function EditCard({ device, onUpdate, onRemove, areas, onCancel }) {
                 value={draft.pubTopic || ''}
                 onChange={e => set({ pubTopic: e.target.value })}
                 placeholder={`${draft.room.toLowerCase().replace(/\s+/g, '-')}/${draft.id}/set`}
+                style={pubErr ? { borderColor: 'oklch(0.65 0.22 25)' } : {}}
               />
             </div>
+            {pubErr && (
+              <span className="mono" style={{ fontSize: 10, color: 'oklch(0.72 0.22 25)', paddingLeft: 40 }}>
+                ⚠ {pubErr}
+              </span>
+            )}
             <div className="flex items-center gap-2">
               <span className="sh-topic-tag sub mono">SUB</span>
               <input
@@ -127,17 +144,21 @@ function EditCard({ device, onUpdate, onRemove, areas, onCancel }) {
         <button className="sh-card-remove" onClick={() => onRemove(device.id)}>Remove</button>
         <div className="flex-1" />
         <button className="sh-btn-ghost" onClick={onCancel}>Cancel</button>
-        <button className="sh-btn-primary" onClick={() => { onUpdate(draft); onCancel() }}>
+        <button
+          className="sh-btn-primary"
+          disabled={hasErr}
+          onClick={() => { if (!hasErr) { onUpdate(draft); onCancel() } }}
+        >
           Save
         </button>
       </div>
     </motion.div>
   )
-}
+})
 
-export default function DeviceCard({ device, onUpdate, onRemove, areas }) {
+const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas, isPending }) {
   const [editing, setEditing] = useState(false)
-  const max  = device.max ?? 255
+  const max = device.max ?? 255
   const isOn = device.type === 'digital' ? device.on : device.value > 0
 
   if (editing) {
@@ -157,65 +178,78 @@ export default function DeviceCard({ device, onUpdate, onRemove, areas }) {
       className={`sh-card ${isOn ? 'is-on' : ''}`}
       variants={cardVariants}
       whileHover={{ y: -2, boxShadow: '0 8px 32px oklch(0 0 0 / 0.18)' }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      transition={{ type: 'spring', stiffness: 250, damping: 25 }}
     >
-      <div className="sh-card-top">
-        <div className="sh-card-icon">
-          <Icon name={device.icon} size={20} />
-          <span className="sh-card-status-dot" />
-        </div>
-        <div className="sh-card-meta">
-          <div className="sh-card-room mono">{device.room.toUpperCase()}</div>
-          <div className="sh-card-name">{device.name}</div>
-        </div>
-        <div className="sh-card-actions">
-          <button className="sh-card-gear" onClick={() => setEditing(true)} title="Edit">
-            <Icon name="gear" size={13} />
-          </button>
-          {device.type === 'digital' && (
-            <Toggle on={device.on} onChange={v => onUpdate({ ...device, on: v })} />
-          )}
-        </div>
-      </div>
-
-      {device.type === 'analog' ? (
-        <div className="sh-card-body">
-          <AnimatedReadout value={device.value} max={max} />
-          <Slider
-            value={device.value}
-            max={max}
-            onChange={(v, isFinal) => onUpdate({ ...device, value: v }, isFinal)}
-          />
-        </div>
-      ) : (
-        <div className="sh-card-body digital">
-          <div className="sh-card-state">
-            <span className={`sh-state-pill ${device.on ? 'on' : ''}`}>
-              <i />
-              {device.on ? 'ACTIVE' : 'STANDBY'}
-            </span>
-            <span className="sh-card-id mono">#{device.id}</span>
+      <div
+        style={{
+          opacity: isPending ? 0.7 : 1,
+          transition: 'opacity 0.2s ease',
+          pointerEvents: isPending ? 'none' : 'auto',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        <div className="sh-card-top">
+          <div className="sh-card-icon">
+            <Icon name={device.icon} size={20} />
+            <span className={`sh-card-status-dot ${isPending ? 'is-pending' : ''}`} />
+          </div>
+          <div className="sh-card-meta">
+            <div className="sh-card-room mono">{device.room.toUpperCase()}</div>
+            <div className="sh-card-name">{device.name}</div>
+          </div>
+          <div className="sh-card-actions">
+            <button className="sh-card-gear" onClick={() => setEditing(true)} title="Edit">
+              <Icon name="gear" size={13} />
+            </button>
+            {device.type === 'digital' && (
+              <Toggle on={device.on} onChange={v => onUpdate({ ...device, on: v })} />
+            )}
           </div>
         </div>
-      )}
 
-      {(device.pubTopic || device.subTopic) && (
-        <div className="sh-card-topics">
-          {device.pubTopic && (
-            <span className="sh-card-topic-chip" title={device.pubTopic}>
-              <b>PUB</b>{device.pubTopic}
-            </span>
-          )}
-          {device.subTopic && (
-            <span className="sh-card-topic-chip sub" title={device.subTopic}>
-              <b>SUB</b>{device.subTopic}
-            </span>
-          )}
-        </div>
-      )}
+        {device.type === 'analog' ? (
+          <div className="sh-card-body">
+            <AnimatedReadout value={device.value} max={max} />
+            <Slider
+              value={device.value}
+              max={max}
+              onChange={(v, isFinal) => onUpdate({ ...device, value: v }, isFinal)}
+            />
+          </div>
+        ) : (
+          <div className="sh-card-body digital">
+            <div className="sh-card-state">
+              <span className={`sh-state-pill ${device.on ? 'on' : ''}`}>
+                <i />
+                {device.on ? 'ACTIVE' : 'STANDBY'}
+              </span>
+              <span className="sh-card-id mono">#{device.id}</span>
+            </div>
+          </div>
+        )}
+
+        {(device.pubTopic || device.subTopic) && (
+          <div className="sh-card-topics">
+            {device.pubTopic && (
+              <span className="sh-card-topic-chip" title={device.pubTopic}>
+                <b>PUB</b>{device.pubTopic}
+              </span>
+            )}
+            {device.subTopic && (
+              <span className="sh-card-topic-chip sub" title={device.subTopic}>
+                <b>SUB</b>{device.subTopic}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
     </motion.div>
   )
-}
+})
+
+export default DeviceCard
 
 export function AddDeviceTile({ onClick }) {
   return (
@@ -224,7 +258,7 @@ export function AddDeviceTile({ onClick }) {
       onClick={onClick}
       variants={cardVariants}
       whileHover={{ y: -2, scale: 1.01 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      transition={{ type: 'spring', stiffness: 250, damping: 25 }}
     >
       <div className="sh-add-inner">
         <div className="sh-add-plus"><Icon name="plus" size={22} /></div>
