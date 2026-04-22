@@ -178,7 +178,8 @@ const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas,
       className={`sh-card ${isOn ? 'is-on' : ''}`}
       variants={cardVariants}
       whileHover={{ y: -2, boxShadow: '0 8px 32px oklch(0 0 0 / 0.18)' }}
-      transition={{ type: 'spring', stiffness: 250, damping: 25 }}
+      // เปลี่ยนจาก spring มาเป็น easeOut ไม่ให้มันเด้งแล้วจ้า
+      transition={{ duration: 0.25, ease: 'easeOut' }}
     >
       <div
         style={{
@@ -258,7 +259,8 @@ export function AddDeviceTile({ onClick }) {
       onClick={onClick}
       variants={cardVariants}
       whileHover={{ y: -2, scale: 1.01 }}
-      transition={{ type: 'spring', stiffness: 250, damping: 25 }}
+      // ปรับตรงนี้ให้เหมือนกันด้วย จะได้เข้าคู่กัน
+      transition={{ duration: 0.25, ease: 'easeOut' }}
     >
       <div className="sh-add-inner">
         <div className="sh-add-plus"><Icon name="plus" size={22} /></div>
