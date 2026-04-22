@@ -177,66 +177,75 @@ const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas,
     <motion.div
       className={`sh-card ${isOn ? 'is-on' : ''}`}
       variants={cardVariants}
-      animate={{ opacity: isPending ? 0.7 : 1 }}
       whileHover={{ y: -2, boxShadow: '0 8px 32px oklch(0 0 0 / 0.18)' }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      transition={{ type: 'spring', stiffness: 250, damping: 25 }}
     >
-      <div className="sh-card-top">
-        <div className="sh-card-icon">
-          <Icon name={device.icon} size={20} />
-          <span className="sh-card-status-dot" />
-        </div>
-        <div className="sh-card-meta">
-          <div className="sh-card-room mono">{device.room.toUpperCase()}</div>
-          <div className="sh-card-name">{device.name}</div>
-        </div>
-        <div className="sh-card-actions">
-          <button className="sh-card-gear" onClick={() => setEditing(true)} title="Edit">
-            <Icon name="gear" size={13} />
-          </button>
-          {device.type === 'digital' && (
-            <Toggle on={device.on} onChange={v => onUpdate({ ...device, on: v })} />
-          )}
-        </div>
-      </div>
-
-      {device.type === 'analog' ? (
-        <div className="sh-card-body">
-          <AnimatedReadout value={device.value} max={max} />
-          <Slider
-            value={device.value}
-            max={max}
-            onChange={(v, isFinal) => onUpdate({ ...device, value: v }, isFinal)}
-          />
-        </div>
-      ) : (
-        <div className="sh-card-body digital">
-          <div className="sh-card-state">
-            <span className={`sh-state-pill ${device.on ? 'on' : ''}`}>
-              <i />
-              {device.on ? 'ACTIVE' : 'STANDBY'}
-            </span>
-            <span className="sh-card-id mono">#{device.id}</span>
+      <div
+        style={{
+          opacity: isPending ? 0.7 : 1,
+          transition: 'opacity 0.2s ease',
+          pointerEvents: isPending ? 'none' : 'auto',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        <div className="sh-card-top">
+          <div className="sh-card-icon">
+            <Icon name={device.icon} size={20} />
+            <span className={`sh-card-status-dot ${isPending ? 'is-pending' : ''}`} />
+          </div>
+          <div className="sh-card-meta">
+            <div className="sh-card-room mono">{device.room.toUpperCase()}</div>
+            <div className="sh-card-name">{device.name}</div>
+          </div>
+          <div className="sh-card-actions">
+            <button className="sh-card-gear" onClick={() => setEditing(true)} title="Edit">
+              <Icon name="gear" size={13} />
+            </button>
+            {device.type === 'digital' && (
+              <Toggle on={device.on} onChange={v => onUpdate({ ...device, on: v })} />
+            )}
           </div>
         </div>
-      )}
 
-      {(device.pubTopic || device.subTopic) && (
-        <div className="sh-card-topics">
-          {device.pubTopic && (
-            <span className="sh-card-topic-chip" title={device.pubTopic}>
-              <b>PUB</b>{device.pubTopic}
-            </span>
-          )}
-          {device.subTopic && (
-            <span className="sh-card-topic-chip sub" title={device.subTopic}>
-              <b>SUB</b>{device.subTopic}
-            </span>
-          )}
-        </div>
-      )}
-    </div>
-    </motion.div >
+        {device.type === 'analog' ? (
+          <div className="sh-card-body">
+            <AnimatedReadout value={device.value} max={max} />
+            <Slider
+              value={device.value}
+              max={max}
+              onChange={(v, isFinal) => onUpdate({ ...device, value: v }, isFinal)}
+            />
+          </div>
+        ) : (
+          <div className="sh-card-body digital">
+            <div className="sh-card-state">
+              <span className={`sh-state-pill ${device.on ? 'on' : ''}`}>
+                <i />
+                {device.on ? 'ACTIVE' : 'STANDBY'}
+              </span>
+              <span className="sh-card-id mono">#{device.id}</span>
+            </div>
+          </div>
+        )}
+
+        {(device.pubTopic || device.subTopic) && (
+          <div className="sh-card-topics">
+            {device.pubTopic && (
+              <span className="sh-card-topic-chip" title={device.pubTopic}>
+                <b>PUB</b>{device.pubTopic}
+              </span>
+            )}
+            {device.subTopic && (
+              <span className="sh-card-topic-chip sub" title={device.subTopic}>
+                <b>SUB</b>{device.subTopic}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </motion.div>
   )
 })
 
