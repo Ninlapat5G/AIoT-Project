@@ -50,12 +50,12 @@ Device Card อัปเดต real-time (MQTT QoS 2)
 |---|---|
 | UI Framework | React 18 + Vite 5 |
 | Styling | Tailwind CSS v3 + CSS custom properties (`oklch`) |
-| Animation | Framer Motion (spring, stagger, AnimatePresence) |
-| IoT Protocol | MQTT over WebSocket — `mqtt.js` v5 · **QoS 2** |
+| Animation | Framer Motion (spring, stagger, AnimatePresence, useMotionValue) |
+| IoT Protocol | MQTT over WebSocket — `mqtt.js` v5 · **QoS 2** · auto-reconnect |
 | AI / LLM | OpenAI-compatible API (ค่าเริ่มต้น: Typhoon v2 70B) |
 | Agent | Mini graph engine — router → tool_executor → responder |
 | Voice | Web Speech API (เครื่องมือของ Google บน Chrome/Edge) |
-| QR | `qrcode` (สร้าง) + `jsqr` (สแกนจากกล้อง) |
+| QR | `qrcode` (สร้าง) + `jsqr` (สแกนจากกล้อง หรือไฟล์รูปภาพ) |
 | Storage | `localStorage` (ไม่มี backend, ไม่มี server) |
 | Deployment | Vercel (static site) |
 
@@ -65,27 +65,30 @@ Device Card อัปเดต real-time (MQTT QoS 2)
 
 ```
 src/
-├── App.jsx                   # Root — state, MQTT, agent loop, QR import
+├── App.jsx                   # Root — orchestrates state, tools, QR import
 ├── data.js                   # ค่าเริ่มต้น (devices, settings, areas, tweaks)
 ├── index.css                 # Tailwind + ระบบ theme (dark/light, oklch)
+├── hooks/
+│   ├── useMQTT.js            # MQTT connection, publish, sensorCache, status
+│   └── useChat.js            # Chat messages, agent loop, streaming
 ├── utils/
 │   ├── agent.js              # Mini graph engine + LLM client (streaming)
-│   ├── speech.js             # Web Speech API wrapper (TH/EN auto-detect)
 │   ├── qrshare.js            # QR payload: encode/decode/apply + pattern check
 │   └── storage.js            # localStorage helpers
 └── components/
     ├── ui/
-    │   ├── Icon.jsx          # SVG icons (รวม mic, qr, scan)
+    │   ├── Icon.jsx          # SVG icons (รวม mic, qr, scan, upload, image)
     │   ├── Toggle.jsx
-    │   └── Slider.jsx        # รองรับ max 255/1023
+    │   └── Slider.jsx        # Smooth animation via useMotionValue
     ├── chat/
     │   ├── ChatBubble.jsx
     │   └── ToolPill.jsx      # แสดง tool call + ผลลัพธ์
+    ├── ErrorBoundary.jsx     # React Error Boundary ครอบทุก page
     ├── Nav.jsx
-    ├── DeviceCard.jsx
+    ├── DeviceCard.jsx        # React.memo + topic validation + pending state
     ├── ChatPage.jsx          # AI Chat + Voice input
     ├── SettingsPage.jsx      # 6 sections
-    ├── QRShareModal.jsx      # สร้าง/สแกน QR พร้อม camera
+    ├── QRShareModal.jsx      # สร้าง/สแกน QR + file upload + validation popup
     └── TweaksPanel.jsx       # Live theme editor
 ```
 
@@ -121,18 +124,20 @@ npm run build    # production build
 ### หน้า Devices
 
 - ดูสถานะอุปกรณ์ทั้งหมดแบบ real-time ผ่าน MQTT
-- **Digital device** — toggle เปิด/ปิด
-- **Analog device** — slider พร้อม animated readout (รองรับ max 255 หรือ 1023)
-- กด ⚙ เพื่อแก้ไขชื่อ, ห้อง, ประเภท, max value, MQTT topic
+- **Digital device** — toggle เปิด/ปิด พร้อม optimistic UI (card หรี่ขณะรอ MQTT confirm)
+- **Analog device** — slider พร้อม animated readout และ smooth transition ค่า (Framer Motion)
+- กด ⚙ เพื่อแก้ไขชื่อ, ห้อง, ประเภท, max value, MQTT topic (มี validation ห้าม `#` `+`)
 - กด **+ Add Device** เพื่อเพิ่มอุปกรณ์ใหม่
 - กด **Edit** ที่ filter bar เพื่อจัดการห้อง
+- Banner แจ้งเตือนเมื่อ MQTT กำลัง reconnect หรือเกิดข้อผิดพลาด
+- Toast แจ้งเตือนเมื่อ network offline/online
 
 ### หน้า AI Chat
 
 ตอบกลับแบบ **streaming** (เห็นคำตอบทีละตัวอักษร)
 
 - **พิมพ์** หรือ **กดไมค์** เพื่อพูด (auto-detect ภาษาจาก browser — ไทย/อังกฤษ)
-- ระหว่างฟัง → ข้อความปรากฏใน textbox แบบ realtime, หยุดพูด → ส่งอัตโนมัติ
+- ระหว่างฟัง → ปุ่มไมค์กระพริบสีแดงพร้อม pulse animation
 - AI ทำได้ทั้งคุยเล่น (ไม่สั่ง MQTT) และสั่งงาน (หลายคำสั่งพร้อมกันได้)
 
 | ตัวอย่างคำสั่ง | ผลลัพธ์ |
@@ -158,15 +163,19 @@ npm run build    # production build
 
 - **สร้าง QR** — เลือกเฉพาะสิ่งที่จะแชร์ (profile, LLM config, MQTT broker, skills, theme, หรือเฉพาะ device บางตัว)
 - API Key เป็น opt-in มี popup ยืนยันก่อน เพราะแชร์ไปแล้วคนอื่นใช้เงินในบัญชี LLM ได้
-- **สแกน QR** — เปิดกล้อง → เมื่อเจอ QR ที่ pattern ตรง ระบบ import อัตโนมัติทันที
+- **สแกน QR** — เปิดกล้อง หรือ **เลือกรูปภาพจากเครื่อง** ก็ได้
+- ทั้งสองช่องทางผ่านการ **validate payload ก่อนเสมอ**:
+  - ถูกต้อง → popup แสดง scope ที่จะ import → กด "Import เลย" ถึงจะดำเนินการ
+  - ไม่ถูกต้อง → popup แจ้งเหตุผล → กด "ลองใหม่" กล้องเปิดใหม่อัตโนมัติ
 - Device ID ที่ซ้ำจะถูกข้าม (skip duplicate)
-- Payload มี header `_t: "aiot-share"` เพื่อกันสแกน QR อื่นที่ไม่เกี่ยวข้อง
+- Payload มี header `_t: "aiot-share"` เพื่อกัน QR อื่นที่ไม่เกี่ยวข้อง
 
 ### MQTT
 
 - ใช้ **QoS 2** (exactly-once delivery) ทั้ง publish และ subscribe
 - เมื่อเชื่อมต่อสำเร็จ จะ subscribe `baseTopic/#` ทันที — retained message ทำให้เห็น state ปัจจุบันทันที
-- สถานะ MQTT แสดงจริงใน Nav sidebar และ Settings (CONNECTING / ONLINE / ERROR / OFFLINE)
+- **Auto-reconnect** ทุก 5 วินาทีเมื่อ connection หลุด พร้อม banner แจ้งในหน้า Devices
+- สถานะ MQTT แสดงจริงใน Nav sidebar และ Settings (CONNECTING / ONLINE / RECONNECTING / ERROR / OFFLINE)
 
 ### Tweaks Panel (ไอคอน ✦)
 
@@ -281,12 +290,14 @@ Responder สรุปผลให้ฟัง
 Broker: `wss://broker.hivemq.com:8884/mqtt` (public, ไม่ต้อง login)
 Base Topic: `Mylab/smarthome`
 
-| Topic | ทิศทาง | ความหมาย |
+Topic ของ device จะเป็น **suffix ต่อจาก Base Topic** เสมอ ระบบจะเชื่อมให้อัตโนมัติ
+
+| Device | PUB Topic (suffix) | SUB Topic (suffix) |
 |---|---|---|
-| `Mylab/smarthome/living-room/liv-lamp/set` | Publish | สั่งเปิด/ปิด (`true`/`false`) |
-| `Mylab/smarthome/living-room/liv-lamp/state` | Subscribe | รับสถานะจากอุปกรณ์ |
-| `Mylab/smarthome/living-room/liv-dim/set` | Publish | สั่ง dimmer (`0`–`255`) |
-| `Mylab/smarthome/living-room/liv-dim/state` | Subscribe | รับค่า dimmer ปัจจุบัน |
+| Arc Floor Lamp | `living-room/liv-lamp/set` | `living-room/liv-lamp/state` |
+| Ceiling Dimmer | `living-room/liv-dim/set` | `living-room/liv-dim/state` |
+
+Full topic ที่ใช้จริง = `{Base Topic}/{suffix}` เช่น `Mylab/smarthome/living-room/liv-lamp/set`
 
 ---
 
