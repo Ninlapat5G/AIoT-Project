@@ -64,16 +64,16 @@ export default function App() {
 
   // ── MQTT message sync (STRICT MATCHING ONLY) ──────────────────────────────────
   const handleMqttMessage = useCallback((topic, val) => {
-    const base = (settings.mqtt.baseTopic || '').trim().replace(/^\/+|\/+$/g, '')
-    const incoming = topic.trim().replace(/^\/+|\/+$/g, '')
+    const base = (settings.mqtt.baseTopic || '').trim().replace(/\/+$/, '')
+    const incoming = topic.trim()
 
     setDevices(prev => prev.map(d => {
-      const sub = (d.subTopic || '').trim().replace(/^\/+|\/+$/g, '')
-      const pub = (d.pubTopic || '').trim().replace(/^\/+|\/+$/g, '')
+      const sub = (d.subTopic || '').trim().replace(/^\/+/, '')
+      const pub = (d.pubTopic || '').trim().replace(/^\/+/, '')
 
-      // Strict: บังคับโครงสร้าง Base + Topic เท่านั้น ไม่มีการแอบเช็ค startsWith
-      const expectedSub = base ? `${base}/${sub}`.replace(/\/\/+/g, '/') : sub
-      const expectedPub = base ? `${base}/${pub}`.replace(/\/\/+/g, '/') : pub
+      // Strict matching: บังคับโครงสร้าง Base + Topic เท่านั้น
+      const expectedSub = base ? `${base}/${sub}` : sub
+      const expectedPub = base ? `${base}/${pub}` : pub
 
       if (incoming !== expectedSub && incoming !== expectedPub) return d
 
@@ -83,24 +83,10 @@ export default function App() {
     }))
   }, [settings.mqtt.baseTopic])
 
-  const subscribeTopics = useMemo(() => {
-    const list = new Set()
-    const base = (settings.mqtt.baseTopic || '').trim().replace(/^\/+|\/+$/g, '')
-    if (base) {
-      list.add(`${base}/#`)
-    } else {
-      devices.forEach(d => {
-        if (d.pubTopic) list.add(d.pubTopic.trim().replace(/^\/+|\/+$/g, ''))
-        if (d.subTopic) list.add(d.subTopic.trim().replace(/^\/+|\/+$/g, ''))
-      })
-    }
-    return Array.from(list).filter(Boolean)
-  }, [devices, settings.mqtt.baseTopic])
-
+  // ── MQTT hook ─────────────────────────────────────────────────────────────────
   const { client: mqttClient, status: mqttStatus, sensorCache, publish: mqttPublish } = useMQTT({
     broker: settings.mqtt.broker,
     baseTopic: settings.mqtt.baseTopic,
-    subscribeTopics,
     onMessage: handleMqttMessage,
   })
 
@@ -117,19 +103,20 @@ export default function App() {
     setDevices(prev => prev.filter(x => x.id !== id))
   }, [])
 
-  // ── Tool executor (Agent integration) ──────────────────────────────────────────
+  // ── Tool executor (called by agent) ───────────────────────────────────────────
   const executeTool = useCallback(async (name, args) => {
     if (name === 'mqtt_publish') {
       if (!mqttClient) return { success: false, error: 'MQTT not connected' }
+
       const topic = args?.topic
       const payload = args?.payload
       const device = devicesRef.current.find(d => d.pubTopic === topic || d.pubTopic?.endsWith('/' + topic))
       const rawTopic = device ? device.pubTopic : topic
 
       return new Promise(resolve => {
-        const base = (settings.mqtt.baseTopic || '').trim().replace(/^\/+|\/+$/g, '')
-        const clean = rawTopic.trim().replace(/^\/+|\/+$/g, '')
-        const fullTopic = base ? `${base}/${clean}`.replace(/\/\/+/g, '/') : clean
+        const base = (settings.mqtt.baseTopic || '').trim().replace(/\/+$/, '')
+        const clean = rawTopic.trim().replace(/^\/+/, '')
+        const fullTopic = base ? `${base}/${clean}` : clean
 
         mqttClient.publish(fullTopic, String(payload), { qos: 2 }, err => {
           if (err) { resolve({ success: false, error: err.message }); return }
@@ -149,20 +136,24 @@ export default function App() {
     if (name === 'mqtt_read') {
       const topic = typeof args === 'string' ? args.trim() : args?.topic
       if (!topic) return { success: false, error: 'No topic specified' }
-      const base = (settings.mqtt.baseTopic || '').trim().replace(/^\/+|\/+$/g, '')
-      const fullTopic = base ? `${base}/${topic}`.replace(/\/\/+/g, '/') : topic
+      const base = (settings.mqtt.baseTopic || '').trim().replace(/\/+$/, '')
+      const fullTopic = topic.startsWith(base) ? topic : `${base}/${topic}`.replace(/\/\/+/g, '/')
       const val = sensorCache[fullTopic]
       if (val !== undefined) return { success: true, topic: fullTopic, value: val }
-      return { success: false, error: 'No data' }
+      return { success: false, note: `No data cached for topic: ${fullTopic}` }
     }
+
     return { success: false, error: `Unknown tool: ${name}` }
   }, [mqttClient, sensorCache, settings.mqtt.baseTopic])
 
+  // ── Chat hook ─────────────────────────────────────────────────────────────────
   const { messages, thinking, executing, sendMessage, clearChat } = useChat({
-    settings, devicesRef, executeTool,
+    settings,
+    devicesRef,
+    executeTool,
   })
 
-  // ── Utils & Themes ─────────────────────────────────────────────────────────────
+  // ── Theme tokens ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const root = document.documentElement
     root.dataset.theme = tweaks.theme
@@ -172,71 +163,250 @@ export default function App() {
     root.style.setProperty('--accent-c', tweaks.accentChroma)
   }, [tweaks])
 
+  // ── Offline detection ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const showToast = (type, text) => {
+      setToast({ type, text })
+      setTimeout(() => setToast(null), type === 'error' ? 5000 : 3000)
+    }
+    const onOffline = () => showToast('error', 'ออฟไลน์ — ไม่สามารถควบคุมอุปกรณ์ได้')
+    const onOnline = () => showToast('ok', 'เชื่อมต่ออินเตอร์เน็ตแล้ว')
+    window.addEventListener('offline', onOffline)
+    window.addEventListener('online', onOnline)
+    return () => {
+      window.removeEventListener('offline', onOffline)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [])
+
+  // ── QR Share / Import ─────────────────────────────────────────────────────────
   const openQR = useCallback(mode => { setQrMode(mode); setQrOpen(true) }, [])
+
   const handleScanned = useCallback(rawText => {
     const result = decodePayload(rawText)
-    if (!result.ok) { setToast({ type: 'error', text: result.error }); return }
-    const applied = applyPayload({ payload: result.payload, settings, devices: devicesRef.current, tweaks })
-    setSettings(applied.settings); saveSettings(applied.settings)
-    setDevices(applied.devices); setTweaks(applied.tweaks)
-    setToast({ type: 'ok', text: 'Import สำเร็จ' })
-    setTimeout(() => setToast(null), 3000)
+    if (!result.ok) {
+      setToast({ type: 'error', text: result.error })
+      setTimeout(() => setToast(null), 3500)
+      return
+    }
+    const applied = applyPayload({
+      payload: result.payload,
+      settings,
+      devices: devicesRef.current,
+      tweaks,
+    })
+    setSettings(applied.settings)
+    saveSettings(applied.settings)
+    setDevices(applied.devices)
+    setTweaks(applied.tweaks)
+    setToast({ type: 'ok', text: `Import สำเร็จ: ${applied.summary.join(' · ')}` })
+    setTimeout(() => setToast(null), 4000)
   }, [settings, tweaks])
 
-  const handleClearAll = useCallback(() => { clearAll(); window.location.reload() }, [])
+  const handleClearAll = useCallback(() => {
+    clearAll()
+    window.location.reload()
+  }, [])
 
-  // ── Stats & Render ────────────────────────────────────────────────────────────
+  // ── Stats ─────────────────────────────────────────────────────────────────────
   const activeCount = devices.filter(d => d.type === 'digital' ? d.on : d.value > 0).length
-  const roomCount = new Set(devices.map(d => d.room)).size
   const analogDevices = devices.filter(d => d.type === 'analog')
-  const analogAvg = analogDevices.length ? Math.round(analogDevices.reduce((a, d) => a + d.value, 0) / analogDevices.length) : 0
+  const analogAvg = analogDevices.length
+    ? Math.round(analogDevices.reduce((a, d) => a + d.value, 0) / analogDevices.length)
+    : 0
+  const roomCount = new Set(devices.map(d => d.room)).size
   const skillCount = (settings.skills || []).filter(s => s.enabled).length
   const modelShort = (settings.model || 'typhoon-v2').split('-instruct')[0]
 
   const visibleDevices = devices.filter(d => activeArea === 'All' || d.room === activeArea)
+
   const mqttUnhealthy = mqttStatus === 'reconnecting' || mqttStatus === 'error'
 
   return (
     <div className="sh-app">
-      <MobileTopbar page={page} onOpenMenu={() => setMobileNav(true)} tweaks={tweaks} onToggleTheme={() => setTweaks(t => ({ ...t, theme: t.theme === 'dark' ? 'light' : 'dark' }))} />
+      <MobileTopbar
+        page={page}
+        onOpenMenu={() => setMobileNav(true)}
+        tweaks={tweaks}
+        onToggleTheme={() => setTweaks(t => ({ ...t, theme: t.theme === 'dark' ? 'light' : 'dark' }))}
+      />
+
       <div className="sh-app-body">
-        <Nav page={page} setPage={setPage} activeCount={activeCount} deviceCount={devices.length} tweaks={tweaks} onToggleTheme={() => setTweaks(t => ({ ...t, theme: t.theme === 'dark' ? 'light' : 'dark' }))} onToggleTweaks={() => setTweaksOpen(v => !v)} tweaksOpen={tweaksOpen} profile={settings.profile} mqttStatus={mqttStatus} mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNav(false)} />
+        <Nav
+          page={page} setPage={setPage}
+          activeCount={activeCount} deviceCount={devices.length}
+          tweaks={tweaks}
+          onToggleTheme={() => setTweaks(t => ({ ...t, theme: t.theme === 'dark' ? 'light' : 'dark' }))}
+          onToggleTweaks={() => setTweaksOpen(v => !v)}
+          tweaksOpen={tweaksOpen}
+          profile={settings.profile}
+          mqttStatus={mqttStatus}
+          mobileOpen={mobileNavOpen}
+          onCloseMobile={() => setMobileNav(false)}
+        />
+
         <main className="sh-main">
-          {mqttUnhealthy && <div className="sh-mqtt-banner">⚠ MQTT Status: {mqttStatus}</div>}
+          {mqttUnhealthy && (
+            <div className={`sh-mqtt-banner ${mqttStatus === 'error' ? 'error' : ''}`}>
+              <span style={{ animation: 'pulse-dot 1s ease-in-out infinite', display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0 }} />
+              {mqttStatus === 'reconnecting' ? '↻ กำลังเชื่อมต่อ MQTT ใหม่...' : '⚠ MQTT เกิดข้อผิดพลาด — ตรวจสอบ Settings'}
+            </div>
+          )}
+
           <AnimatePresence mode="wait">
             {page === 'devices' && (
               <motion.section key="devices" className="sh-board" {...pageVariants}>
                 <div className="sh-page-head">
-                  <div><div className="sh-eyebrow mono">WIDGET BOARD</div><h1>Devices <span className="sh-h1-count mono">{devices.length}</span></h1><p className="sh-page-sub">{activeCount} active · {roomCount} rooms · avg {analogAvg}/255</p></div>
+                  <div>
+                    <div className="sh-eyebrow mono">WIDGET BOARD</div>
+                    <h1>Devices <span className="sh-h1-count mono">{devices.length}</span></h1>
+                    <p className="sh-page-sub">
+                      {activeCount} active · {roomCount} rooms · avg {analogAvg}/255
+                    </p>
+                  </div>
                   <div className="sh-board-filters mono">
                     {['All', ...areas].map(f => (
                       <span key={f} className={`sh-filter-chip ${activeArea === f ? 'on' : ''}`}>
                         <button className="sh-filter-btn" onClick={() => setActiveArea(f)}>{f}</button>
-                        {editAreas && f !== 'All' && <button className="sh-filter-x" onClick={() => { setAreas(areas.filter(a => a !== f)); if (activeArea === f) setActiveArea('All') }}><Icon name="close" size={10} /></button>}
+                        {editAreas && f !== 'All' && (
+                          <button
+                            className="sh-filter-x"
+                            onClick={() => {
+                              setAreas(areas.filter(a => a !== f))
+                              if (activeArea === f) setActiveArea('All')
+                            }}
+                          >
+                            <Icon name="close" size={10} />
+                          </button>
+                        )}
                       </span>
                     ))}
-                    {editAreas && <form className="sh-filter-add" onSubmit={e => { e.preventDefault(); const v = newArea.trim(); if (v && !areas.includes(v)) setAreas([...areas, v]); setNewArea('') }}><input value={newArea} onChange={e => setNewArea(e.target.value)} placeholder="Add Area..." /><button type="submit" disabled={!newArea.trim()}><Icon name="plus" size={11} /></button></form>}
-                    <button className={`sh-filter-edit ${editAreas ? 'on' : ''}`} onClick={() => setEditAreas(v => !v)}>{editAreas ? 'Done' : 'Edit'}</button>
+                    {editAreas && (
+                      <form
+                        className="sh-filter-add"
+                        onSubmit={e => {
+                          e.preventDefault()
+                          const v = newArea.trim()
+                          if (v && !areas.includes(v)) setAreas([...areas, v])
+                          setNewArea('')
+                        }}
+                      >
+                        <input
+                          value={newArea}
+                          onChange={e => setNewArea(e.target.value)}
+                          placeholder="New area…"
+                        />
+                        <button type="submit" disabled={!newArea.trim()}>
+                          <Icon name="plus" size={11} />
+                        </button>
+                      </form>
+                    )}
+                    <button
+                      className={`sh-filter-edit ${editAreas ? 'on' : ''}`}
+                      onClick={() => setEditAreas(v => !v)}
+                    >
+                      {editAreas ? 'Done' : 'Edit'}
+                    </button>
                   </div>
                 </div>
-                <ErrorBoundary><motion.div className="sh-grid" variants={gridVariants} initial="hidden" animate="visible">
-                  {visibleDevices.map(d => (
-                    <DeviceCard key={d.id} device={d} onUpdate={updateDevice} onRemove={removeDevice} areas={areas} />
-                  ))}
-                  <AddDeviceTile onClick={() => { const id = 'dev-' + Date.now().toString(36); setDevices(prev => [...prev, { id, name: 'New Device', room: areas[0] || 'Living Room', type: 'digital', on: false, icon: 'bulb', pubTopic: `${id}/set`, subTopic: `${id}/state` }]) }} />
-                </motion.div></ErrorBoundary>
-                <footer className="sh-board-foot mono"><span>◀ · {devices.length} devices</span><span className="flex-1" /><span>MQTT: {settings.mqtt.broker}:{settings.mqtt.port}</span></footer>
+
+                <ErrorBoundary>
+                  <motion.div className="sh-grid" variants={gridVariants} initial="hidden" animate="visible">
+                    {visibleDevices.map(d => (
+                      <DeviceCard
+                        key={d.id}
+                        device={d}
+                        onUpdate={updateDevice}
+                        onRemove={removeDevice}
+                        areas={areas}
+                      />
+                    ))}
+                    <AddDeviceTile
+                      onClick={() => {
+                        const id = 'dev-' + Date.now().toString(36)
+                        setDevices(prev => [...prev, {
+                          id, name: 'New Device', room: areas[0] || 'Living Room',
+                          type: 'digital', on: false, icon: 'bulb',
+                          pubTopic: `${id}/set`,
+                          subTopic: `${id}/state`,
+                        }])
+                      }}
+                    />
+                  </motion.div>
+                </ErrorBoundary>
+
+                <footer className="sh-board-foot mono">
+                  <span>◀ · {devices.length} devices across {roomCount} rooms</span>
+                  <span className="flex-1" />
+                  <span>MQTT: {settings.mqtt.broker}:{settings.mqtt.port}</span>
+                </footer>
               </motion.section>
             )}
-            {page === 'chat' && <motion.div key="chat" className="h-full" {...pageVariants}><ErrorBoundary><ChatPage messages={messages} onSend={sendMessage} thinking={thinking} executing={executing} onClear={clearChat} modelName={modelShort} skillCount={skillCount} msgCount={messages.filter(m => m.role === 'user').length} /></ErrorBoundary></motion.div>}
-            {page === 'settings' && <motion.div key="settings" {...pageVariants}><ErrorBoundary><SettingsPage settings={settings} onSave={handleSaveSettings} mqttStatus={mqttStatus} onClearAll={handleClearAll} onOpenQR={openQR} /></ErrorBoundary></motion.div>}
+
+            {page === 'chat' && (
+              <motion.div key="chat" className="h-full" {...pageVariants}>
+                <ErrorBoundary>
+                  <ChatPage
+                    messages={messages}
+                    onSend={sendMessage}
+                    thinking={thinking}
+                    executing={executing}
+                    onClear={clearChat}
+                    modelName={modelShort}
+                    skillCount={skillCount}
+                    msgCount={messages.filter(m => m.role === 'user').length}
+                  />
+                </ErrorBoundary>
+              </motion.div>
+            )}
+
+            {page === 'settings' && (
+              <motion.div key="settings" {...pageVariants}>
+                <ErrorBoundary>
+                  <SettingsPage
+                    settings={settings}
+                    onSave={handleSaveSettings}
+                    mqttStatus={mqttStatus}
+                    onClearAll={handleClearAll}
+                    onOpenQR={openQR}
+                  />
+                </ErrorBoundary>
+              </motion.div>
+            )}
           </AnimatePresence>
         </main>
       </div>
-      <MobileBottomNav page={page} setPage={setPage} activeCount={activeCount} deviceCount={devices.length} />
+
+      <MobileBottomNav
+        page={page} setPage={setPage}
+        activeCount={activeCount} deviceCount={devices.length}
+      />
       <TweaksPanel open={tweaksOpen} tweaks={tweaks} onChange={patch => setTweaks(t => ({ ...t, ...patch }))} />
-      <QRShareModal open={qrOpen} mode={qrMode} onClose={() => setQrOpen(false)} settings={settings} devices={devices} tweaks={tweaks} onScanned={handleScanned} />
-      <AnimatePresence>{toast && <motion.div key="toast" className={`sh-toast ${toast.type}`} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}><Icon name={toast.type === 'ok' ? 'check' : 'alert'} size={14} />{toast.text}</motion.div>}</AnimatePresence>
+
+      <QRShareModal
+        open={qrOpen}
+        mode={qrMode}
+        onClose={() => setQrOpen(false)}
+        settings={settings}
+        devices={devices}
+        tweaks={tweaks}
+        onScanned={handleScanned}
+      />
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            key="toast"
+            className={`sh-toast ${toast.type}`}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+          >
+            <Icon name={toast.type === 'ok' ? 'check' : 'alert'} size={14} />
+            {toast.text}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
