@@ -125,7 +125,7 @@ npm run build    # production build
 ### หน้า Devices
 
 - ดูสถานะอุปกรณ์ทั้งหมดแบบ real-time ผ่าน MQTT
-- **Digital device** — toggle เปิด/ปิด พร้อม optimistic UI (card หรี่ขณะรอ MQTT confirm)
+- **Digital device** — toggle เปิด/ปิด พร้อม optimistic UI (อัพเดตทันที ไม่รอ MQTT confirm)
 - **Analog device** — slider พร้อม animated readout และ smooth transition ค่า (Framer Motion)
 - กด ⚙ เพื่อแก้ไขชื่อ, ห้อง, ประเภท, max value, MQTT topic (มี validation ห้าม `#` `+`)
 - กด **+ Add Device** เพื่อเพิ่มอุปกรณ์ใหม่
