@@ -19,7 +19,7 @@ import Icon from './components/ui/Icon'
 const pageVariants = {
   initial: { opacity: 0, y: 10 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.2, ease: 'easeOut' } },
-  exit:    { opacity: 0, y: -6, transition: { duration: 0.15 } },
+  exit: { opacity: 0, y: -6, transition: { duration: 0.15 } },
 }
 
 const gridVariants = {
@@ -27,13 +27,13 @@ const gridVariants = {
 }
 
 export default function App() {
-  const [tweaks, setTweaks]           = useState(INITIAL_TWEAKS)
-  const [tweaksOpen, setTweaksOpen]   = useState(false)
-  const [page, setPage]               = useState(() => localStorage.getItem('sh-page') || 'devices')
+  const [tweaks, setTweaks] = useState(INITIAL_TWEAKS)
+  const [tweaksOpen, setTweaksOpen] = useState(false)
+  const [page, setPage] = useState(() => localStorage.getItem('sh-page') || 'devices')
   const [mobileNavOpen, setMobileNav] = useState(false)
-  const [toast, setToast]             = useState(null)
-  const [qrOpen, setQrOpen]           = useState(false)
-  const [qrMode, setQrMode]           = useState('share')
+  const [toast, setToast] = useState(null)
+  const [qrOpen, setQrOpen] = useState(false)
+  const [qrMode, setQrMode] = useState('share')
 
   useEffect(() => { localStorage.setItem('sh-page', page) }, [page])
 
@@ -51,49 +51,60 @@ export default function App() {
 
   // ── Devices ───────────────────────────────────────────────────────────────────
   const [devices, setDevices] = useState(() => loadDevices() ?? initialDevices)
-  const devicesRef            = useRef(devices)
+  const devicesRef = useRef(devices)
   useEffect(() => { devicesRef.current = devices }, [devices])
   useEffect(() => { saveDevices(devices) }, [devices])
 
   // ── Areas ─────────────────────────────────────────────────────────────────────
-  const [areas, setAreas]           = useState(() => loadAreas() ?? INITIAL_AREAS)
+  const [areas, setAreas] = useState(() => loadAreas() ?? INITIAL_AREAS)
   const [activeArea, setActiveArea] = useState('All')
-  const [editAreas, setEditAreas]   = useState(false)
-  const [newArea, setNewArea]       = useState('')
+  const [editAreas, setEditAreas] = useState(false)
+  const [newArea, setNewArea] = useState('')
   useEffect(() => { saveAreas(areas) }, [areas])
 
   // ── Optimistic pending state ───────────────────────────────────────────────────
   const [pendingIds, setPendingIds] = useState(new Set())
-  const pendingTimers               = useRef({})
+  const pendingTimers = useRef({})
   useEffect(() => () => Object.values(pendingTimers.current).forEach(clearTimeout), [])
 
   // ── MQTT message → device state sync ─────────────────────────────────────────
   const handleMqttMessage = useCallback((topic, val) => {
-    const confirmedIds = []
-    setDevices(prev => prev.map(d => {
-      const base    = settings.mqtt.baseTopic || ''
+    const base = settings.mqtt.baseTopic || ''
+
+    // 1. หาอุปกรณ์ที่ตรงกับ Topic แบบ Synchronous จาก devicesRef
+    const matchedDevices = devicesRef.current.filter(d => {
       const fullSub = d.subTopic?.startsWith(base) ? d.subTopic : `${base}/${d.subTopic}`.replace(/\/\/+/g, '/')
       const fullPub = d.pubTopic?.startsWith(base) ? d.pubTopic : `${base}/${d.pubTopic}`.replace(/\/\/+/g, '/')
-      const matched = (topic === fullSub || topic === d.subTopic) ||
-                      (topic === fullPub || topic === d.pubTopic)
-      if (!matched) return d
-      confirmedIds.push(d.id)
+      return (topic === fullSub || topic === d.subTopic) || (topic === fullPub || topic === d.pubTopic)
+    })
+
+    if (matchedDevices.length === 0) return
+
+    // 2. เคลียร์ Pending ทันทีเมื่อเจออุปกรณ์ที่ส่งค่าตรงกันมา
+    matchedDevices.forEach(d => {
+      clearTimeout(pendingTimers.current[d.id])
+      delete pendingTimers.current[d.id]
+    })
+
+    setPendingIds(s => {
+      const n = new Set(s)
+      matchedDevices.forEach(d => n.delete(d.id))
+      return n
+    })
+
+    // 3. สั่งอัปเดต UI ของ Device
+    setDevices(prev => prev.map(d => {
+      const isMatch = matchedDevices.some(m => m.id === d.id)
+      if (!isMatch) return d
       if (d.type === 'digital') return { ...d, on: val === 'true' || val === '1' || val === 'on' || val === 'ON' }
-      if (d.type === 'analog')  return { ...d, value: Math.max(0, Math.min(d.max ?? 255, parseInt(val, 10) || 0)) }
+      if (d.type === 'analog') return { ...d, value: Math.max(0, Math.min(d.max ?? 255, parseInt(val, 10) || 0)) }
       return d
     }))
-    if (confirmedIds.length > 0) {
-      confirmedIds.forEach(id => {
-        clearTimeout(pendingTimers.current[id])
-        delete pendingTimers.current[id]
-      })
-      setPendingIds(s => { const n = new Set(s); confirmedIds.forEach(id => n.delete(id)); return n })
-    }
   }, [settings.mqtt.baseTopic])
 
   // ── MQTT hook ─────────────────────────────────────────────────────────────────
   const { client: mqttClient, status: mqttStatus, sensorCache, publish: mqttPublish } = useMQTT({
-    broker:    settings.mqtt.broker,
+    broker: settings.mqtt.broker,
     baseTopic: settings.mqtt.baseTopic,
     onMessage: handleMqttMessage,
   })
@@ -123,13 +134,13 @@ export default function App() {
     if (name === 'mqtt_publish') {
       if (!mqttClient) return { success: false, error: 'MQTT not connected' }
 
-      const topic   = args?.topic
+      const topic = args?.topic
       const payload = args?.payload
-      const device  = devicesRef.current.find(d => d.pubTopic === topic || d.pubTopic?.endsWith('/' + topic))
+      const device = devicesRef.current.find(d => d.pubTopic === topic || d.pubTopic?.endsWith('/' + topic))
       const rawTopic = device ? device.pubTopic : topic
 
       return new Promise(resolve => {
-        const base      = settings.mqtt.baseTopic || ''
+        const base = settings.mqtt.baseTopic || ''
         const fullTopic = rawTopic.startsWith(base) ? rawTopic : `${base}/${rawTopic}`.replace(/\/\/+/g, '/')
         mqttClient.publish(fullTopic, String(payload), { qos: 2 }, err => {
           if (err) { resolve({ success: false, error: err.message }); return }
@@ -137,7 +148,7 @@ export default function App() {
             setDevices(prev => prev.map(d => {
               if (d.id !== device.id) return d
               if (d.type === 'digital') return { ...d, on: payload === 'true' }
-              if (d.type === 'analog')  return { ...d, value: parseInt(payload, 10) || 0 }
+              if (d.type === 'analog') return { ...d, value: parseInt(payload, 10) || 0 }
               return d
             }))
           }
@@ -149,9 +160,9 @@ export default function App() {
     if (name === 'mqtt_read') {
       const topic = typeof args === 'string' ? args.trim() : args?.topic
       if (!topic) return { success: false, error: 'No topic specified' }
-      const base      = settings.mqtt.baseTopic || ''
+      const base = settings.mqtt.baseTopic || ''
       const fullTopic = topic.startsWith(base) ? topic : `${base}/${topic}`.replace(/\/\/+/g, '/')
-      const val       = sensorCache[fullTopic]
+      const val = sensorCache[fullTopic]
       if (val !== undefined) return { success: true, topic: fullTopic, value: val }
       return { success: false, note: `No data cached for topic: ${fullTopic}` }
     }
@@ -169,9 +180,9 @@ export default function App() {
   // ── Theme tokens ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const root = document.documentElement
-    root.dataset.theme   = tweaks.theme
+    root.dataset.theme = tweaks.theme
     root.dataset.density = tweaks.density
-    root.dataset.grid    = tweaks.showGrid ? 'on' : 'off'
+    root.dataset.grid = tweaks.showGrid ? 'on' : 'off'
     root.style.setProperty('--accent-h', tweaks.accentHue)
     root.style.setProperty('--accent-c', tweaks.accentChroma)
   }, [tweaks])
@@ -183,12 +194,12 @@ export default function App() {
       setTimeout(() => setToast(null), type === 'error' ? 5000 : 3000)
     }
     const onOffline = () => showToast('error', 'ออฟไลน์ — ไม่สามารถควบคุมอุปกรณ์ได้')
-    const onOnline  = () => showToast('ok',    'เชื่อมต่ออินเตอร์เน็ตแล้ว')
+    const onOnline = () => showToast('ok', 'เชื่อมต่ออินเตอร์เน็ตแล้ว')
     window.addEventListener('offline', onOffline)
-    window.addEventListener('online',  onOnline)
+    window.addEventListener('online', onOnline)
     return () => {
       window.removeEventListener('offline', onOffline)
-      window.removeEventListener('online',  onOnline)
+      window.removeEventListener('online', onOnline)
     }
   }, [])
 
@@ -223,14 +234,14 @@ export default function App() {
   }, [])
 
   // ── Stats ─────────────────────────────────────────────────────────────────────
-  const activeCount   = devices.filter(d => d.type === 'digital' ? d.on : d.value > 0).length
+  const activeCount = devices.filter(d => d.type === 'digital' ? d.on : d.value > 0).length
   const analogDevices = devices.filter(d => d.type === 'analog')
-  const analogAvg     = analogDevices.length
+  const analogAvg = analogDevices.length
     ? Math.round(analogDevices.reduce((a, d) => a + d.value, 0) / analogDevices.length)
     : 0
-  const roomCount     = new Set(devices.map(d => d.room)).size
-  const skillCount    = (settings.skills || []).filter(s => s.enabled).length
-  const modelShort    = (settings.model || 'typhoon-v2').split('-instruct')[0]
+  const roomCount = new Set(devices.map(d => d.room)).size
+  const skillCount = (settings.skills || []).filter(s => s.enabled).length
+  const modelShort = (settings.model || 'typhoon-v2').split('-instruct')[0]
 
   const visibleDevices = devices.filter(d => activeArea === 'All' || d.room === activeArea)
 
