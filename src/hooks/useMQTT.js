@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import mqtt from 'mqtt'
 import { normalizeBase, buildFullTopic } from '../utils/mqttTopic'
 
-export function useMQTT({ broker, baseTopic, onMessage }) {
+export function useMQTT({ broker, port, baseTopic, onMessage }) {
   const [client, setClient] = useState(null)
   const [status, setStatus] = useState('connecting')
   const [sensorCache, setSensorCache] = useState({})
@@ -17,12 +17,19 @@ export function useMQTT({ broker, baseTopic, onMessage }) {
     let c
 
     try {
-      c = mqtt.connect(broker, {
+      const connectOptions = {
         clientId: 'synapta_web_' + Math.random().toString(16).substring(2, 10),
         keepalive: 30,
         clean: true,
         reconnectPeriod: 5000,
-      })
+      }
+
+      // ดึง port จาก Setting มาใช้จริง
+      if (port) {
+        connectOptions.port = parseInt(port, 10)
+      }
+
+      c = mqtt.connect(broker, connectOptions)
 
       c.on('connect', () => {
         setStatus('connected')
@@ -47,7 +54,7 @@ export function useMQTT({ broker, baseTopic, onMessage }) {
     return () => {
       if (c) { c.end(); setClient(null); setStatus('offline') }
     }
-  }, [broker, baseTopic])
+  }, [broker, port, baseTopic])
 
   const publish = useCallback((topic, payload, opts = {}) => {
     if (!client) return null

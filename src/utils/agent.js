@@ -3,31 +3,33 @@
 // Swap endpoint/model by passing different settings — no other code changes needed.
 
 function createLLMClient({ endpoint, apiKey, model }) {
-  const url     = `${endpoint}/chat/completions`
+  const url = `${endpoint}/chat/completions`
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }
-  const mdl     = model || 'typhoon-v2-70b-instruct'
+  const mdl = model
 
-  async function chat(messages, options = {}) {
+  async function chat(messages, options = {}, signal) {
     const res = await fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify({ model: mdl, messages, ...options }),
+      signal
     })
     if (!res.ok) throw new Error(`LLM ${res.status}: ${await res.text()}`)
     return res.json()
   }
 
-  async function stream(messages, options = {}, onChunk) {
+  async function stream(messages, options = {}, onChunk, signal) {
     const res = await fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify({ model: mdl, messages, stream: true, ...options }),
+      signal
     })
     if (!res.ok) throw new Error(`LLM ${res.status}: ${await res.text()}`)
 
-    const reader  = res.body.getReader()
+    const reader = res.body.getReader()
     const decoder = new TextDecoder()
-    let buffer    = ''
+    let buffer = ''
 
     while (true) {
       const { done, value } = await reader.read()
@@ -40,10 +42,10 @@ function createLLMClient({ endpoint, apiKey, model }) {
         const data = line.slice(6).trim()
         if (data === '[DONE]') return
         try {
-          const json  = JSON.parse(data)
+          const json = JSON.parse(data)
           const delta = json.choices?.[0]?.delta?.content
           if (delta) onChunk(delta)
-        } catch {}
+        } catch { }
       }
     }
   }
@@ -58,12 +60,12 @@ function createLLMClient({ endpoint, apiKey, model }) {
 function createGraph({ nodes, edges, entry }) {
   return {
     async run(initialState) {
-      let state   = initialState
+      let state = initialState
       let current = entry
       while (current) {
         const node = nodes[current]
         if (!node) throw new Error(`Agent graph: node "${current}" not found`)
-        state   = await node(state)
+        state = await node(state)
         current = edges[current]?.(state) ?? null
       }
       return state
@@ -74,14 +76,14 @@ function createGraph({ nodes, edges, entry }) {
 // ── Agent Nodes ────────────────────────────────────────────────────────────────
 
 async function routerNode(state) {
-  const { text, settings, deviceList } = state
+  const { text, settings, deviceList, signal } = state
   const llm = createLLMClient(settings)
 
   const tools = (settings.skills || [])
     .filter(sk => sk.enabled)
     .map(sk => {
       let parameters = { type: 'object', properties: {} }
-      try { const p = JSON.parse(sk.schema); if (p?.type === 'object') parameters = p } catch {}
+      try { const p = JSON.parse(sk.schema); if (p?.type === 'object') parameters = p } catch { }
       return { type: 'function', function: { name: sk.name, description: sk.description, parameters } }
     })
 
@@ -96,12 +98,19 @@ RULES:
 Available devices:
 ${JSON.stringify(deviceList, null, 2)}`
 
-  const data = await llm.chat(
-    [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }],
-    { tools: tools.length ? tools : undefined, tool_choice: 'auto', temperature: 0.1, max_tokens: 4096 },
-  )
+  let data
+  try {
+    data = await llm.chat(
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }],
+      { tools: tools.length ? tools : undefined, tool_choice: 'auto', temperature: 0.1, max_tokens: 4096 },
+      signal
+    )
+  } catch (err) {
+    if (err.name === 'AbortError') throw err
+    throw new Error('Router returned no response from API')
+  }
 
-  const msg = data.choices?.[0]?.message
+  const msg = data?.choices?.[0]?.message
   if (!msg) throw new Error('Router returned no response from API')
 
   return { ...state, toolCalls: msg.tool_calls || [] }
@@ -128,19 +137,17 @@ async function toolExecutorNode(state) {
 }
 
 async function responderNode(state) {
-  const { text, settings, apiHistory, toolResults = [], deviceList, onStream } = state
+  const { text, settings, apiHistory, toolResults = [], deviceList, onStream, signal } = state
   const llm = createLLMClient(settings)
 
   const toolContext = toolResults.length
     ? toolResults.map(t => `Tool ${t.name}: ${JSON.stringify(t.result)}`).join('\n')
     : 'None — no tools were called'
 
-  // Inject home state only when tools ran — prevents AI from volunteering
-  // device info unprompted during casual conversation.
   const stateSummary = toolResults.length
     ? (deviceList || [])
-        .map(d => `- [${d.room}] ${d.name} (${d.type}): ${d.type === 'digital' ? (d.on ? 'ON' : 'OFF') : d.value}`)
-        .join('\n') || 'No devices registered'
+      .map(d => `- [${d.room}] ${d.name} (${d.type}): ${d.type === 'digital' ? (d.on ? 'ON' : 'OFF') : d.value}`)
+      .join('\n') || 'No devices registered'
     : null
 
   const systemPrompt = `${settings.systemPrompt}
@@ -155,11 +162,17 @@ ${stateSummary}` : ''}
 ${toolContext}`
 
   let reply = ''
-  await llm.stream(
-    [{ role: 'system', content: systemPrompt }, ...apiHistory, { role: 'user', content: text }],
-    { temperature: 0.7, max_tokens: 4096 },
-    chunk => { reply += chunk; onStream?.(chunk) },
-  )
+  try {
+    await llm.stream(
+      [{ role: 'system', content: systemPrompt }, ...apiHistory, { role: 'user', content: text }],
+      { temperature: 0.7, max_tokens: 4096 },
+      chunk => { reply += chunk; onStream?.(chunk) },
+      signal
+    )
+  } catch (err) {
+    if (err.name !== 'AbortError') throw err
+    // หากถูก Abort กลางคัน ให้คืนค่า reply เท่าที่ stream มาได้
+  }
 
   return { ...state, reply }
 }
@@ -168,19 +181,19 @@ ${toolContext}`
 
 const agentGraph = createGraph({
   nodes: {
-    router:       routerNode,
+    router: routerNode,
     toolExecutor: toolExecutorNode,
-    responder:    responderNode,
+    responder: responderNode,
   },
   edges: {
-    router:       state => state.toolCalls.length > 0 ? 'toolExecutor' : 'responder',
-    toolExecutor: ()    => 'responder',
+    router: state => state.toolCalls.length > 0 ? 'toolExecutor' : 'responder',
+    toolExecutor: () => 'responder',
   },
   entry: 'router',
 })
 
 // ── Public API ─────────────────────────────────────────────────────────────────
-// params: { text, settings, deviceList, apiHistory, executeTool, onStream, onToolCall, onToolResult }
+// params: { text, settings, deviceList, apiHistory, executeTool, onStream, onToolCall, onToolResult, signal }
 // returns: { ...state, reply }
 
 export const runAgent = params => agentGraph.run({ toolCalls: [], toolResults: [], ...params })

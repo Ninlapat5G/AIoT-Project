@@ -1,11 +1,22 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { runAgent } from '../utils/agent'
 
 export function useChat({ settings, devicesRef, executeTool }) {
-  const [messages, setMessages]       = useState([])
-  const [apiHistory, setApiHistory]   = useState([])
-  const [thinking, setThinking]       = useState(false)
-  const [executing, setExecuting]     = useState(null)
+  const [messages, setMessages] = useState([])
+  const [apiHistory, setApiHistory] = useState([])
+  const [thinking, setThinking] = useState(false)
+  const [executing, setExecuting] = useState(null)
+
+  const abortControllerRef = useRef(null)
+
+  const stopChat = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    setThinking(false)
+    setExecuting(null)
+  }, [])
 
   const sendMessage = useCallback(async text => {
     if (!settings.apiKey) {
@@ -21,6 +32,8 @@ export function useChat({ settings, devicesRef, executeTool }) {
     setThinking(true)
     setExecuting(null)
 
+    abortControllerRef.current = new AbortController()
+
     try {
       const { reply } = await runAgent({
         text,
@@ -28,6 +41,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
         deviceList: devicesRef.current,
         apiHistory,
         executeTool,
+        signal: abortControllerRef.current.signal,
         onToolCall: (name, args) => {
           setThinking(false)
           setExecuting({ name, args })
@@ -66,6 +80,18 @@ export function useChat({ settings, devicesRef, executeTool }) {
         { role: 'assistant', content: reply },
       ])
     } catch (err) {
+      if (err.name === 'AbortError') {
+        // กรณีโดนยกเลิกด้วยการกดหยุด
+        setMessages(prev => {
+          const last = prev[prev.length - 1]
+          if (last?.role === 'ai' && last?.streaming) {
+            return [...prev.slice(0, -1), { role: 'ai', text: last.text }]
+          }
+          return prev
+        })
+        return
+      }
+
       setMessages(prev => {
         const last = prev[prev.length - 1]
         const base = last?.streaming ? prev.slice(0, -1) : prev
@@ -78,11 +104,10 @@ export function useChat({ settings, devicesRef, executeTool }) {
   }, [settings, devicesRef, apiHistory, executeTool])
 
   const clearChat = useCallback(() => {
+    stopChat()
     setMessages([])
     setApiHistory([])
-    setThinking(false)
-    setExecuting(null)
-  }, [])
+  }, [stopChat])
 
-  return { messages, thinking, executing, sendMessage, clearChat }
+  return { messages, thinking, executing, sendMessage, clearChat, stopChat }
 }

@@ -5,7 +5,7 @@ import ChatBubble, { TypingBubble } from './chat/ChatBubble'
 import ToolPill from './chat/ToolPill'
 
 export default function ChatPage({
-  messages, onSend, thinking, executing, onClear, modelName, skillCount, msgCount,
+  messages, onSend, onStop, thinking, executing, onClear, modelName, skillCount, msgCount,
 }) {
   const [draft, setDraft] = useState('')
   const [isListening, setIsListening] = useState(false)
@@ -159,16 +159,30 @@ export default function ChatPage({
               <Icon name="mic" size={15} />
             </motion.button>
 
-            {/* ปุ่มส่งข้อความ */}
-            <motion.button
-              type="submit"
-              className="sh-send"
-              disabled={!draft.trim() || thinking || !!executing}
-              whileTap={{ scale: 0.9 }}
-              whileHover={{ scale: 1.05 }}
-            >
-              <Icon name="send" size={15} />
-            </motion.button>
+            {/* ปุ่มส่งข้อความ หรือ หยุด */}
+            {(thinking || executing) ? (
+              <motion.button
+                type="button"
+                className="sh-send"
+                onClick={onStop}
+                whileTap={{ scale: 0.9 }}
+                whileHover={{ scale: 1.05 }}
+                style={{ backgroundColor: '#ef4444', color: '#ffffff', border: 'none' }}
+                title="หยุดสร้างข้อความ"
+              >
+                <Icon name="x" size={15} />
+              </motion.button>
+            ) : (
+              <motion.button
+                type="submit"
+                className="sh-send"
+                disabled={!draft.trim()}
+                whileTap={{ scale: 0.9 }}
+                whileHover={{ scale: 1.05 }}
+              >
+                <Icon name="send" size={15} />
+              </motion.button>
+            )}
           </div>
           <div className="sh-composer-hints mono">
             <span>⏎ ส่ง</span>
