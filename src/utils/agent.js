@@ -126,9 +126,17 @@ async function toolExecutorNode(state) {
     try { args = JSON.parse(tc.function.arguments || '{}') } catch { args = tc.function.arguments }
 
     onToolCall?.(name, args)
-    await new Promise(r => setTimeout(r, 600))
+    await new Promise(r => setTimeout(r, 600)) // หน่วงให้ UI ดูสมูท
 
-    const result = await executeTool(name, args)
+    let result
+    try {
+      // 🐛 มักแก้ตรงนี้: ครอบ try catch ให้ ตอนรัน tool ถ้าเกิดปัญหาจะได้ไม่พาบอทแครชไปเลย
+      result = await executeTool(name, args)
+    } catch (err) {
+      console.error(`[Agent] Tool execution failed for ${name}:`, err)
+      result = { error: err.message || "Execution failed" }
+    }
+
     onToolResult?.(name, args, result)
     toolResults.push({ name, args, result })
   }
@@ -171,7 +179,6 @@ ${toolContext}`
     )
   } catch (err) {
     if (err.name !== 'AbortError') throw err
-    // หากถูก Abort กลางคัน ให้คืนค่า reply เท่าที่ stream มาได้
   }
 
   return { ...state, reply }

@@ -4,30 +4,30 @@ import Icon from './ui/Icon'
 import Toggle from './ui/Toggle'
 
 const MQTT_STATUS_LABEL = {
-  connecting:   'Connecting…',
-  connected:    'BROKER ONLINE · QoS 2 · real-time subscribed',
+  connecting: 'Connecting…',
+  connected: 'BROKER ONLINE · QoS 2 · real-time subscribed',
   reconnecting: 'Reconnecting…',
-  error:        'Connection Error',
-  offline:      'Offline',
+  error: 'Connection Error',
+  offline: 'Offline',
 }
 
 const MQTT_DOT_STYLE = {
-  connecting:   { background: 'var(--ink-xdim)',        animation: 'pulse-dot 1s ease-in-out infinite' },
-  connected:    { background: 'var(--accent)',           animation: 'pulse-dot 2s ease-in-out infinite' },
-  reconnecting: { background: 'oklch(0.75 0.18 55)',    animation: 'pulse-dot 1s ease-in-out infinite' },
-  error:        { background: 'oklch(0.65 0.22 25)',    animation: 'none' },
-  offline:      { background: 'var(--ink-xdim)',        animation: 'none' },
+  connecting: { background: 'var(--ink-xdim)', animation: 'pulse-dot 1s ease-in-out infinite' },
+  connected: { background: 'var(--accent)', animation: 'pulse-dot 2s ease-in-out infinite' },
+  reconnecting: { background: 'oklch(0.75 0.18 55)', animation: 'pulse-dot 1s ease-in-out infinite' },
+  error: { background: 'oklch(0.65 0.22 25)', animation: 'none' },
+  offline: { background: 'var(--ink-xdim)', animation: 'none' },
 }
 
-export default function SettingsPage({ settings, onSave, mqttStatus = 'offline', onClearAll, onOpenQR }) {
-  const [s, setS]       = useState(settings)
+export default function SettingsPage({ settings, onSave, mqttStatus = 'offline', onClearAll }) {
+  const [s, setS] = useState(settings)
   const [dirty, setDirty] = useState(false)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => { setS(settings); setDirty(false) }, [settings])
 
-  const set    = (k, v) => { setS(p => ({ ...p, [k]: v }));                         setDirty(true); setSaved(false) }
-  const setMq  = (k, v) => { setS(p => ({ ...p, mqtt:    { ...p.mqtt,    [k]: v } })); setDirty(true); setSaved(false) }
+  const set = (k, v) => { setS(p => ({ ...p, [k]: v })); setDirty(true); setSaved(false) }
+  const setMq = (k, v) => { setS(p => ({ ...p, mqtt: { ...p.mqtt, [k]: v } })); setDirty(true); setSaved(false) }
   const setPro = (k, v) => { setS(p => ({ ...p, profile: { ...p.profile, [k]: v } })); setDirty(true); setSaved(false) }
 
   const toggleSkill = id => {
@@ -66,8 +66,52 @@ export default function SettingsPage({ settings, onSave, mqttStatus = 'offline',
     }
   }
 
-  const dotStyle  = MQTT_DOT_STYLE[mqttStatus]  ?? MQTT_DOT_STYLE.offline
-  const dotLabel  = MQTT_STATUS_LABEL[mqttStatus] ?? 'Unknown'
+  const exportData = () => {
+    try {
+      const allData = {
+        settings: s,
+        devices: JSON.parse(localStorage.getItem('aiot_devices') || '[]'),
+        areas: JSON.parse(localStorage.getItem('aiot_areas') || '[]')
+      }
+      navigator.clipboard.writeText(JSON.stringify(allData, null, 2))
+      alert('คัดลอกข้อมูล JSON ลง Clipboard เรียบร้อยแล้วฮะ! 🚀')
+    } catch (err) {
+      alert('เกิดข้อผิดพลาดในการคัดลอก: ' + err.message)
+    }
+  }
+
+  const importData = async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (!text) throw new Error('Clipboard ว่างเปล่า')
+
+      const data = JSON.parse(text)
+      if (data.settings) setS(data.settings)
+      if (data.devices) localStorage.setItem('aiot_devices', JSON.stringify(data.devices))
+      if (data.areas) localStorage.setItem('aiot_areas', JSON.stringify(data.areas))
+
+      setDirty(true)
+      alert('โหลดข้อมูลสำเร็จแล้ว! อย่าลืมกด Save n้าฮะ 💾')
+    } catch (err) {
+      // Fallback ถ้าเบราว์เซอร์ไม่ยอมให้ดึงค่าจาก Clipboard อัตโนมัติ
+      const manualText = prompt('เบราว์เซอร์นี้ไม่อนุญาตให้ดึงข้อมูลจาก Clipboard อัตโนมัติฮะ\n\nโปรดวางโค้ด JSON ด้วยตัวเองตรงนี้เลย:')
+      if (manualText) {
+        try {
+          const data = JSON.parse(manualText)
+          if (data.settings) setS(data.settings)
+          if (data.devices) localStorage.setItem('aiot_devices', JSON.stringify(data.devices))
+          if (data.areas) localStorage.setItem('aiot_areas', JSON.stringify(data.areas))
+          setDirty(true)
+          alert('โหลดข้อมูลสำเร็จแล้ว! อย่าลืมกด Save น้าฮะ 💾')
+        } catch (e2) {
+          alert('โค้ด JSON ไม่ถูกต้องฮะ ลองเช็คดูอีกทีน้า 🥺')
+        }
+      }
+    }
+  }
+
+  const dotStyle = MQTT_DOT_STYLE[mqttStatus] ?? MQTT_DOT_STYLE.offline
+  const dotLabel = MQTT_STATUS_LABEL[mqttStatus] ?? 'Unknown'
 
   return (
     <motion.div
@@ -235,30 +279,28 @@ export default function SettingsPage({ settings, onSave, mqttStatus = 'offline',
             </div>
           </section>
 
-          {/* 05 Share via QR */}
+          {/* 05 Share Configuration */}
           <section className="sh-sect">
             <div className="sh-sect-head">
               <div className="sh-sect-num mono">05</div>
               <div>
-                <h3>Share via QR</h3>
-                <p>สร้าง/อ่าน QR Code เพื่อย้าย config, devices หรือ skills ข้ามเครื่อง</p>
+                <h3>Share Configuration</h3>
+                <p>คัดลอกหรือวาง JSON เพื่อย้าย Settings, Devices และ Areas ข้ามเครื่อง</p>
               </div>
             </div>
-            <div className="sh-qr-actions">
-              <button className="sh-qr-btn" onClick={() => onOpenQR?.('share')}>
-                <Icon name="qr" size={16} />
-                <div className="sh-qr-btn-meta">
-                  <div className="sh-qr-btn-title">สร้าง QR</div>
-                  <div className="sh-qr-btn-sub mono">เลือกสิ่งที่จะแชร์</div>
-                </div>
-              </button>
-              <button className="sh-qr-btn" onClick={() => onOpenQR?.('scan')}>
-                <Icon name="scan" size={16} />
-                <div className="sh-qr-btn-meta">
-                  <div className="sh-qr-btn-title">สแกน QR</div>
-                  <div className="sh-qr-btn-sub mono">เปิดกล้อง · import อัตโนมัติ</div>
-                </div>
-              </button>
+            <div className="sh-grid2">
+              <div className="sh-field">
+                <label className="mono" style={{ marginBottom: 4 }}>Export Data</label>
+                <button className="sh-btn-ghost w-full" style={{ justifyContent: 'center', height: 40 }} onClick={exportData}>
+                  <Icon name="copy" size={14} /> Copy Config JSON
+                </button>
+              </div>
+              <div className="sh-field">
+                <label className="mono" style={{ marginBottom: 4 }}>Import Data</label>
+                <button className="sh-btn-ghost w-full" style={{ justifyContent: 'center', height: 40 }} onClick={importData}>
+                  <Icon name="download" size={14} /> Paste JSON
+                </button>
+              </div>
             </div>
           </section>
 
