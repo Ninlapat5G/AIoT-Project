@@ -2,10 +2,10 @@ import { useState, useCallback, useRef } from 'react'
 import { runAgent } from '../utils/agent'
 
 export function useChat({ settings, devicesRef, executeTool }) {
-  const [messages, setMessages] = useState([])
+  const [messages, setMessages]   = useState([])
   const [apiHistory, setApiHistory] = useState([])
-  const [thinking, setThinking] = useState(false)
-  const [executing, setExecuting] = useState(null)
+  const [thinking, setThinking]   = useState(false)
+  const [executing, setExecuting] = useState([])   // array — multiple tools run in parallel
 
   const abortControllerRef = useRef(null)
 
@@ -28,7 +28,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
 
     setMessages(prev => [...prev, { role: 'user', text }])
     setThinking(true)
-    setExecuting(null)
+    setExecuting([])
 
     abortControllerRef.current = new AbortController()
 
@@ -40,15 +40,22 @@ export function useChat({ settings, devicesRef, executeTool }) {
         apiHistory,
         executeTool,
         signal: abortControllerRef.current.signal,
+
         onToolCall: (name, args, round) => {
           setThinking(false)
-          setExecuting({ name, args, round })
+          setExecuting(prev => [...prev, { name, args, round }])
         },
+
         onToolResult: (name, args, result, round) => {
-          setExecuting(null)
-          setThinking(true)
           setMessages(prev => [...prev, { role: 'tool', name, args, result, round }])
+          setExecuting(prev => {
+            const next = prev.filter(e => !(e.name === name && e.round === round))
+            // Last tool finished — agent is now thinking (planner or responder)
+            if (next.length === 0) setThinking(true)
+            return next
+          })
         },
+
         onStream: chunk => {
           setThinking(false)
           setMessages(prev => {
@@ -77,6 +84,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
         { role: 'user', content: text },
         { role: 'assistant', content: reply },
       ].slice(-10))
+
     } catch (err) {
       if (err.name === 'AbortError') {
         // ✨ มักเพิ่มข้อความหยุดการทำงานให้ตรงนี้เลยฮะ
@@ -84,8 +92,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
           const last = prev[prev.length - 1]
           if (last?.role === 'ai' && last?.streaming) {
             return [...prev.slice(0, -1), { role: 'ai', text: last.text + '\n\n*— 🛑 หยุดการสร้างข้อความ —*' }]
-          } else if (last?.role === 'user' || executing) {
-            // กรณีหยุดตอนที่มันยังคิดอยู่ หรือกำลังรัน Tool
+          } else if (last?.role === 'user' || executing.length > 0) {
             return [...prev, { role: 'ai', text: '*— 🛑 ยกเลิกการประมวลผล —*' }]
           }
           return prev
@@ -100,7 +107,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
       })
     } finally {
       setThinking(false)
-      setExecuting(null)
+      setExecuting([])
     }
   }, [settings, devicesRef, apiHistory, executeTool])
 
