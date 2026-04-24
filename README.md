@@ -1,17 +1,18 @@
 # AIoT Smart Home Dashboard
 
-ระบบควบคุมบ้านอัจฉริยะ พร้อม AI Assistant ที่สั่งงานอุปกรณ์ IoT ผ่าน MQTT แบบ Real-time
+ระบบควบคุมบ้านอัจฉริยะ พร้อม AI Assistant ที่สั่งงานอุปกรณ์ IoT และคอมพิวเตอร์ปลายทางผ่าน MQTT แบบ Real-time
 สร้างด้วย React + Tailwind CSS + Framer Motion และ LLM ที่รองรับ OpenAI-compatible API
 
 ---
 
 ## คอนเซปต์
 
-โปรเจคนี้จำลองระบบ Smart Home ที่ผู้ใช้สามารถ **พูดคุยกับ AI** เป็นภาษาไทย (หรืออังกฤษ) เพื่อสั่งงานอุปกรณ์ในบ้าน
-แทนที่จะต้องกดปุ่มหรือเลื่อน Slider เอง — เพียงพิมพ์ หรือกดไมค์พูดว่า _"เปิดไฟห้องนั่งเล่น"_ หรือ _"หรี่แสงลงครึ่งนึง"_
-AI จะเข้าใจและส่งคำสั่งผ่าน MQTT ไปยังอุปกรณ์จริงโดยอัตโนมัติ
+โปรเจคนี้เชื่อม AI เข้ากับโลก IoT จริง — ผู้ใช้**พูดหรือพิมพ์**เป็นภาษาไทย (หรืออังกฤษ) เพื่อ:
 
-ทุกคนสามารถใช้งานได้ฟรี เพียงนำ API Key ของตัวเองมาใส่ใน Settings (BYOK — Bring Your Own Key)
+- **ควบคุมอุปกรณ์บ้าน** เช่น เปิดไฟ หรี่แสง ปิด AC
+- **สั่งคอมพิวเตอร์ปลายทาง** เช่น ดูไฟล์, รีสตาร์ท, รันโปรแกรม — ผ่าน MQTT → Python agent ที่รันบนเครื่องนั้น
+
+ทุกอย่าง BYOK (Bring Your Own Key) — ไม่มี backend, ไม่มี server, เก็บข้อมูลใน localStorage
 
 ---
 
@@ -21,25 +22,28 @@ AI จะเข้าใจและส่งคำสั่งผ่าน MQTT
 ผู้ใช้พิมพ์/พูด
        │
        ▼
-┌─────────────────────────────────┐
-│       Mini Agent Graph          │
-│                                 │
-│  [router node]  temp=0.1        │
-│   วิเคราะห์คำสั่ง → เลือก tool(s)│
-│       │                         │
-│       ├─ มี tool calls          │
-│       │       ▼                 │
-│  [tool_executor node]           │
-│   loop: mqtt_publish/mqtt_read  │
-│       │                         │
-│       └──────────────┐          │
-│                      ▼          │
-│  [responder node]  temp=0.7     │
-│   ตอบแบบ streaming             │
-└─────────────────────────────────┘
+┌──────────────────────────────────────┐
+│           Mini Agent Graph           │
+│                                      │
+│  [router]  temp=0.1                  │
+│   วิเคราะห์คำสั่ง → เลือก tool(s)    │
+│       │                              │
+│       ├─ มี tool calls               │
+│       │        ▼                     │
+│  [tool_executor]                     │
+│   mqtt_publish / mqtt_read           │
+│   os_command → generateOsCommand     │
+│              → MQTT publish          │
+│              → รอ output 10 วิ (opt) │
+│       │                              │
+│       └───────────────┐              │
+│                       ▼              │
+│  [responder]  temp=0.7  streaming    │
+│   ตอบเป็นภาษาคน + แสดง output       │
+└──────────────────────────────────────┘
        │
        ▼
-Device Card อัปเดต real-time (MQTT QoS 2)
+Device Cards อัปเดต real-time (MQTT QoS 2)
 ```
 
 ---
@@ -54,10 +58,10 @@ Device Card อัปเดต real-time (MQTT QoS 2)
 | IoT Protocol | MQTT over WebSocket — `mqtt.js` v5 · **QoS 2** · auto-reconnect |
 | AI / LLM | OpenAI-compatible API (ค่าเริ่มต้น: Typhoon v2 70B) |
 | Agent | Mini graph engine — router → tool_executor → responder |
-| Voice | Web Speech API (เครื่องมือของ Google บน Chrome/Edge) |
-| QR | `qrcode` (สร้าง) + `jsqr` (สแกนจากกล้อง หรือไฟล์รูปภาพ) |
-| Storage | `localStorage` (ไม่มี backend, ไม่มี server) |
+| Voice | Web Speech API (Chrome/Edge) |
+| Storage | `localStorage` — ไม่มี backend |
 | Deployment | Vercel (static site) |
+| Terminal Agent | Python 3 + paho-mqtt |
 
 ---
 
@@ -65,45 +69,39 @@ Device Card อัปเดต real-time (MQTT QoS 2)
 
 ```
 src/
-├── App.jsx                   # Root — orchestrates state, tools, QR import
+├── App.jsx                   # Root — orchestrates state, MQTT, tools
 ├── data.js                   # ค่าเริ่มต้น (devices, settings, areas, tweaks)
 ├── index.css                 # Tailwind + ระบบ theme (dark/light, oklch)
 ├── hooks/
-│   ├── useMQTT.js            # MQTT connection, publish, sensorCache, status
-│   └── useChat.js            # Chat messages, agent loop, streaming
+│   ├── useMQTT.js            # MQTT connection, publish, sensorCache, waitForMessage
+│   └── useChat.js            # Chat messages, agent loop, streaming, history limit
 ├── utils/
-│   ├── agent.js              # Mini graph engine + LLM client (streaming)
+│   ├── agent.js              # Graph engine + LLM client + generateOsCommand
 │   ├── mqttTopic.js          # normalizeBase / buildFullTopic helpers
-│   ├── qrshare.js            # QR payload: encode/decode/apply + pattern check
 │   └── storage.js            # localStorage helpers
 └── components/
     ├── ui/
-    │   ├── Icon.jsx          # SVG icons (รวม mic, qr, scan, upload, image)
+    │   ├── Icon.jsx
     │   ├── Toggle.jsx
-    │   └── Slider.jsx        # Smooth animation via useMotionValue
+    │   └── Slider.jsx
     ├── chat/
     │   ├── ChatBubble.jsx
-    │   └── ToolPill.jsx      # แสดง tool call + ผลลัพธ์
-    ├── ErrorBoundary.jsx     # React Error Boundary ครอบทุก page
+    │   └── ToolPill.jsx
+    ├── ErrorBoundary.jsx
     ├── Nav.jsx
-    ├── DeviceCard.jsx        # React.memo + topic validation
-    ├── ChatPage.jsx          # AI Chat + Voice input
-    ├── SettingsPage.jsx      # 6 sections
-    ├── QRShareModal.jsx      # สร้าง/สแกน QR + file upload + validation popup
+    ├── DeviceCard.jsx        # digital / analog / os_terminal types
+    ├── ChatPage.jsx          # AI Chat + Voice input + Stop button
+    ├── SettingsPage.jsx      # 6 sections + JSON export/import
     └── TweaksPanel.jsx       # Live theme editor
+
+terminal_agent.py             # Python MQTT agent รับคำสั่งแล้วรันบนเครื่องจริง
 ```
 
 ---
 
 ## วิธีติดตั้งและรัน
 
-### ความต้องการ
-
-- Node.js >= 18
-- API Key จาก [OpenTyphoon](https://opentyphoon.ai) หรือ OpenAI-compatible endpoint อื่น
-- เบราว์เซอร์ **Chrome / Edge** (ถ้าต้องการใช้ Voice และ QR scan)
-
-### รันในเครื่อง
+### Web App
 
 ```bash
 npm install
@@ -115,8 +113,17 @@ npm run build    # production build
 
 1. เปิดแอป → ไปที่หน้า **Settings**
 2. กรอก **API Endpoint**, **API Key**, **Model**
-3. กด **Save configuration** — ข้อมูลบันทึกใน `localStorage`
-4. ไปที่หน้า **AI Chat** แล้วลองพิมพ์/กดไมค์ เช่น _"เปิดไฟห้องนั่งเล่น"_
+3. กด **Save configuration**
+4. ไปที่หน้า **AI Chat** แล้วลองพิมพ์ เช่น _"เปิดไฟห้องนั่งเล่น"_
+
+### Terminal Agent (Python)
+
+```bash
+pip install paho-mqtt
+python terminal_agent.py
+```
+
+แก้ `CMD_TOPIC` / `OUT_TOPIC` ใน `terminal_agent.py` ให้ตรงกับ pubTopic / subTopic ของ Terminal widget
 
 ---
 
@@ -124,165 +131,103 @@ npm run build    # production build
 
 ### หน้า Devices
 
-- ดูสถานะอุปกรณ์ทั้งหมดแบบ real-time ผ่าน MQTT
-- **Digital device** — toggle เปิด/ปิด พร้อม optimistic UI (อัพเดตทันที ไม่รอ MQTT confirm)
-- **Analog device** — slider พร้อม animated readout และ smooth transition ค่า (Framer Motion)
-- กด ⚙ เพื่อแก้ไขชื่อ, ห้อง, ประเภท, max value, MQTT topic (มี validation ห้าม `#` `+`)
-- กด **+ Add Device** เพื่อเพิ่มอุปกรณ์ใหม่
-- กด **Edit** ที่ filter bar เพื่อจัดการห้อง
-- Banner แจ้งเตือนเมื่อ MQTT กำลัง reconnect หรือเกิดข้อผิดพลาด
-- Toast แจ้งเตือนเมื่อ network offline/online
+- สถานะอุปกรณ์ real-time ผ่าน MQTT
+- **Digital** — toggle เปิด/ปิด
+- **Analog** — slider + animated readout
+- **Terminal** (os_terminal) — widget สำหรับ dev ส่ง raw command ตรงไปยัง pubTopic โดยไม่ผ่าน AI
+- กด ⚙ แก้ไขชื่อ, ห้อง, ประเภท, OS, MQTT topics
+- กด **+ Add Device** / **+ Add Terminal** เพื่อเพิ่มใหม่
+- Banner แจ้งเตือนเมื่อ MQTT reconnecting / error
 
 ### หน้า AI Chat
 
-ตอบกลับแบบ **streaming** (เห็นคำตอบทีละตัวอักษร)
+ตอบกลับแบบ **streaming** — เห็นคำตอบทีละตัวอักษร
 
-- **พิมพ์** หรือ **กดไมค์** เพื่อพูด (auto-detect ภาษาจาก browser — ไทย/อังกฤษ)
-- ระหว่างฟัง → ปุ่มไมค์กระพริบสีแดงพร้อม pulse animation
-- AI ทำได้ทั้งคุยเล่น (ไม่สั่ง MQTT) และสั่งงาน (หลายคำสั่งพร้อมกันได้)
+- พิมพ์หรือกดไมค์พูด (ภาษาไทย/อังกฤษ)
+- ปุ่มหยุดระหว่าง AI กำลังคิดหรือรัน tool
+- เก็บประวัติแชท **10 ข้อความล่าสุด** เพื่อประหยัด token
 
 | ตัวอย่างคำสั่ง | ผลลัพธ์ |
 |---|---|
 | `เปิดไฟห้องนั่งเล่น` | publish `true` ไปที่ lamp |
-| `ปิดไฟทั้งหมดในครัว` | publish `false` ทุก lamp ในห้องครัว (หลาย tool calls) |
 | `หรี่แสงลงครึ่งนึง` | คำนวณ `max/2` แล้ว publish |
-| `ตอนนี้ไฟเปิดกี่ดวง` | อ่าน state จาก context แล้วตอบ (ไม่ต้อง tool) |
-| `สวัสดี วันนี้ดียังไง` | คุยเล่นปกติ — ไม่เรียก tool |
+| `ปิดไฟทั้งบ้าน` | หลาย tool calls ในคำสั่งเดียว |
+| `ดูไฟล์ใน Desktop หน่อย` | แปลงเป็น `dir` / `ls` แล้วส่งไปคอมปลายทาง รอผลกลับมาบอก |
+| `ปิดเครื่องคอมให้หน่อย` | แปลงเป็น `shutdown /s /t 0` แล้วส่ง ไม่รอ output |
 
 ### หน้า Settings
 
 | Section | รายละเอียด |
 |---|---|
-| 01 Profile | ชื่อและบทบาทที่ AI ใช้ในบทสนทนา |
+| 01 Profile | ชื่อที่ AI ใช้เรียกในบทสนทนา |
 | 02 Language Model | Endpoint · API Key · Model · System Prompt |
 | 03 Skills | เปิด/ปิด tool หรือเพิ่ม custom tool พร้อม JSON Schema |
-| 04 MQTT Broker | URL · Port · Base Topic · สถานะการเชื่อมต่อจริง |
-| 05 Share via QR | สร้าง/สแกน QR Code เพื่อย้าย config ข้ามเครื่อง |
-| 06 Data | ปุ่ม **Clear all local data** (รีเซ็ตทุกอย่างกลับ default) |
-
-### Share via QR
-
-- **สร้าง QR** — เลือกเฉพาะสิ่งที่จะแชร์ (profile, LLM config, MQTT broker, skills, theme, หรือเฉพาะ device บางตัว)
-- API Key เป็น opt-in มี popup ยืนยันก่อน เพราะแชร์ไปแล้วคนอื่นใช้เงินในบัญชี LLM ได้
-- **สแกน QR** — เปิดกล้อง หรือ **เลือกรูปภาพจากเครื่อง** ก็ได้
-- ทั้งสองช่องทางผ่านการ **validate payload ก่อนเสมอ**:
-  - ถูกต้อง → popup แสดง scope ที่จะ import → กด "Import เลย" ถึงจะดำเนินการ
-  - ไม่ถูกต้อง → popup แจ้งเหตุผล → กด "ลองใหม่" กล้องเปิดใหม่อัตโนมัติ
-- Device ID ที่ซ้ำจะถูกข้าม (skip duplicate)
-- Payload มี header `_t: "aiot-share"` เพื่อกัน QR อื่นที่ไม่เกี่ยวข้อง
-
-### MQTT
-
-- ใช้ **QoS 2** (exactly-once delivery) ทั้ง publish และ subscribe
-- เมื่อเชื่อมต่อสำเร็จ จะ subscribe `baseTopic/#` ทันที — retained message ทำให้เห็น state ปัจจุบันทันที
-- **Auto-reconnect** ทุก 5 วินาทีเมื่อ connection หลุด พร้อม banner แจ้งในหน้า Devices
-- สถานะ MQTT แสดงจริงใน Nav sidebar และ Settings (CONNECTING / ONLINE / RECONNECTING / ERROR / OFFLINE)
-
-### Tweaks Panel (ไอคอน ✦)
-
-- Dark / Light mode
-- Accent Hue (0–360°) · Chroma
-- Density (compact / comfortable)
-- Grid overlay
-
-### Storage
-
-ข้อมูลทั้งหมดเก็บใน **`localStorage`** ของเบราว์เซอร์ ไม่ผ่าน server
-
-| Key | เก็บอะไร |
-|---|---|
-| `sh_settings` | endpoint, apiKey, model, systemPrompt, profile, skills, mqtt |
-| `sh_devices` | รายการอุปกรณ์ทั้งหมด พร้อม state และ MQTT topics |
-| `sh_areas` | รายการห้องที่กำหนดเอง |
+| 04 MQTT Broker | URL · Port · Base Topic · สถานะการเชื่อมต่อ |
+| 05 Share Configuration | Copy/Paste JSON เพื่อย้าย config ข้ามเครื่อง |
+| 06 Data | ปุ่ม Clear all local data |
 
 ---
 
-## Agent ทำงานยังไง (รายละเอียด)
+## Agent ทำงานยังไง
 
-### 1. Router Node — ทำความเข้าใจคำสั่ง
+### Router Node — ตัดสินใจ
 
-เมื่อผู้ใช้ส่งข้อความเข้ามา router node จะ:
+- ได้รับ device list ทั้งหมด (JSON) + skills ที่เปิดใช้งาน
+- `temperature=0.1` เพื่อความแม่นยำ
+- คืน `tool_calls[]` หรือ `"NO_TOOL_NEEDED"` เท่านั้น — ไม่มีคำพูดภาษาคน
 
-- ส่ง **device list ทั้งหมด** (JSON.stringify) ให้ LLM — รวมทุก field: `id`, `name`, `room`, `type`, `on`/`value`, `max`, `pubTopic`, `subTopic`, `icon`
-- ส่ง **skills ที่เปิดใช้งาน** เป็น OpenAI-format tools พร้อม JSON Schema ของแต่ละ tool
-- ตั้ง `temperature=0.1` เพื่อให้การตัดสินใจแม่นยำ
+### Tool Executor Node — รันจริง
 
-LLM ตัดสินใจว่า:
-- **ต้องสั่งอุปกรณ์?** → คืน `tool_calls` (**1 ตัวหรือหลายตัวก็ได้**)
-- **คุยเฉยๆ?** → ไม่คืน tool calls
+- Loop ทุก tool call ตามลำดับ (delay 600ms ให้ UI แสดง ToolPill)
+- `mqtt_publish` — publish payload ไปยัง MQTT topic และอัพเดต device state
+- `mqtt_read` — อ่านค่าล่าสุดจาก sensorCache
+- `os_command` — เรียก `generateOsCommand` แปลงภาษาคน→ command จริง → publish → รอ output สูงสุด 10 วิ (เฉพาะ `wait_output: true`)
 
-### 2. Tool Executor Node — ทำงานจริง
+### Responder Node — ตอบผู้ใช้
 
-- Loop ทุก tool call ตามลำดับ (มี delay 600ms ให้ UI แสดง ToolPill ทีละตัว)
-- เรียก `mqtt_publish` หรือ `mqtt_read` ผ่าน MQTT broker (QoS 2)
-- เก็บผลลัพธ์แต่ละตัวเข้า `toolResults[]`
-
-### 3. Responder Node — ตอบผู้ใช้
-
-- ได้ข้อมูลครบ: system prompt, **สถานะบ้านปัจจุบันทั้งหมด**, ผลลัพธ์ของทุก tool, ประวัติแชท
-- `temperature=0.7` เพื่อให้ตอบแบบธรรมชาติ
+- ได้ข้อมูลครบ: system prompt, ชื่อ user, สถานะบ้านปัจจุบัน, ผลลัพธ์ทุก tool
+- `temperature=0.7` — ตอบแบบธรรมชาติ
 - Stream คำตอบทีละ token
 
 ---
 
-## ความยืดหยุ่นของ Agent
+## Skills (Built-in)
 
-### Agent เข้าใจอุปกรณ์ได้ครบแค่ไหน?
+| Skill | หน้าที่ | wait_output |
+|---|---|---|
+| `mqtt_publish` | publish payload ไปยัง device topic | — |
+| `mqtt_read` | อ่านค่าล่าสุดจาก sensor topic | — |
+| `os_command` | แปลงคำสั่งภาษาคน → terminal command → publish ไปคอมปลายทาง | router ตัดสินใจ |
 
-**ครบทุก field.** Router ได้รับ device list เต็มในรูปแบบ JSON ดังนั้นมัน **มองเห็นและเข้าใจ**:
+**os_command:** router กำหนด `wait_output: true` เมื่อคำสั่งคาดว่ามี output (dir, ls, cat, ipconfig...) และ `false` สำหรับ fire-and-forget (shutdown, reboot, เปิดโปรแกรม...)
 
-- **ชื่อเล่นแต่ละตัว** (`name: "Arc Floor Lamp"`) — ผู้ใช้พูดว่า "โคมลอย", "ไฟอาร์ค", "floor lamp" ก็ match ได้
-- **ห้อง** (`room: "Living Room"`) — "ห้องนั่งเล่น", "living room", "ข้างนอก" เข้าใจได้
-- **ประเภท** (`type: "digital"`/`"analog"`) — รู้ว่าอันไหน toggle อันไหน slider
-- **ค่า max** (`max: 255` หรือ `1023`) — คำนวณ "ครึ่งนึง" = 127 หรือ 511 ได้ถูกต้อง
-- **Topic จริง** (`pubTopic`) — ใช้ topic ที่ระบุไว้ ไม่สร้างเองมั่ว
+เพิ่ม custom skill ได้ที่ Settings → Section 03 — กำหนด name, description, JSON Schema ได้อิสระ
 
-ผู้ใช้ไม่ต้องเรียก device ด้วยชื่อเป๊ะๆ — พูดบอกทิศทาง/สภาพ ก็เดาได้ เช่น _"ปิดไฟบนเพดาน"_ → match `Ceiling Dimmer` ด้วย name
+---
 
-### Skills ยืดหยุ่นแค่ไหน?
+## Terminal Agent (Python)
 
-Skills system เป็น **OpenAI-compatible tool definition** สมบูรณ์:
+`terminal_agent.py` รันบนเครื่องปลายทาง รับคำสั่งผ่าน MQTT แล้วรัน command จริง
 
-- แก้ชื่อ, description, JSON Schema ได้อิสระ
-- เพิ่ม custom tool ใหม่ได้ไม่จำกัด
-- เปิด/ปิดแต่ละตัวได้
-- **Built-in tool 2 ตัว** ที่ backend จริงๆ รองรับ: `mqtt_publish`, `mqtt_read`
-- Custom tool ที่เพิ่มเข้ามา — router เรียกได้ แต่ executor จะตอบ `Unknown tool` (ต้องแก้ `executeTool` ใน `App.jsx` เพื่อ handle tool ใหม่)
-
-### สั่งงานได้หลาย MQTT ในคำสั่งเดียวมั้ย?
-
-**ได้** — เพราะ tool_calls ของ OpenAI schema เป็น array
-
-ตัวอย่างจริง:
 ```
-User: "ปิดไฟทั้งบ้าน"
-     ↓
-Router LLM scan device list → เจอ digital lamp 5 ดวง
-     ↓
-คืน tool_calls: [
-  mqtt_publish(liv-lamp/set, "false"),
-  mqtt_publish(kitchen-lamp/set, "false"),
-  mqtt_publish(bed-lamp/set, "false"),
-  ...
-]
-     ↓
-Tool executor loop publish ทีละตัว (600ms apart)
-     ↓
-Responder: "ปิดไฟทั้ง 5 ดวงให้แล้วค่า 💡"
+Web App / AI Chat
+      │  os_command
+      ▼
+MQTT Broker (HiveMQ)
+      │  CMD_TOPIC
+      ▼
+terminal_agent.py
+      ├─ cd /path   → os.chdir()         # อัพเดต working directory
+      └─ คำสั่งอื่น → subprocess.getoutput()  # รัน + capture output
+      │
+      ▼ output
+MQTT Broker
+      │  OUT_TOPIC
+      ▼
+Web App แสดงผลใน Chat
 ```
 
-**Combo command** ก็ได้:
-```
-User: "เปิดไฟห้องนอน หรี่แสงเป็น 30% แล้วปิด AC"
-     ↓
-3 tool calls ต่างประเภท (digital on, analog value, digital off)
-     ↓
-Responder สรุปผลให้ฟัง
-```
-
-**ข้อจำกัด:**
-- ทำได้ในหนึ่ง router turn เท่านั้น (ไม่ได้เป็น multi-step agent ที่วางแผนหลายรอบ)
-- ถ้าคำสั่งต้องรอผล tool ก่อนค่อยตัดสินใจ tool ถัดไป → ต้องแยกเป็นหลายข้อความ
+> Web app ใช้ WebSocket (port 8884), Python ใช้ TCP (port 1883) — same broker ทำงานร่วมกันได้
 
 ---
 
@@ -291,15 +236,7 @@ Responder สรุปผลให้ฟัง
 Broker: `wss://broker.hivemq.com:8884/mqtt` (public, ไม่ต้อง login)
 Base Topic: `Mylab/smarthome`
 
-Topic ของ device จะเป็น **suffix ต่อจาก Base Topic** เสมอ ระบบจะเชื่อมให้อัตโนมัติ
-ถ้าใส่ full path (รวม Base Topic) ในช่อง topic ของ widget ระบบจะ normalize ให้ถูกต้องเองโดยอัตโนมัติ
-
-| Device | PUB Topic (suffix) | SUB Topic (suffix) |
-|---|---|---|
-| Arc Floor Lamp | `living-room/liv-lamp/set` | `living-room/liv-lamp/state` |
-| Ceiling Dimmer | `living-room/liv-dim/set` | `living-room/liv-dim/state` |
-
-Full topic ที่ใช้จริง = `{Base Topic}/{suffix}` เช่น `Mylab/smarthome/living-room/liv-lamp/set`
+Full topic = `{Base Topic}/{suffix}` — ระบบ normalize ให้อัตโนมัติ ไม่ต้องพิมพ์ซ้ำ
 
 ---
 
@@ -308,7 +245,7 @@ Full topic ที่ใช้จริง = `{Base Topic}/{suffix}` เช่น
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/Ninlapat5G/AIoT-Project)
 
 > ต้องใช้ `wss://` (port 8884) เมื่อ deploy บน HTTPS — broker.hivemq.com รองรับอยู่แล้ว
-> Voice และ QR scan ทำงานเฉพาะบน HTTPS (Vercel ให้อัตโนมัติ) และใน Chrome/Edge
+> Voice input ทำงานเฉพาะบน HTTPS และใน Chrome/Edge
 
 ---
 
