@@ -28,7 +28,7 @@
 │       ├─ มี tool calls          │
 │       │        ▼                │
 │  [tool_executor]                │
-│   mqtt_publish / mqtt_read      │
+│   รัน skill ตาม tool calls      │
 │       │                         │
 │       └──────────────┐          │
 │                      ▼          │
@@ -69,7 +69,8 @@ src/
 │   ├── useMQTT.js            # MQTT connection, publish, sensorCache, waitForMessage
 │   └── useChat.js            # Chat messages, agent loop, streaming, history limit
 ├── utils/
-│   ├── agent.js              # Graph engine + LLM client
+│   ├── agent.js              # Graph engine + LLM client + os command generator
+│   ├── agentSkills.js        # Skill handlers (mqtt_publish, mqtt_read, os_command)
 │   ├── mqttTopic.js          # normalizeBase / buildFullTopic helpers
 │   └── storage.js            # localStorage helpers
 └── components/
@@ -158,8 +159,7 @@ npm run build    # production build
 ### Tool Executor Node — รันจริง
 
 - Loop ทุก tool call ตามลำดับ (delay 600ms ให้ UI แสดง ToolPill)
-- `mqtt_publish` — publish payload ไปยัง MQTT topic และอัพเดต device state
-- `mqtt_read` — อ่านค่าล่าสุดจาก sensorCache
+- logic แต่ละ skill อยู่ใน `agentSkills.js` แยกต่างหาก — เพิ่ม skill ใหม่ไม่ต้องแตะ App.jsx
 
 ### Responder Node — ตอบผู้ใช้
 
@@ -175,6 +175,7 @@ npm run build    # production build
 |---|---|
 | `mqtt_publish` | publish payload ไปยัง device topic |
 | `mqtt_read` | อ่านค่าล่าสุดจาก sensor topic |
+| `os_command` | แปลภาษาคนเป็น terminal command แล้วส่งไปยัง os_terminal device |
 
 เพิ่ม custom skill ได้ที่ Settings → Section 03 — กำหนด name, description, JSON Schema ได้อิสระ
 
