@@ -56,7 +56,7 @@ Device Cards อัปเดต real-time (MQTT QoS 2)
 | Styling | Tailwind CSS v3 + CSS custom properties (`oklch`) |
 | Animation | Framer Motion (spring, stagger, AnimatePresence, useMotionValue) |
 | IoT Protocol | MQTT over WebSocket — `mqtt.js` v5 · **QoS 2** · auto-reconnect |
-| AI / LLM | OpenAI-compatible API (ค่าเริ่มต้น: Typhoon v2 70B) |
+| AI / LLM | OpenAI-compatible API (ค่าเริ่มต้น: Typhoon 2.5 · 30B MoE · รองรับ tool calling) |
 | Agent | Mini graph engine — router → tool_executor → responder |
 | Voice | Web Speech API (Chrome/Edge) |
 | Storage | `localStorage` — ไม่มี backend |
