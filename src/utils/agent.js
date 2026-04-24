@@ -73,19 +73,23 @@ function createGraph({ nodes, edges, entry }) {
   }
 }
 
-// ── Agent Nodes ────────────────────────────────────────────────────────────────
-
-async function routerNode(state) {
-  const { text, settings, deviceList, signal } = state
-  const llm = createLLMClient(settings)
-
-  const tools = (settings.skills || [])
+// ── Tools Helper ───────────────────────────────────────────────────────────────
+function buildTools(settings) {
+  return (settings.skills || [])
     .filter(sk => sk.enabled)
     .map(sk => {
       let parameters = { type: 'object', properties: {} }
       try { const p = JSON.parse(sk.schema); if (p?.type === 'object') parameters = p } catch { }
       return { type: 'function', function: { name: sk.name, description: sk.description, parameters } }
     })
+}
+
+// ── Agent Nodes ────────────────────────────────────────────────────────────────
+
+async function routerNode(state) {
+  const { text, settings, deviceList, signal } = state
+  const llm = createLLMClient(settings)
+  const tools = buildTools(settings)
 
   const systemPrompt = `You are an invisible IoT Routing Agent. Select tools to control or read devices.
 RULES:
@@ -118,6 +122,44 @@ ${JSON.stringify(deviceList, null, 2)}`
   return { ...state, toolCalls: msg.tool_calls || [] }
 }
 
+async function plannerNode(state) {
+  const { text, settings, deviceList, allToolResults, toolRound, signal } = state
+  const llm = createLLMClient(settings)
+  const tools = buildTools(settings)
+
+  const systemPrompt = `You are a Reactive Planner. You have just received tool results from round ${toolRound}.
+Based on the original user request and these results, decide if further tool calls are needed.
+
+RULES:
+1. If the results are sufficient to answer the user → respond "DONE" with no tool calls.
+2. If a follow-up action is clearly needed based on the results (e.g. got weather data → now set a device) → return tool calls.
+3. Never repeat a tool call that was already made.
+4. No conversational text — only tool calls or "DONE".
+
+Original request: "${text}"
+
+Tool results so far:
+${JSON.stringify(allToolResults, null, 2)}
+
+Available devices:
+${JSON.stringify(deviceList, null, 2)}`
+
+  let data
+  try {
+    data = await llm.chat(
+      [{ role: 'system', content: systemPrompt }],
+      { tools: tools.length ? tools : undefined, tool_choice: 'auto', temperature: 0.1, max_tokens: 1024 },
+      signal
+    )
+  } catch (err) {
+    if (err.name === 'AbortError') throw err
+    throw new Error('Planner returned no response from API')
+  }
+
+  const msg = data?.choices?.[0]?.message
+  return { ...state, toolCalls: msg?.tool_calls || [] }
+}
+
 async function toolExecutorNode(state) {
   const { toolCalls, executeTool, onToolCall, onToolResult } = state
   const toolResults = []
@@ -142,18 +184,23 @@ async function toolExecutorNode(state) {
     toolResults.push({ name, args, result })
   }
 
-  return { ...state, toolResults }
+  return {
+    ...state,
+    toolResults,
+    allToolResults: [...(state.allToolResults || []), ...toolResults],
+    toolRound: (state.toolRound || 0) + 1,
+  }
 }
 
 async function responderNode(state) {
-  const { text, settings, apiHistory, toolResults = [], deviceList, onStream, signal } = state
+  const { text, settings, apiHistory, allToolResults = [], deviceList, onStream, signal } = state
   const llm = createLLMClient(settings)
 
-  const toolContext = toolResults.length
-    ? toolResults.map(t => `Tool ${t.name}: ${JSON.stringify(t.result)}`).join('\n')
+  const toolContext = allToolResults.length
+    ? allToolResults.map(t => `Tool ${t.name}: ${JSON.stringify(t.result)}`).join('\n')
     : 'None — no tools were called'
 
-  const stateSummary = toolResults.length
+  const stateSummary = allToolResults.length
     ? (deviceList || [])
       .map(d => `- [${d.room}] ${d.name} (${d.type}): ${d.type === 'digital' ? (d.on ? 'ON' : 'OFF') : d.value}`)
       .join('\n') || 'No devices registered'
@@ -172,7 +219,6 @@ ${toolContext}`
 
   let reply = ''
 
-  // 🐛 มักแก้ตรงนี้: ให้โยน Error ทุกอย่างรวมถึง AbortError ออกไปเลย ไม่ต้องอมไว้!
   await llm.stream(
     [{ role: 'system', content: systemPrompt }, ...apiHistory, { role: 'user', content: text }],
     { temperature: 0.7, max_tokens: 4096 },
@@ -189,11 +235,13 @@ const agentGraph = createGraph({
   nodes: {
     router: routerNode,
     toolExecutor: toolExecutorNode,
+    planner: plannerNode,
     responder: responderNode,
   },
   edges: {
     router: state => state.toolCalls.length > 0 ? 'toolExecutor' : 'responder',
-    toolExecutor: () => 'responder',
+    toolExecutor: () => 'planner',
+    planner: state => (state.toolCalls.length > 0 && state.toolRound < 2) ? 'toolExecutor' : 'responder',
   },
   entry: 'router',
 })
@@ -202,7 +250,13 @@ const agentGraph = createGraph({
 // params: { text, settings, deviceList, apiHistory, executeTool, onStream, onToolCall, onToolResult, signal }
 // returns: { ...state, reply }
 
-export const runAgent = params => agentGraph.run({ toolCalls: [], toolResults: [], ...params })
+export const runAgent = params => agentGraph.run({
+  toolCalls: [],
+  toolResults: [],
+  allToolResults: [],
+  toolRound: 0,
+  ...params
+})
 
 // ── OS Command Generator ───────────────────────────────────────────────────────
 // Translates a natural-language instruction into an exact terminal command.
