@@ -41,7 +41,13 @@ export default function App() {
   const [settings, setSettings] = useState(() => {
     const saved = loadSettings()
     if (!saved) return DEFAULT_SETTINGS
-    return { ...DEFAULT_SETTINGS, ...saved, mqtt: { ...DEFAULT_SETTINGS.mqtt, ...saved.mqtt } }
+    // merge skills: keep saved state, append any new default skills not yet in localStorage
+    const savedIds = new Set((saved.skills || []).map(s => s.id))
+    const mergedSkills = [
+      ...(saved.skills || []),
+      ...DEFAULT_SETTINGS.skills.filter(s => !savedIds.has(s.id)),
+    ]
+    return { ...DEFAULT_SETTINGS, ...saved, mqtt: { ...DEFAULT_SETTINGS.mqtt, ...saved.mqtt }, skills: mergedSkills }
   })
 
   const handleSaveSettings = useCallback(s => {
