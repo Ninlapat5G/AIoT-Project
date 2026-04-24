@@ -132,14 +132,20 @@ async function plannerNode(state) {
   const executedTools = allToolResults.map(r => r.name)
 
   const systemPrompt = `You are a Reactive Planner. Round ${toolRound} of tool execution just completed.
-Decide if a concrete follow-up action is required, or if enough information has been gathered.
+Your job: reason about what was just learned and decide whether a meaningful follow-up action is needed.
+
+THINK through these questions:
+- What did the results reveal that wasn't known before?
+- Does the user's original intent imply a next step that only makes sense now, after seeing these results?
+- Would skipping the follow-up leave the user's request partially fulfilled?
 
 RULES:
-1. DEFAULT TO DONE — only continue if a specific, necessary action can be directly derived from the results.
-2. If a search result contains a concrete value needed to control a device (e.g. temperature → set AC, brightness level → set dimmer) → call the appropriate device tool with that specific derived value.
-3. If results are informational only and no device action is needed → DONE.
-4. Never call any of these already-executed tools again: [${executedTools.join(', ') || 'none'}]
-5. No conversational text — only tool calls (= continue) or no tool calls (= DONE).
+1. DEFAULT TO DONE — if the results are sufficient to answer the user, stop here.
+2. Only proceed if a concrete, purposeful next action can be derived from the results — not just because a tool is available.
+3. You may call any combination of tools (device control, search, OS command, sensor read) based on your reasoning.
+4. Extract specific values from results when setting devices (e.g. derive temperature, brightness, state from data).
+5. Never call any tool already executed: [${executedTools.join(', ') || 'none'}]
+6. No conversational text — only tool calls (= continue) or no tool calls (= DONE).
 
 Original request: "${text}"
 
