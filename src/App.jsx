@@ -5,6 +5,7 @@ import { initialDevices, DEFAULT_SETTINGS, INITIAL_AREAS, INITIAL_TWEAKS } from 
 import { saveSettings, loadSettings, saveDevices, loadDevices, saveAreas, loadAreas, clearAll } from './utils/storage'
 import { normalizeBase, buildFullTopic } from './utils/mqttTopic'
 import { generateOsCommand } from './utils/agent'
+import { createExecuteTool } from './utils/tools'
 import { useMQTT } from './hooks/useMQTT'
 import { useChat } from './hooks/useChat'
 
@@ -114,77 +115,14 @@ export default function App() {
   }, [])
 
   // ── Tool executor (called by agent) ───────────────────────────────────────────
-  const executeTool = useCallback(async (name, args) => {
-    if (name === 'mqtt_publish') {
-      if (!mqttClient) return { success: false, error: 'MQTT not connected' }
-
-      const topic = args?.topic
-      const payload = args?.payload
-      const device = devicesRef.current.find(d => d.pubTopic === topic || d.pubTopic?.endsWith('/' + topic))
-      const rawTopic = device ? device.pubTopic : topic
-
-      return new Promise(resolve => {
-        const base = normalizeBase(baseTopicRef.current)
-        const fullTopic = buildFullTopic(rawTopic, base)
-
-        mqttClient.publish(fullTopic, String(payload), { qos: 2 }, err => {
-          if (err) { resolve({ success: false, error: err.message }); return }
-          if (device) {
-            setDevices(prev => prev.map(d => {
-              if (d.id !== device.id) return d
-              if (d.type === 'digital') return { ...d, on: payload === 'true' }
-              if (d.type === 'analog') return { ...d, value: parseInt(payload, 10) || 0 }
-              return d
-            }))
-          }
-          resolve({ success: true, topic: fullTopic, payload, message: 'Published.' })
-        })
-      })
-    }
-
-    if (name === 'mqtt_read') {
-      const topic = typeof args === 'string' ? args.trim() : args?.topic
-      if (!topic) return { success: false, error: 'No topic specified' }
-      const base = normalizeBase(baseTopicRef.current)
-      const fullTopic = buildFullTopic(topic, base)
-      const val = sensorCache[fullTopic]
-      if (val !== undefined) return { success: true, topic: fullTopic, value: val }
-      return { success: false, note: `No data cached for topic: ${fullTopic}` }
-    }
-
-    if (name === 'os_command') {
-      const { instruction, os, topic } = args
-      if (!mqttClient) return { success: false, error: 'MQTT not connected' }
-      if (!instruction || !os || !topic) return { success: false, error: 'Missing args: instruction, os, topic' }
-
-      let command
-      try {
-        command = await generateOsCommand({ settings, instruction, os })
-      } catch (err) {
-        return { success: false, error: err.message }
-      }
-
-      const base = normalizeBase(baseTopicRef.current)
-      const fullTopic = buildFullTopic(topic, base)
-      const device = devicesRef.current.find(
-        d => d.pubTopic === topic || buildFullTopic(d.pubTopic, base) === fullTopic
-      )
-      const outputTopic = args.wait_output && device?.subTopic ? buildFullTopic(device.subTopic, base) : null
-
-      try {
-        await new Promise((resolve, reject) =>
-          mqttClient.publish(fullTopic, command, { qos: 2 }, err => err ? reject(err) : resolve())
-        )
-      } catch (err) {
-        return { success: false, error: err.message }
-      }
-
-      const output = outputTopic ? await mqttWaitForMessage(outputTopic, 10000) : null
-      return { success: true, topic: fullTopic, command, os, ...(output != null && { output }) }
-    }
-
-    return { success: false, error: `Unknown tool: ${name}` }
-  }, [mqttClient, sensorCache, settings, mqttWaitForMessage])
+  const executeTool = useCallback(
+    createExecuteTool({
+      mqttClient, sensorCache, settings, mqttWaitForMessage,
+      devicesRef, baseTopicRef, setDevices,
+      normalizeBase, buildFullTopic, generateOsCommand,
+    }),
+    [mqttClient, sensorCache, settings, mqttWaitForMessage]
+  )
 
   // ── Raw MQTT publish (used by OsTerminalCard widget) ─────────────────────────
   const handleRawPublish = useCallback((topic, payload) => {
