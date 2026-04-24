@@ -40,14 +40,14 @@ export function useChat({ settings, devicesRef, executeTool }) {
         apiHistory,
         executeTool,
         signal: abortControllerRef.current.signal,
-        onToolCall: (name, args) => {
+        onToolCall: (name, args, round) => {
           setThinking(false)
-          setExecuting({ name, args })
+          setExecuting({ name, args, round })
         },
-        onToolResult: (name, args, result) => {
+        onToolResult: (name, args, result, round) => {
           setExecuting(null)
           setThinking(true)
-          setMessages(prev => [...prev, { role: 'tool', name, args, result }])
+          setMessages(prev => [...prev, { role: 'tool', name, args, result, round }])
         },
         onStream: chunk => {
           setThinking(false)

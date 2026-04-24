@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import Icon from '../ui/Icon'
 
-export default function ToolPill({ name, args, result, executing }) {
+export default function ToolPill({ name, args, result, round, executing }) {
   return (
     <motion.div
       className={`sh-tool${executing ? ' border-accent/60' : ''}`}
@@ -29,7 +29,7 @@ export default function ToolPill({ name, args, result, executing }) {
       <div className="sh-tool-head">
         <span className="sh-tool-badge mono">
           <Icon name="bolt" size={10} />
-          {executing ? 'EXECUTING TOOL' : 'TOOL CALL'}
+          {executing ? 'EXECUTING' : 'TOOL CALL'}{round ? ` · R${round}` : ''}
         </span>
         <span className="sh-tool-name mono">{name}</span>
         <span className="sh-tool-spark">

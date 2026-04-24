@@ -4,7 +4,7 @@ import ToolPill from './ToolPill'
 
 export default function ChatBubble({ msg }) {
   if (msg.role === 'tool') {
-    return <ToolPill name={msg.name} args={msg.args} result={msg.result} />
+    return <ToolPill name={msg.name} args={msg.args} result={msg.result} round={msg.round} />
   }
 
   const isUser = msg.role === 'user'

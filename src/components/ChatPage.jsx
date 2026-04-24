@@ -106,6 +106,7 @@ export default function ChatPage({
                 key="executing"
                 name={executing.name}
                 args={executing.args}
+                round={executing.round}
                 executing
               />
             )}

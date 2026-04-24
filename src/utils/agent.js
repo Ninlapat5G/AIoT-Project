@@ -97,9 +97,11 @@ RULES:
 2. Digital payload: exactly "true" or "false".
 3. Analog payload: number string from "0" to the device's max value (see "max" field, default 255, may be 1023).
 4. os_command: set instruction = user's exact request, os = device's "os" field, topic = device's pubTopic. Only call when an os_terminal device exists. Set wait_output: true only for commands that produce output (dir, ls, cat, pwd, ipconfig, etc.) — false for fire-and-forget (shutdown, reboot, open app, kill process, etc.).
-5. web_search: use when the user asks for real-world information, current events, news, weather, facts, definitions, prices, or anything outside the smart home device context. Write a precise, concise query — use English for broader results unless the user explicitly asks for Thai-language sources. You may combine web_search with device tools in one response (e.g. search weather → set thermostat).
-6. If no tool is needed: respond "NO_TOOL_NEEDED" with no tool calls.
-7. No conversational text — only tool calls or "NO_TOOL_NEEDED".
+5. web_search: use when the user asks for real-world information outside the device context (news, weather, prices, facts, definitions). Write a precise English query unless Thai sources are explicitly requested.
+   - If the device action VALUE depends on the search result (e.g. set AC based on weather temp) → call web_search ONLY this round; the planner will handle the device action after seeing results.
+   - Call device tools alongside web_search only if they are completely independent of the search result (e.g. "search news AND turn on the lamp").
+6. If no tool is needed: respond with no tool calls.
+7. No conversational text — only tool calls or empty response.
 
 Available devices:
 ${JSON.stringify(deviceList, null, 2)}`
@@ -127,18 +129,21 @@ async function plannerNode(state) {
   const llm = createLLMClient(settings)
   const tools = buildTools(settings)
 
-  const systemPrompt = `You are a Reactive Planner. You have just received tool results from round ${toolRound}.
-Based on the original user request and these results, decide if further tool calls are needed.
+  const executedTools = allToolResults.map(r => r.name)
+
+  const systemPrompt = `You are a Reactive Planner. Round ${toolRound} of tool execution just completed.
+Decide if a concrete follow-up action is required, or if enough information has been gathered.
 
 RULES:
-1. If the results are sufficient to answer the user → respond "DONE" with no tool calls.
-2. If a follow-up action is clearly needed based on the results (e.g. got weather data → now set a device) → return tool calls.
-3. Never repeat a tool call that was already made.
-4. No conversational text — only tool calls or "DONE".
+1. DEFAULT TO DONE — only continue if a specific, necessary action can be directly derived from the results.
+2. If a search result contains a concrete value needed to control a device (e.g. temperature → set AC, brightness level → set dimmer) → call the appropriate device tool with that specific derived value.
+3. If results are informational only and no device action is needed → DONE.
+4. Never call any of these already-executed tools again: [${executedTools.join(', ') || 'none'}]
+5. No conversational text — only tool calls (= continue) or no tool calls (= DONE).
 
 Original request: "${text}"
 
-Tool results so far:
+Results from round ${toolRound}:
 ${JSON.stringify(allToolResults, null, 2)}
 
 Available devices:
@@ -162,6 +167,7 @@ ${JSON.stringify(deviceList, null, 2)}`
 
 async function toolExecutorNode(state) {
   const { toolCalls, executeTool, onToolCall, onToolResult } = state
+  const round = (state.toolRound || 0) + 1   // 1-indexed label for UI
   const toolResults = []
 
   for (const tc of toolCalls) {
@@ -169,7 +175,7 @@ async function toolExecutorNode(state) {
     let args = {}
     try { args = JSON.parse(tc.function.arguments || '{}') } catch { args = tc.function.arguments }
 
-    onToolCall?.(name, args)
+    onToolCall?.(name, args, round)
     await new Promise(r => setTimeout(r, 600)) // หน่วงให้ UI ดูสมูท
 
     let result
@@ -180,7 +186,7 @@ async function toolExecutorNode(state) {
       result = { error: err.message || "Execution failed" }
     }
 
-    onToolResult?.(name, args, result)
+    onToolResult?.(name, args, result, round)
     toolResults.push({ name, args, result })
   }
 
