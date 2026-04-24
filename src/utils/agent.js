@@ -177,28 +177,28 @@ async function plannerNode(state) {
   const llm = createLLMClient(settings)
   const tools = buildTools(settings)
 
-  const executedTools = allToolResults.map(r => r.name)
+  // Full history: name + args + result — planner needs complete context to avoid repeating
+  const executedHistory = allToolResults.map(r => ({
+    tool:   r.name,
+    args:   r.args,
+    result: r.result,
+  }))
 
   const systemPrompt = `You are a Reactive Planner. Round ${toolRound} of tool execution just completed.
-Your job: reason about what was just learned and decide whether a meaningful follow-up action is needed.
-
-THINK through these questions:
-- What did the results reveal that wasn't known before?
-- Does the user's original intent imply a next step that only makes sense now, after seeing these results?
-- Would skipping the follow-up leave the user's request partially fulfilled?
+Decide whether a meaningful follow-up action is needed to fully satisfy the user's request.
 
 RULES:
-1. DEFAULT TO DONE — if the results are sufficient to answer the user, stop here.
-2. Only proceed if a concrete, purposeful next action can be derived from the results — not just because a tool is available.
-3. You may call any combination of tools (device control, search, OS command, sensor read) based on your reasoning.
-4. Extract specific values from results when setting devices (e.g. derive temperature, brightness, state from data).
-5. Never call any tool already executed: [${executedTools.join(', ') || 'none'}]
+1. DEFAULT TO DONE — stop here if the results are sufficient to answer the user.
+2. Only proceed if the results reveal data that is required to complete a device action the user asked for.
+3. Valid reason: a search/sensor result contains a value needed to set a device (e.g. weather temp → set AC).
+4. Invalid reasons: verifying success, re-reading something already read, confirming a state just set.
+5. Never repeat a call with the same tool + args as any entry in [Already executed] below.
 6. No conversational text — only tool calls (= continue) or no tool calls (= DONE).
 
 Original request: "${text}"
 
-Results from round ${toolRound}:
-${JSON.stringify(allToolResults, null, 2)}
+Already executed (name · args · result):
+${JSON.stringify(executedHistory, null, 2)}
 
 Available devices:
 ${JSON.stringify(deviceList, null, 2)}`
