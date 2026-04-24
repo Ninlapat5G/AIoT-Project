@@ -3,14 +3,19 @@ import subprocess
 import paho.mqtt.client as mqtt
 
 # ── Config ─────────────────────────────────────────────────────────────────────
+# ตั้ง COMPUTER_NAME ให้ตรงกับชื่อที่กรอกตอน Add Terminal ใน web app
+# topic จะ generate ให้อัตโนมัติเหมือน widget เลย
+#
 # Web app ใช้ WebSocket (wss://broker.hivemq.com:8884)
 # Python ใช้ TCP ตรงได้เลย — same broker, different transport
 
-BROKER    = "broker.hivemq.com"
-PORT      = 1883
-BASE      = "Mylab/smarthome"
-CMD_TOPIC = f"{BASE}/terminal/cmd"     # ← ต้องตรงกับ pubTopic ของ widget
-OUT_TOPIC = f"{BASE}/terminal/output"  # ← ต้องตรงกับ subTopic ของ widget
+BROKER        = "broker.hivemq.com"
+PORT          = 1883
+BASE          = "Mylab/smarthome"
+COMPUTER_NAME = "office-pc"           # ← ต้องตรงกับชื่อที่ตั้งใน Add Terminal
+
+CMD_TOPIC = f"{BASE}/{COMPUTER_NAME}/cmd"
+OUT_TOPIC = f"{BASE}/{COMPUTER_NAME}/output"
 
 # ── Handlers ───────────────────────────────────────────────────────────────────
 
@@ -41,7 +46,7 @@ def on_message(client, userdata, msg):
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
-client = mqtt.Client(client_id="aiot_terminal", protocol=mqtt.MQTTv311)
+client = mqtt.Client(client_id=f"aiot_{COMPUTER_NAME}", protocol=mqtt.MQTTv311)
 client.on_connect = on_connect
 client.on_message = on_message
 
