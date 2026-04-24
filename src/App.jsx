@@ -353,15 +353,8 @@ export default function App() {
                       }}
                     />
                     <AddTerminalTile
-                      onClick={() => {
-                        const id = 'term-' + Date.now().toString(36)
-                        setDevices(prev => [...prev, {
-                          id, name: 'Terminal', room: areas[0] || 'Living Room',
-                          type: 'os_terminal', os: 'windows', icon: 'terminal',
-                          pubTopic: `${id}/cmd`,
-                          subTopic: `${id}/output`,
-                        }])
-                      }}
+                      defaultArea={areas[0] || 'Living Room'}
+                      onCreate={device => setDevices(prev => [...prev, device])}
                     />
                   </motion.div>
                 </ErrorBoundary>
