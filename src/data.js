@@ -45,6 +45,14 @@ export const DEFAULT_SETTINGS = {
       schema:
         '{"type":"object","properties":{"topic":{"type":"string"},"payload":{"type":"string"}},"required":["topic","payload"]}',
     },
+    {
+      id: 'os_command',
+      name: 'os_command',
+      description: 'Translate a natural-language instruction into an OS terminal command and publish it via MQTT to a target computer. Use when an os_terminal device is in the device list.',
+      enabled: true,
+      schema:
+        '{"type":"object","properties":{"instruction":{"type":"string","description":"Natural language description of what to do on the remote machine"},"os":{"type":"string","enum":["windows","mac","linux"],"description":"Target operating system"},"topic":{"type":"string","description":"MQTT pubTopic of the target os_terminal device"},"wait_output":{"type":"boolean","description":"True if the command is expected to return output (e.g. dir, ls, cat). False for fire-and-forget commands (e.g. shutdown, reboot, open app)."}},"required":["instruction","os","topic","wait_output"]}',
+    },
   ],
   mqtt: {
     broker: 'wss://broker.hivemq.com:8884/mqtt',

@@ -3,13 +3,13 @@ import { AnimatePresence, motion } from 'framer-motion'
 
 import { initialDevices, DEFAULT_SETTINGS, INITIAL_AREAS, INITIAL_TWEAKS } from './data'
 import { saveSettings, loadSettings, saveDevices, loadDevices, saveAreas, loadAreas, clearAll } from './utils/storage'
-// 🗑️ มักเอา import QRShare ออกไปแล้วน้า
 import { normalizeBase, buildFullTopic } from './utils/mqttTopic'
+import { generateOsCommand } from './utils/agent'
 import { useMQTT } from './hooks/useMQTT'
 import { useChat } from './hooks/useChat'
 
 import Nav, { MobileTopbar, MobileBottomNav } from './components/Nav'
-import DeviceCard, { AddDeviceTile } from './components/DeviceCard'
+import DeviceCard, { AddDeviceTile, AddTerminalTile } from './components/DeviceCard'
 import ChatPage from './components/ChatPage'
 import SettingsPage from './components/SettingsPage'
 import TweaksPanel from './components/TweaksPanel'
@@ -87,7 +87,7 @@ export default function App() {
   }, [])
 
   // ── MQTT hook ─────────────────────────────────────────────────────────────────
-  const { client: mqttClient, status: mqttStatus, sensorCache, publish: mqttPublish } = useMQTT({
+  const { client: mqttClient, status: mqttStatus, sensorCache, publish: mqttPublish, waitForMessage: mqttWaitForMessage } = useMQTT({
     broker: settings.mqtt.broker,
     port: settings.mqtt.port, // ✨ ส่ง port เข้าไปด้วยเผื่อลืม
     baseTopic: settings.mqtt.baseTopic,
@@ -146,8 +146,47 @@ export default function App() {
       return { success: false, note: `No data cached for topic: ${fullTopic}` }
     }
 
+    if (name === 'os_command') {
+      const { instruction, os, topic } = args
+      if (!mqttClient) return { success: false, error: 'MQTT not connected' }
+      if (!instruction || !os || !topic) return { success: false, error: 'Missing args: instruction, os, topic' }
+
+      let command
+      try {
+        command = await generateOsCommand({ settings, instruction, os })
+      } catch (err) {
+        return { success: false, error: err.message }
+      }
+
+      const base = normalizeBase(baseTopicRef.current)
+      const fullTopic = buildFullTopic(topic, base)
+      const device = devicesRef.current.find(
+        d => d.pubTopic === topic || buildFullTopic(d.pubTopic, base) === fullTopic
+      )
+      const outputTopic = args.wait_output && device?.subTopic ? buildFullTopic(device.subTopic, base) : null
+
+      try {
+        await new Promise((resolve, reject) =>
+          mqttClient.publish(fullTopic, command, { qos: 2 }, err => err ? reject(err) : resolve())
+        )
+      } catch (err) {
+        return { success: false, error: err.message }
+      }
+
+      const output = outputTopic ? await mqttWaitForMessage(outputTopic, 10000) : null
+      return { success: true, topic: fullTopic, command, os, ...(output != null && { output }) }
+    }
+
     return { success: false, error: `Unknown tool: ${name}` }
-  }, [mqttClient, sensorCache])
+  }, [mqttClient, sensorCache, settings, mqttWaitForMessage])
+
+  // ── Raw MQTT publish (used by OsTerminalCard widget) ─────────────────────────
+  const handleRawPublish = useCallback((topic, payload) => {
+    if (!mqttClient || !topic) return
+    const base = normalizeBase(baseTopicRef.current)
+    const fullTopic = buildFullTopic(topic, base)
+    mqttClient.publish(fullTopic, String(payload), { qos: 2 })
+  }, [mqttClient])
 
   // ── Chat hook ─────────────────────────────────────────────────────────────────
   // ✨ มักดึง stopChat ออกมาแล้วนะฮะ!
@@ -299,6 +338,7 @@ export default function App() {
                         onUpdate={updateDevice}
                         onRemove={removeDevice}
                         areas={areas}
+                        onRawPublish={handleRawPublish}
                       />
                     ))}
                     <AddDeviceTile
@@ -309,6 +349,17 @@ export default function App() {
                           type: 'digital', on: false, icon: 'bulb',
                           pubTopic: `${id}/set`,
                           subTopic: `${id}/state`,
+                        }])
+                      }}
+                    />
+                    <AddTerminalTile
+                      onClick={() => {
+                        const id = 'term-' + Date.now().toString(36)
+                        setDevices(prev => [...prev, {
+                          id, name: 'Terminal', room: areas[0] || 'Living Room',
+                          type: 'os_terminal', os: 'windows', icon: 'terminal',
+                          pubTopic: `${id}/cmd`,
+                          subTopic: `${id}/output`,
                         }])
                       }}
                     />

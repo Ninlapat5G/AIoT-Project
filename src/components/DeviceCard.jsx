@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react'
+import { useState, useEffect, useRef, memo } from 'react'
 import { motion, useMotionValue, animate } from 'framer-motion'
 import Icon from './ui/Icon'
 import Toggle from './ui/Toggle'
@@ -78,21 +78,37 @@ const EditCard = memo(function EditCard({ device, onUpdate, onRemove, areas, onC
         <label className="sh-field">
           <span className="mono">TYPE</span>
           <div className="sh-seg flex">
-            {['digital', 'analog'].map(t => (
+            {['digital', 'analog', 'os_terminal'].map(t => (
               <button
                 key={t} type="button"
                 className={draft.type === t ? 'on' : ''}
-                onClick={() => set(
-                  t === 'analog'
-                    ? { type: t, value: draft.value ?? 128, max: draft.max ?? 255 }
-                    : { type: t, on: draft.on ?? false },
-                )}
+                onClick={() => {
+                  if (t === 'analog') set({ type: t, value: draft.value ?? 128, max: draft.max ?? 255 })
+                  else if (t === 'os_terminal') set({ type: t, os: draft.os ?? 'windows' })
+                  else set({ type: t, on: draft.on ?? false })
+                }}
               >
-                {t}
+                {t === 'os_terminal' ? 'terminal' : t}
               </button>
             ))}
           </div>
         </label>
+        {draft.type === 'os_terminal' && (
+          <label className="sh-field">
+            <span className="mono">OS</span>
+            <div className="sh-seg flex">
+              {['windows', 'mac', 'linux'].map(os => (
+                <button
+                  key={os} type="button"
+                  className={draft.os === os ? 'on' : ''}
+                  onClick={() => set({ os })}
+                >
+                  {os}
+                </button>
+              ))}
+            </div>
+          </label>
+        )}
         {draft.type === 'analog' && (
           <label className="sh-field">
             <span className="mono">MAX VALUE</span>
@@ -156,7 +172,97 @@ const EditCard = memo(function EditCard({ device, onUpdate, onRemove, areas, onC
   )
 })
 
-const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas }) {
+const OS_LABELS = { windows: 'Windows', mac: 'macOS', linux: 'Linux' }
+
+function OsTerminalCard({ device, onRawPublish, onEdit, onRemove }) {
+  const [cmd, setCmd] = useState('')
+  const [lastCmd, setLastCmd] = useState(null)
+  const inputRef = useRef(null)
+
+  const send = () => {
+    const c = cmd.trim()
+    if (!c) return
+    onRawPublish?.(device.pubTopic, c)
+    setLastCmd(c)
+    setCmd('')
+    inputRef.current?.focus()
+  }
+
+  return (
+    <motion.div
+      className="sh-card"
+      variants={cardVariants}
+      whileHover={{ y: -2, boxShadow: '0 8px 32px oklch(0 0 0 / 0.18)' }}
+      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+    >
+      <div className="sh-card-top">
+        <div className="sh-card-icon">
+          <Icon name="terminal" size={20} />
+          <span className="sh-card-status-dot" />
+        </div>
+        <div className="sh-card-meta">
+          <div className="sh-card-room mono">{device.room.toUpperCase()}</div>
+          <div className="sh-card-name">{device.name}</div>
+        </div>
+        <div className="sh-card-actions">
+          <span
+            className="mono"
+            style={{ fontSize: 9, padding: '2px 7px', borderRadius: 4, background: 'var(--ink-xdim)', color: 'var(--surface)', letterSpacing: '0.06em' }}
+          >
+            {OS_LABELS[device.os] ?? device.os}
+          </span>
+          <button className="sh-card-gear" onClick={onEdit} title="Edit">
+            <Icon name="gear" size={13} />
+          </button>
+        </div>
+      </div>
+
+      <div className="sh-card-body" style={{ padding: '4px 12px 12px' }}>
+        {lastCmd && (
+          <div
+            className="mono"
+            style={{ fontSize: 10, color: 'var(--ink-dim)', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            title={lastCmd}
+          >
+            $ {lastCmd}
+          </div>
+        )}
+        <form
+          onSubmit={e => { e.preventDefault(); send() }}
+          style={{ display: 'flex', gap: 6, alignItems: 'center' }}
+        >
+          <span className="mono" style={{ fontSize: 13, color: 'var(--accent)', flexShrink: 0, lineHeight: 1 }}>$</span>
+          <input
+            ref={inputRef}
+            value={cmd}
+            onChange={e => setCmd(e.target.value)}
+            placeholder="raw command…"
+            className="mono"
+            style={{ flex: 1, fontSize: 11, background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink)', padding: 0 }}
+          />
+          <button
+            type="submit"
+            disabled={!cmd.trim()}
+            className="sh-icon-btn"
+            title="Send"
+          >
+            <Icon name="send" size={13} />
+          </button>
+        </form>
+      </div>
+
+      {device.pubTopic && (
+        <div className="sh-card-topics">
+          <span className="sh-card-topic-chip" title={device.pubTopic}>
+            <b>PUB</b>{device.pubTopic}
+          </span>
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas, onRawPublish }) {
   const [editing, setEditing] = useState(false)
   const max = device.max ?? 255
   const isOn = device.type === 'digital' ? device.on : device.value > 0
@@ -169,6 +275,17 @@ const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas 
         onRemove={onRemove}
         areas={areas}
         onCancel={() => setEditing(false)}
+      />
+    )
+  }
+
+  if (device.type === 'os_terminal') {
+    return (
+      <OsTerminalCard
+        device={device}
+        onRawPublish={onRawPublish}
+        onEdit={() => setEditing(true)}
+        onRemove={onRemove}
       />
     )
   }
@@ -253,6 +370,24 @@ export function AddDeviceTile({ onClick }) {
         <div className="sh-add-plus"><Icon name="plus" size={22} /></div>
         <div className="sh-add-label">Add Device</div>
         <div className="sh-add-sub mono">PAIR · MQTT · ZIGBEE</div>
+      </div>
+    </motion.button>
+  )
+}
+
+export function AddTerminalTile({ onClick }) {
+  return (
+    <motion.button
+      className="sh-card sh-add"
+      onClick={onClick}
+      variants={cardVariants}
+      whileHover={{ y: -2, scale: 1.01 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+    >
+      <div className="sh-add-inner">
+        <div className="sh-add-plus"><Icon name="terminal" size={22} /></div>
+        <div className="sh-add-label">Add Terminal</div>
+        <div className="sh-add-sub mono">CMD · BASH · MQTT</div>
       </div>
     </motion.button>
   )

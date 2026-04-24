@@ -76,7 +76,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
         ...prev,
         { role: 'user', content: text },
         { role: 'assistant', content: reply },
-      ])
+      ].slice(-10))
     } catch (err) {
       if (err.name === 'AbortError') {
         // ✨ มักเพิ่มข้อความหยุดการทำงานให้ตรงนี้เลยฮะ

@@ -92,8 +92,9 @@ RULES:
 1. mqtt_publish: use the EXACT pubTopic from the device list — never shorten or invent topics.
 2. Digital payload: exactly "true" or "false".
 3. Analog payload: number string from "0" to the device's max value (see "max" field, default 255, may be 1023).
-4. If no device action needed: respond "NO_TOOL_NEEDED" with no tool calls.
-5. No conversational text — only tool calls or "NO_TOOL_NEEDED".
+4. os_command: set instruction = user's exact request, os = device's "os" field, topic = device's pubTopic. Only call when an os_terminal device exists. Set wait_output: true only for commands that produce output (dir, ls, cat, pwd, ipconfig, etc.) — false for fire-and-forget (shutdown, reboot, open app, kill process, etc.).
+5. If no device action needed: respond "NO_TOOL_NEEDED" with no tool calls.
+6. No conversational text — only tool calls or "NO_TOOL_NEEDED".
 
 Available devices:
 ${JSON.stringify(deviceList, null, 2)}`
@@ -201,3 +202,44 @@ const agentGraph = createGraph({
 // returns: { ...state, reply }
 
 export const runAgent = params => agentGraph.run({ toolCalls: [], toolResults: [], ...params })
+
+// ── OS Command Generator ───────────────────────────────────────────────────────
+// Translates a natural-language instruction into an exact terminal command.
+// Returns the raw command string, or throws if the instruction is unsafe/empty.
+
+const OS_COMMAND_SYSTEM = `You are a terminal command translator for remote machine control via MQTT.
+Convert the user's instruction into the exact terminal command for the target OS.
+
+Output rules:
+- Return ONLY the raw command string — no explanation, no markdown, no code fences, no quotes
+- Single command per response (pipelines allowed only when necessary)
+
+Safety:
+- If the instruction would destroy system files, format drives, or wipe data → respond with exactly: UNSAFE
+
+Command syntax by OS:
+- windows → Command Prompt (cmd.exe); use PowerShell only if explicitly requested
+- mac     → bash / zsh
+- linux   → POSIX sh / bash`
+
+export async function generateOsCommand({ settings, instruction, os, signal }) {
+  const llm = createLLMClient(settings)
+  let data
+  try {
+    data = await llm.chat(
+      [
+        { role: 'system', content: `${OS_COMMAND_SYSTEM}\n\nTarget OS: ${os}` },
+        { role: 'user', content: instruction },
+      ],
+      { temperature: 0, max_tokens: 256 },
+      signal
+    )
+  } catch (err) {
+    if (err.name === 'AbortError') throw err
+    throw new Error('OS command agent ไม่ตอบสนอง')
+  }
+  const cmd = data?.choices?.[0]?.message?.content?.trim() ?? ''
+  if (!cmd) throw new Error('ไม่สามารถสร้างคำสั่งได้')
+  if (cmd === 'UNSAFE') throw new Error('คำสั่งนี้ไม่ปลอดภัย — ปฏิเสธการรัน')
+  return cmd
+}

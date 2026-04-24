@@ -10,6 +10,9 @@ export function useMQTT({ broker, port, baseTopic, onMessage }) {
   const onMessageRef = useRef(onMessage)
   useEffect(() => { onMessageRef.current = onMessage }, [onMessage])
 
+  // one-shot listeners: fullTopic → Set<resolve>
+  const listenersRef = useRef(new Map())
+
   useEffect(() => {
     if (!broker) { setStatus('offline'); return }
 
@@ -46,6 +49,11 @@ export function useMQTT({ broker, port, baseTopic, onMessage }) {
         const val = message.toString()
         setSensorCache(prev => prev[topic] === val ? prev : { ...prev, [topic]: val })
         onMessageRef.current?.(topic, val)
+        const resolvers = listenersRef.current.get(topic)
+        if (resolvers?.size) {
+          resolvers.forEach(resolve => resolve(val))
+          listenersRef.current.delete(topic)
+        }
       })
     } catch {
       setStatus('error')
@@ -56,6 +64,20 @@ export function useMQTT({ broker, port, baseTopic, onMessage }) {
     }
   }, [broker, port, baseTopic])
 
+  // Resolves with the message value as soon as it arrives, or null after timeoutMs.
+  const waitForMessage = useCallback((fullTopic, timeoutMs = 10000) => {
+    return new Promise(resolve => {
+      const set = listenersRef.current.get(fullTopic) ?? new Set()
+      set.add(resolve)
+      listenersRef.current.set(fullTopic, set)
+      setTimeout(() => {
+        const s = listenersRef.current.get(fullTopic)
+        if (s) { s.delete(resolve); if (!s.size) listenersRef.current.delete(fullTopic) }
+        resolve(null)
+      }, timeoutMs)
+    })
+  }, [])
+
   const publish = useCallback((topic, payload, opts = {}) => {
     if (!client) return null
     const base = normalizeBase(baseTopic)
@@ -64,5 +86,5 @@ export function useMQTT({ broker, port, baseTopic, onMessage }) {
     return fullTopic
   }, [client, baseTopic])
 
-  return { client, status, sensorCache, publish }
+  return { client, status, sensorCache, publish, waitForMessage }
 }
