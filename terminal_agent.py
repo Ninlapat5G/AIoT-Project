@@ -10,7 +10,7 @@ import paho.mqtt.client as mqtt
 # Python ใช้ TCP ตรงได้เลย — same broker, different transport
 
 BROKER        = "broker.hivemq.com"
-PORT          = 1883
+PORT          = 8883          # TLS — encrypted
 BASE          = "Mylab/smarthome"
 COMPUTER_NAME = "office-pc"           # ← ต้องตรงกับชื่อที่ตั้งใน Add Terminal
 
@@ -50,6 +50,7 @@ client = mqtt.Client(client_id=f"aiot_{COMPUTER_NAME}", protocol=mqtt.MQTTv311)
 client.on_connect = on_connect
 client.on_message = on_message
 
-print(f"[MQTT] connecting to {BROKER}:{PORT} ...")
+print(f"[MQTT] connecting to {BROKER}:{PORT} (TLS) ...")
+client.tls_set()              # ใช้ CA bundle ของระบบ — ไม่ต้อง config เพิ่ม
 client.connect(BROKER, PORT, keepalive=60)
 client.loop_forever()
