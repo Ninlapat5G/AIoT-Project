@@ -18,15 +18,19 @@ import { runSin, extractNameFromText, testApiKey } from '../utils/onboardingAgen
 
 const STAGE_CONTEXTS = {
   greeting: `[สถานการณ์] นี่คือครั้งแรกที่ user เปิดใช้งาน SynaptaOS
-ให้ซินทักทาย แนะนำตัวเองว่าชื่อ "ซิน" เป็น AI ของระบบ SynaptaOS
-บอกสั้นๆ ว่าซินจะช่วยอะไรได้บ้าง แล้วจบด้วยการถามว่า "อยากให้เรียกว่าอะไรดีคะ?"`,
+ทักทายสั้นๆ อบอุ่น แนะนำตัวว่าชื่อ "ซิน" เป็น AI ของ SynaptaOS แล้วถามว่า "อยากให้เรียกว่าอะไรดีคะ?"
+ตอบสั้นๆ แค่ 2-3 ประโยค ห้ามอธิบายฟีเจอร์หรือ step ใดๆ ในข้อความนี้`,
 
-  awaiting_name: `[สถานการณ์] ซินถามชื่อ user ไปแล้ว กำลังรับคำตอบอยู่
-เมื่อได้ชื่อแล้ว ทักทาย user ด้วยชื่อนั้น
-จากนั้นเรียก inspect_system เพื่อดูสถานะระบบก่อน
-แล้วอธิบาย step ที่ต้องทำ: ไปตั้งค่า Typhoon API key ก่อน (สำคัญที่สุด) พร้อมลิงค์ https://playground.opentyphoon.ai/settings/api-key
-อธิบายว่า Serper API key ทำให้ AI ค้นหาเว็บได้ พร้อมลิงค์ https://serper.dev/api-keys
-บอกว่าตอนนี้ใช้ key ของระบบได้ก่อน แต่ควรใส่ key ส่วนตัวเพื่อประสบการณ์ที่ดีกว่า`,
+  awaiting_name: `[สถานการณ์] ซินถามชื่อ user ไปแล้ว ยังไม่ได้รับชื่อที่ชัดเจน
+ถ้า user พูดอะไรก็ตาม ให้ตอบตามเนื้อหาของสิ่งที่ user พูดก่อน แล้วค่อยถามชื่ออย่างเป็นธรรมชาติอีกครั้ง
+ห้ามเพิกเฉยต่อสิ่งที่ user พูด`,
+
+  got_name: `[สถานการณ์] ซินเพิ่งได้รับชื่อ user มา ระบบบันทึกชื่อไว้แล้ว
+ให้ทักทาย user ด้วยชื่อที่ได้รับอย่างอบอุ่น
+จากนั้นเรียก inspect_system เพื่อดูสถานะระบบ
+แล้วแนะนำ step การตั้งค่าสั้นๆ: ต้องใส่ Typhoon API key ก่อน (สำคัญที่สุด) พร้อมลิงค์ https://playground.opentyphoon.ai/settings/api-key
+บอกด้วยว่า Serper API key ช่วยให้ AI ค้นเว็บได้ พร้อมลิงค์ https://serper.dev/api-keys
+บอกว่าใช้ key ของระบบได้ก่อนระหว่างรอ`,
 
   setup: `[สถานการณ์] user ใส่ชื่อแล้ว อยู่ในขั้นตอน setup
 ซินช่วยตอบคำถามเกี่ยวกับการตั้งค่าระบบ
@@ -43,7 +47,7 @@ const STAGE_CONTEXTS = {
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useOnboarding({ settings, handleSaveSettings, onComplete }) {
+export function useOnboarding({ settings, handleSaveSettings, onComplete, onFarewellStart }) {
   const [completed, setCompleted] = useState(() => loadOnboarding()?.completed || false)
   const [stage, setStage] = useState(() => loadOnboarding()?.stage || 'greeting')
 
@@ -56,6 +60,8 @@ export function useOnboarding({ settings, handleSaveSettings, onComplete }) {
   const abortRef = useRef(null)
   const settingsRef = useRef(settings)
   useEffect(() => { settingsRef.current = settings }, [settings])
+  const onFarewellStartRef = useRef(onFarewellStart)
+  useEffect(() => { onFarewellStartRef.current = onFarewellStart }, [onFarewellStart])
 
   const active = !completed
 
@@ -88,6 +94,7 @@ export function useOnboarding({ settings, handleSaveSettings, onComplete }) {
   // ── Farewell + Deactivation ───────────────────────────────────────────────────
 
   const runFarewell = useCallback(async () => {
+    onFarewellStartRef.current?.()
     setThinking(true)
     if (abortRef.current) abortRef.current.abort()
     abortRef.current = new AbortController()
@@ -196,10 +203,10 @@ export function useOnboarding({ settings, handleSaveSettings, onComplete }) {
               profile: { ...currentSettings.profile, userBio: newBio, displayName: name, displayInitials: initials },
             })
           }
-          currentStage = 'setup'
+          currentStage = 'got_name'
           setStage('setup')
         }
-        // If no name extracted, stay in awaiting_name and ซิน will re-ask
+        // If no name extracted, stay in awaiting_name — context handles natural re-ask
       }
 
       const stageCtx = STAGE_CONTEXTS[currentStage] || STAGE_CONTEXTS.setup

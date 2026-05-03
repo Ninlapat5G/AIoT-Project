@@ -137,6 +137,7 @@ export default function App() {
   const onboarding = useOnboarding({
     settings,
     handleSaveSettings,
+    onFarewellStart: useCallback(() => setPage('chat'), []),
     onComplete: useCallback(() => setPage('chat'), []),
   })
 
