@@ -217,7 +217,7 @@ export default function App() {
           className="sh-main"
           style={page === 'chat' ? {
             backgroundImage: "url('/syn_icon.jpg')",
-            backgroundSize: 'cover',
+            backgroundSize: 'contain',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',
           } : undefined}
