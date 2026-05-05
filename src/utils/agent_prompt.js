@@ -8,52 +8,30 @@ function summarizeDevices(deviceList) {
       const sub = d.subTopic ? ` | subTopic: ${d.subTopic}` : ''
       if (d.type === 'analog')
         return `${d.name} (${d.room}) — analog | tool: mqtt_publish / mqtt_read | state: ${d.value}/${d.max ?? 255} | pubTopic: ${d.pubTopic}${sub}`
-      if (d.type === 'os_terminal')
-        return `${d.name} (${d.room}) — os_terminal | tool: os_command | os: ${d.os ?? 'unknown'} | pubTopic: ${d.pubTopic}${sub}`
       if (d.type === 'hub')
         return `${d.name} (${d.room}) — hub | tool: hub | pubTopic: ${d.pubTopic}`
       return `${d.name} (${d.room}) — digital | tool: mqtt_publish / mqtt_read | state: ${d.on ? 'ON' : 'OFF'} | pubTopic: ${d.pubTopic}${sub}`
-    }).join('\n') || 'No devices registered'
+    }).join('\n') || 'No active devices on dashboard'
 }
 
 export function buildContextMessage(nowStr, visibleDevices, userName) {
   return `[SYSTEM ENVIRONMENT]
   Time: ${nowStr} | User: ${userName}
 
-  [AVAILABLE DEVICES IN HOME]
+  [ACTIVE DEVICES — Knowledge Graph snapshot]
   ${summarizeDevices(visibleDevices)}
+  (เรียก query_knowledge_graph {"action":"get_context"} เพื่อดึงสถานะล่าสุด)
 
   [IRONCLAD RULES]
-  1. DEVICE AWARENESS & CONFIRMATION: If the user asks to control a device that is NOT in the [AVAILABLE DEVICES IN HOME] list, DO NOT call the tool immediately.
-    - You MUST politely inform them that the device is not registered.
-    - Ask for explicit confirmation: "Are you sure you want to send a command anyway? If yes, please provide the exact MQTT topic."
-    - ONLY IF the user explicitly confirms AND provides a topic, you may proceed to call mqtt_publish.
+  1. ACTIVE-ONLY ENFORCEMENT: ควบคุมได้เฉพาะ device ที่แสดงอยู่ข้างบน หรือที่ query_knowledge_graph ส่งคืนเท่านั้น หาก device ไม่อยู่ใน graph ให้แจ้ง user ว่าไม่มีในระบบ — ห้ามเรียก tool กับ device นอกรายการ
   2. NO HALLUCINATIONS — STRICT TOOL CALL ENFORCEMENT:
-    - You MUST actually invoke a tool (generate a tool_call block) before you can claim any action was taken.
-    - NEVER say "ฉันได้สั่ง...", "ฉันเปิด...", "ดำเนินการแล้ว", or any similar phrase unless a ToolMessage appears AFTER the most recent user message in this conversation.
-    - Past conversation history (messages before the current user message) does NOT count as proof of action.
-    - If you cannot or did not call a tool, tell the user plainly: "ฉันไม่ได้ดำเนินการ เพราะ [reason]."
-    - Thinking about calling a tool is NOT the same as calling it. A tool result must exist after the current user request.
-    - TOOL RESULT CHECK: After every tool call, you MUST read the result. If success is false OR an error field is present, report the failure to the user immediately — NEVER claim the action succeeded. A ToolMessage existing does NOT mean the action worked.
-  3. EXPLICIT ARGS: Resolve pronouns (it, this) to the exact device name.
-  4. TOOL USAGE: Each device in the list has a "tool:" field — always use exactly that tool for that device. No exceptions.
-  5. SEARCH THEN ACT (os_terminal only): ถ้า user ต้องการเปิด/ดู/ฟังสิ่งที่ยังไม่มี URL และ target device เป็น os_terminal:
-    - ขั้นที่ 1: ใช้ web_search หา URL ก่อน (เช่น ขอเปิดเพลงหรือคลิป → ค้นหาใน YouTube)
-    - ขั้นที่ 2: เมื่อได้ URL แล้ว ใช้ os_command เปิดทันที ไม่ต้องรายงาน URL หรือถามซ้ำ
-    - ห้ามหยุดแค่ส่ง URL กลับให้ user — ต้องเปิดให้เลย
-    - ถ้า web_search ใช้ไม่ได้ (ปิดอยู่ หรือ error) ห้ามเดา URL — บอก user ว่าค้นหาไม่ได้และสาเหตุ
-  6. HUB DELEGATION: hub device มี agent ของตัวเองที่ค้นหาและดำเนินการได้ — ส่ง task ตามที่ user พูดไปตรงๆ ห้าม web_search ก่อน
-  7. SETTINGS & TOOL QUERIES: ถ้า user ถามว่า tool/skill ทำงานยังไง ต้องการอะไร ใช้งานไม่ได้ทำไม หรือต้องการเปิด/ปิด skill — ใช้ manage_settings tool เสมอ ห้ามตอบจากความจำหรือเดาเอง`
-}
-
-export function buildOsCommandPrompt(os) {
-  return `You are a strict OS Command Translator.
-Target OS: ${os}
-Task: Convert the instruction into a single valid terminal command for ${os}.
-[RULES]
-1. OUTPUT ONLY THE RAW COMMAND STRING — no markdown, no backticks, no explanation.
-2. Use ${os === 'windows' ? 'Windows CMD/PowerShell' : os === 'mac' ? 'macOS bash/zsh' : 'Linux bash'} syntax ONLY.
-3. If highly destructive/malicious, output EXACTLY: UNSAFE`
+    - ต้อง invoke tool จริงๆ ก่อนจะอ้างว่าดำเนินการแล้ว
+    - ห้ามพูด "ฉันได้สั่ง...", "ฉันเปิด...", "ดำเนินการแล้ว" จนกว่าจะมี ToolMessage ปรากฏหลัง user message ปัจจุบัน
+    - ถ้า tool result มี success: false หรือ error → รายงานความล้มเหลวทันที ห้ามอ้างว่าสำเร็จ
+  3. EXPLICIT ARGS: แปลง pronoun (it, นี่, อัน) ให้เป็นชื่อ device จริงก่อนเรียก tool เสมอ
+  4. TOOL-DEVICE MATCH: แต่ละ device มี "tool:" กำกับ — ใช้ tool นั้นเท่านั้น ห้ามใช้แทนกัน
+  5. HUB DELEGATION: hub device มี agent ของตัวเองที่ค้นหาและดำเนินการได้ — ส่ง task ตามที่ user พูดไปตรงๆ สำหรับงานซับซ้อนหรืองานปลายเปิดทั้งหมด ห้าม web_search ก่อน
+  6. SETTINGS & TOOL QUERIES: ถ้า user ถามว่า tool/skill ทำงานยังไง ต้องการอะไร ใช้งานไม่ได้ทำไม หรือต้องการเปิด/ปิด skill — ใช้ manage_settings tool เสมอ ห้ามตอบจากความจำหรือเดาเอง`
 }
 
 export const SEARCH_QUERY_PROMPT = `You are a Search Query Optimizer.

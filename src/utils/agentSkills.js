@@ -2,7 +2,7 @@
 // Each handler: async (args, ctx) => result
 // ctx = { mqttClient, settings, mqttWaitForStream,
 //          devicesRef, baseTopicRef, setDevices,
-//          normalizeBase, buildFullTopic, generateOsCommand }
+//          normalizeBase, buildFullTopic }
 //
 // To add a new skill:
 //   1. Add a handler function below
@@ -10,6 +10,44 @@
 //   3. Add its definition to DEFAULT_SETTINGS.skills in data.js
 
 import { generateSearchQuery } from './agent.js'
+
+// ── Knowledge Graph Tool ───────────────────────────────────────────────────────
+
+async function queryKnowledgeGraph(args, ctx) {
+  const { settings, devicesRef } = ctx
+  const { action } = args
+
+  if (action !== 'get_context') return { success: false, error: `Unknown action: ${action}` }
+
+  const enabledSkillIds = new Set(
+    (settings.skills || []).filter(s => s.enabled).map(s => s.name)
+  )
+
+  const activeDevices = (devicesRef.current || [])
+    .filter(d => d.type !== 'os_terminal')
+    .filter(d => {
+      if (d.type === 'hub') return enabledSkillIds.has('hub')
+      return enabledSkillIds.has('mqtt_publish') || enabledSkillIds.has('mqtt_read')
+    })
+    .map(d => ({
+      name: d.name,
+      room: d.room,
+      type: d.type,
+      state: d.type === 'digital' ? (d.on ? 'ON' : 'OFF')
+           : d.type === 'analog'  ? `${d.value}/${d.max ?? 255}`
+           : null,
+      pubTopic: d.pubTopic,
+      subTopic: d.subTopic ?? null,
+      tool: d.type === 'hub' ? 'hub' : 'mqtt_publish / mqtt_read',
+    }))
+
+  return {
+    success: true,
+    active_devices: activeDevices,
+    enabled_skills: [...enabledSkillIds],
+    total: activeDevices.length,
+  }
+}
 import { runSettingsAgent } from './settingsAgent.js'
 
 const SERPER_URL = 'https://google.serper.dev/search'
@@ -21,21 +59,20 @@ async function mqttPublish(args, ctx) {
 
   const { topic, payload } = args
 
-  // os_terminal and hub devices have dedicated tools — block direct publish.
-  const reservedMatch = devicesRef.current.find(
-    d => (d.type === 'os_terminal' || d.type === 'hub') &&
+  // hub devices have a dedicated tool — block direct publish.
+  const hubMatch = devicesRef.current.find(
+    d => d.type === 'hub' &&
       (d.pubTopic === topic || d.pubTopic?.endsWith('/' + topic))
   )
-  if (reservedMatch) {
-    const toolName = reservedMatch.type === 'hub' ? 'hub' : 'os_command'
+  if (hubMatch) {
     return {
       success: false,
-      error: `"${reservedMatch.name}" is a ${reservedMatch.type} device — use the ${toolName} tool instead of mqtt_publish`,
+      error: `"${hubMatch.name}" is a hub device — use the hub tool instead of mqtt_publish`,
     }
   }
 
   const device = devicesRef.current.find(
-    d => d.type !== 'os_terminal' &&
+    d => d.type !== 'hub' &&
       (d.pubTopic === topic || d.pubTopic?.endsWith('/' + topic))
   )
 
@@ -80,9 +117,9 @@ async function mqttRead(args, ctx) {
   const topic = typeof args === 'string' ? args.trim() : args?.topic
   if (!topic) return { success: false, error: 'No topic specified' }
 
-  // os_terminal and hub devices are not readable via mqtt_read
+  // hub devices are not readable via mqtt_read
   const device = devicesRef.current.find(
-    d => d.type !== 'os_terminal' && d.type !== 'hub' && (
+    d => d.type !== 'hub' && (
       d.pubTopic === topic || d.subTopic === topic ||
       d.pubTopic?.endsWith('/' + topic) || d.subTopic?.endsWith('/' + topic)
     )
@@ -92,60 +129,6 @@ async function mqttRead(args, ctx) {
 
   const value = device.type === 'digital' ? (device.on ? 'ON' : 'OFF') : String(device.value)
   return { success: true, device: device.name, room: device.room, value }
-}
-
-async function osCommand(args, ctx) {
-  const { mqttClient, settings, devicesRef, baseTopicRef,
-    mqttWaitForStream, normalizeBase, buildFullTopic, generateOsCommand, signal } = ctx
-
-  const { instruction, os, topic, wait_output } = args
-  if (!mqttClient) return { success: false, error: 'MQTT not connected' }
-  if (!instruction || !os || !topic) return { success: false, error: 'Missing args: instruction, os, topic' }
-
-  let command
-  try {
-    command = await generateOsCommand({ settings, instruction, os })
-  } catch (err) {
-    return { success: false, error: err.message }
-  }
-
-  const base = normalizeBase(baseTopicRef.current)
-  const fullTopic = buildFullTopic(topic, base)
-  const device = devicesRef.current.find(
-    d => d.pubTopic === topic || buildFullTopic(d.pubTopic, base) === fullTopic
-  )
-  const outputTopic = wait_output && device?.subTopic
-    ? buildFullTopic(device.subTopic, base)
-    : null
-
-  const rawPub = device?.pubTopic || topic
-  const cancelTopic = rawPub ? buildFullTopic(rawPub.replace(/\/cmd$/, '/cancel'), base) : null
-  signal?.addEventListener('abort', () => {
-    if (cancelTopic) mqttClient.publish(cancelTopic, 'cancel', { qos: 1 })
-  }, { once: true })
-
-  // Register stream listener BEFORE publishing so no early chunks are missed
-  const streamPromise = outputTopic ? mqttWaitForStream(outputTopic, 10000) : null
-
-  try {
-    await new Promise((resolve, reject) =>
-      mqttClient.publish(fullTopic, command, { qos: 2 }, err => err ? reject(err) : resolve())
-    )
-  } catch (err) {
-    return { success: false, error: err.message }
-  }
-
-  if (!streamPromise) return { success: true, summary: `Command sent: ${command}` }
-
-  const { chunks, timedOut } = await streamPromise
-  const output = chunks.join('\n')
-
-  if (timedOut && chunks.length === 0) {
-    return { success: true, summary: `Command sent: ${command}\n\n⚠️ ไม่ได้รับผลลัพธ์ — terminal agent อาจออฟไลน์อยู่` }
-  }
-
-  const timeoutNote = timedOut ? '\n\n⚠️ ไม่ได้รับ (mqtt_end) — terminal agent อาจขาดการเชื่อมต่อ' : ''
-  return { success: true, summary: `Ran: ${command}\n\n${output || '(no output)'}${timeoutNote}` }
 }
 
 async function hubCommand(args, ctx) {
@@ -262,12 +245,12 @@ async function manageSettings(args, ctx) {
 // ── Registry ───────────────────────────────────────────────────────────────────
 
 const toolHandlers = {
-  mqtt_publish:    mqttPublish,
-  mqtt_read:       mqttRead,
-  os_command:      osCommand,
-  hub:             hubCommand,
-  web_search:      webSearch,
-  manage_settings: manageSettings,
+  query_knowledge_graph: queryKnowledgeGraph,
+  mqtt_publish:          mqttPublish,
+  mqtt_read:             mqttRead,
+  hub:                   hubCommand,
+  web_search:            webSearch,
+  manage_settings:       manageSettings,
 }
 
 // ── Factory ────────────────────────────────────────────────────────────────────

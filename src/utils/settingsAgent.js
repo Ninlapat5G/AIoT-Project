@@ -24,7 +24,6 @@ import { DEFAULT_API_KEY } from '../config/default_key'
 
 const SKILL_REQUIREMENTS = {
   web_search:   { needs: 'Serper API key', settingKey: 'serperApiKey', link: 'https://serper.dev/api-keys' },
-  os_command:   { needs: 'os_terminal device ในรายการอุปกรณ์ + MQTT connection' },
   hub:          { needs: 'hub device ในรายการอุปกรณ์ + MQTT connection' },
   mqtt_publish: { needs: 'MQTT connection' },
   mqtt_read:    { needs: 'MQTT connection' },
@@ -79,7 +78,7 @@ const AGENT_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          skill_name: { type: 'string', description: 'ชื่อ skill เช่น os_command, web_search' },
+          skill_name: { type: 'string', description: 'ชื่อ skill เช่น web_search, hub, mqtt_publish' },
           enabled:    { type: 'boolean', description: 'true = เปิด | false = ปิด' },
         },
         required: ['skill_name', 'enabled'],

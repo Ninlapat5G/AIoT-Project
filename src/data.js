@@ -47,14 +47,6 @@ export const DEFAULT_SETTINGS = {
         '{"type":"object","properties":{"topic":{"type":"string"},"payload":{"type":"string"}},"required":["topic","payload"]}',
     },
     {
-      id: 'os_command',
-      name: 'os_command',
-      description: 'แปลงคำสั่งภาษาธรรมชาติเป็นคำสั่ง terminal แล้วส่งผ่าน MQTT ใช้กับอุปกรณ์ประเภท os_terminal เท่านั้น ห้ามใช้กับ hub',
-      enabled: true,
-      schema:
-        '{"type":"object","properties":{"instruction":{"type":"string","description":"Natural language description of what to do on the remote machine"},"os":{"type":"string","enum":["windows","mac","linux"],"description":"Target operating system"},"topic":{"type":"string","description":"MQTT pubTopic of the target os_terminal device"},"wait_output":{"type":"boolean","description":"True if the command is expected to return output (e.g. dir, ls, cat). False for fire-and-forget commands (e.g. shutdown, reboot, open app)."}},"required":["instruction","os","topic","wait_output"]}',
-    },
-    {
       id: 'web_search',
       name: 'web_search',
       description: 'ค้นหาข้อมูลจากอินเตอร์เน็ต ใช้เมื่อผู้ใช้ขอข้อมูลภายนอกเท่านั้น เช่น ข่าว อากาศ ราคา ข้อเท็จจริง ไม่ใช้สำหรับการทักทายหรือสนทนาทั่วไป',
@@ -65,7 +57,7 @@ export const DEFAULT_SETTINGS = {
     {
       id: 'hub',
       name: 'hub',
-      description: 'ส่งคำสั่งให้ hub agent ทำงานบนเครื่องระยะไกล ใช้กับอุปกรณ์ประเภท hub เท่านั้น ห้ามใช้กับ os_terminal agent รัน ReAct loop ได้ (ค้นหาเว็บ รันหลายคำสั่ง) และส่งผลลัพธ์กลับแบบ stream',
+      description: 'ส่งคำสั่งให้ hub agent ทำงานบนเครื่องระยะไกล ใช้กับอุปกรณ์ประเภท hub เท่านั้น agent รัน ReAct loop ได้ (ค้นหาเว็บ รันหลายคำสั่ง ตัดสินใจเองได้) และส่งผลลัพธ์กลับแบบ stream',
       enabled: true,
       schema:
         '{"type":"object","properties":{"task":{"type":"string","description":"Natural language description of what to do on the remote machine"},"topic":{"type":"string","description":"MQTT pubTopic of the target hub device"}},"required":["task","topic"]}',
@@ -76,7 +68,7 @@ export const DEFAULT_SETTINGS = {
       description: 'ดูสถานะ/อธิบาย tools และ skills ของระบบ หรือเปิด/ปิด skill ตามที่ user ต้องการ ใช้เมื่อ user ถามเกี่ยวกับ tool ว่าทำงานยังไง ต้องการอะไร หรือต้องการจัดการ skill',
       enabled: true,
       schema:
-        '{"type":"object","properties":{"query":{"type":"string","description":"คำถามหรือคำสั่งเกี่ยวกับ tools/skills เช่น \'web_search ต้องการอะไร\' หรือ \'ปิด os_command\'"}},"required":["query"]}',
+        '{"type":"object","properties":{"query":{"type":"string","description":"คำถามหรือคำสั่งเกี่ยวกับ tools/skills เช่น \'web_search ต้องการอะไร\' หรือ \'ปิด hub\'"}},"required":["query"]}',
     },
   ],
   mqtt: {

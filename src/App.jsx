@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { INITIAL_TWEAKS } from './data'
 import { clearAll, saveTweaks, loadTweaks } from './utils/storage'
 import { normalizeBase, buildFullTopic } from './utils/mqttTopic'
-import { generateOsCommand } from './utils/agent'
 import { createExecuteTool } from './utils/agentSkills'
 
 import { useMQTT } from './hooks/useMQTT'
@@ -16,7 +15,7 @@ import { useOnboarding } from './hooks/useOnboarding'
 import { loadOnboarding } from './utils/storage'
 
 import Nav, { MobileTopbar, MobileBottomNav } from './components/Nav'
-import DeviceCard, { AddDeviceTile, AddTerminalTile, AddHubTile } from './components/DeviceCard'
+import DeviceCard, { AddDeviceTile, AddHubTile } from './components/DeviceCard'
 import ChatPage from './components/ChatPage'
 import SettingsPage from './components/SettingsPage'
 import TweaksPanel from './components/TweaksPanel'
@@ -97,7 +96,7 @@ export default function App() {
     createExecuteTool({
       mqttClient, sensorCache, settings, mqttWaitForMessage, mqttWaitForStream,
       devicesRef, baseTopicRef, setDevices,
-      normalizeBase, buildFullTopic, generateOsCommand,
+      normalizeBase, buildFullTopic,
       handleSaveSettings,
     }),
     [mqttClient, sensorCache, settings, mqttWaitForMessage, mqttWaitForStream, handleSaveSettings]
@@ -316,10 +315,6 @@ export default function App() {
                           subTopic: `${id}/state`,
                         }])
                       }}
-                    />
-                    <AddTerminalTile
-                      defaultArea={areas[0] || 'Living Room'}
-                      onCreate={device => setDevices(prev => [...prev, device])}
                     />
                     <AddHubTile
                       defaultArea={areas[0] || 'Living Room'}

@@ -3,7 +3,6 @@ import { ChatOpenAI } from "@langchain/openai";
 import { SystemMessage, HumanMessage, ToolMessage, AIMessage, trimMessages } from "@langchain/core/messages";
 import {
   buildContextMessage,
-  buildOsCommandPrompt,
   SEARCH_QUERY_PROMPT,
   DETECT_NAME_PROMPT,
 } from "./agent_prompt.js";
@@ -17,8 +16,27 @@ function nowString() {
   });
 }
 
+const KG_TOOL = {
+  type: "function",
+  function: {
+    name: "query_knowledge_graph",
+    description: "ดึงข้อมูล devices ที่ active และ skills ที่เปิดอยู่ในขณะนี้จาก Knowledge Graph — เรียกเพื่อรู้ว่าสามารถทำอะไรได้บ้างในสภาพแวดล้อมปัจจุบัน",
+    parameters: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["get_context"],
+          description: "'get_context' — ดึง snapshot ของ active devices + enabled skills ณ ขณะนั้น"
+        }
+      },
+      required: ["action"]
+    }
+  }
+}
+
 function buildLangChainTools(settings) {
-  return (settings.skills || [])
+  const skillTools = (settings.skills || [])
     .filter(sk => sk.enabled)
     .map(sk => ({
       type: "function",
@@ -28,6 +46,7 @@ function buildLangChainTools(settings) {
         parameters: JSON.parse(sk.schema || "{}")
       }
     }));
+  return [KG_TOOL, ...skillTools];
 }
 
 // ── 1. State Definition ──────────────────────────────────────────────────────
@@ -54,23 +73,18 @@ const AgentState = Annotation.Root({
 async function agentNode(state) {
   const { settings, deviceList, messages, signal, onStream, toolRound } = state;
 
-  // Build the set of enabled skill names so we can decide which device types
-  // are visible to the agent. A device type is hidden when every skill that
-  // can interact with it is disabled — the agent can't do anything with it anyway.
-  //
+  // Filter devices by enabled skills.
   // Mapping: device.type → skill names that grant access
-  //   digital / analog  → mqtt_publish OR mqtt_read (either one is enough to show)
-  //   os_terminal       → os_command only
-  //
+  //   digital / analog → mqtt_publish OR mqtt_read (either one is enough)
+  //   hub              → hub
   // Add new entries here whenever a new device type / skill pair is introduced.
   const enabledSkills = new Set(
     (settings.skills || []).filter(s => s.enabled).map(s => s.name)
   )
   const deviceTypeAccess = {
-    digital:     ['mqtt_publish', 'mqtt_read'],
-    analog:      ['mqtt_publish', 'mqtt_read'],
-    os_terminal:  ['os_command'],
-    hub:          ['hub'],
+    digital: ['mqtt_publish', 'mqtt_read'],
+    analog:  ['mqtt_publish', 'mqtt_read'],
+    hub:     ['hub'],
   }
   const visibleDevices = (deviceList || []).filter(d => {
     const required = deviceTypeAccess[d.type]
@@ -205,29 +219,6 @@ export const runAgent = async (params) => {
 };
 
 // ── 4. Sub-Agents ────────────────────────────────────────────────────────────
-
-export async function generateOsCommand({ settings, instruction, os, signal }) {
-  const effectiveKey = settings.apiKey || DEFAULT_API_KEY
-  const llm = new ChatOpenAI({
-    apiKey: effectiveKey,
-    configuration: { apiKey: effectiveKey, baseURL: settings.endpoint, dangerouslyAllowBrowser: true },
-    modelName: settings.model,
-    temperature: 0,
-  });
-
-  const messages = [
-    new SystemMessage(buildOsCommandPrompt(os)),
-    new HumanMessage(`Instruction: ${instruction}\nCommand:`)
-  ];
-
-  const response = await llm.invoke(messages, { signal });
-  const cmd = response.content.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-
-  if (!cmd) throw new Error('ไม่สามารถสร้างคำสั่งได้');
-  if (cmd === 'UNSAFE') throw new Error('คำสั่งนี้มีความเสี่ยงสูง — ระบบปฏิเสธการรัน');
-
-  return cmd;
-}
 
 export async function generateSearchQuery({ settings, query, signal }) {
   const effectiveKey = settings.apiKey || DEFAULT_API_KEY
