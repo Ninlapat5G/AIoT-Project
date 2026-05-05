@@ -12,15 +12,13 @@ export function useSettings() {
     const saved = loadSettings()
     if (!saved) return DEFAULT_SETTINGS
 
-    // Merge skills by name (not id) so renamed ids don't create duplicates
-    const savedNames = new Set((saved.skills || []).map(s => s.name))
+    // Merge skills: only keep skills that exist in DEFAULT_SETTINGS (removes deprecated ones like os_command)
     const defaultByName = Object.fromEntries(DEFAULT_SETTINGS.skills.map(s => [s.name, s]))
+    const savedNames = new Set((saved.skills || []).map(s => s.name))
     const mergedSkills = [
-      ...(saved.skills || []).map(s =>
-        defaultByName[s.name]
-          ? { ...defaultByName[s.name], enabled: s.enabled }
-          : s
-      ),
+      ...(saved.skills || [])
+        .filter(s => defaultByName[s.name])
+        .map(s => ({ ...defaultByName[s.name], enabled: s.enabled })),
       ...DEFAULT_SETTINGS.skills.filter(s => !savedNames.has(s.name)),
     ]
     return {
