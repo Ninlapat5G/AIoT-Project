@@ -74,11 +74,11 @@ export default function App() {
 
   const { client: mqttClient, status: mqttStatus, sensorCache, publish: mqttPublish,
     waitForMessage: mqttWaitForMessage, waitForStream: mqttWaitForStream } = useMQTT({
-    broker: mqttCfg.broker,
-    port: mqttCfg.port,
-    baseTopic: mqttCfg.baseTopic,
-    onMessage: handleMqttMessage,
-  })
+      broker: mqttCfg.broker,
+      port: mqttCfg.port,
+      baseTopic: mqttCfg.baseTopic,
+      onMessage: handleMqttMessage,
+    })
 
   // ── Areas ─────────────────────────────────────────────────────────────────────
   const { areas, setAreas, activeArea, setActiveArea, editAreas, setEditAreas, newArea, setNewArea } = useAreas()
@@ -119,7 +119,7 @@ export default function App() {
     setDevices(prev => {
       const arr = [...prev]
       const from = arr.findIndex(x => x.id === dragIdRef.current)
-      const to   = arr.findIndex(x => x.id === targetId)
+      const to = arr.findIndex(x => x.id === targetId)
       if (from < 0 || to < 0) return prev
       arr.splice(to, 0, arr.splice(from, 1)[0])
       return arr
@@ -166,28 +166,28 @@ export default function App() {
       setTimeout(() => setToast(null), type === 'error' ? 5000 : 3000)
     }
     const onOffline = () => showToast('error', 'ออฟไลน์ — ไม่สามารถควบคุมอุปกรณ์ได้')
-    const onOnline  = () => showToast('ok',    'เชื่อมต่ออินเตอร์เน็ตแล้ว')
+    const onOnline = () => showToast('ok', 'เชื่อมต่ออินเตอร์เน็ตแล้ว')
     window.addEventListener('offline', onOffline)
-    window.addEventListener('online',  onOnline)
+    window.addEventListener('online', onOnline)
     return () => {
       window.removeEventListener('offline', onOffline)
-      window.removeEventListener('online',  onOnline)
+      window.removeEventListener('online', onOnline)
     }
   }, [])
 
   const handleClearAll = useCallback(() => { clearAll(); window.location.reload() }, [])
 
   // ── Derived stats ─────────────────────────────────────────────────────────────
-  const activeCount  = devices.filter(d => d.type === 'digital' ? d.on : d.value > 0).length
+  const activeCount = devices.filter(d => d.type === 'digital' ? d.on : d.value > 0).length
   const analogDevices = devices.filter(d => d.type === 'analog')
-  const analogAvg    = analogDevices.length
+  const analogAvg = analogDevices.length
     ? Math.round(analogDevices.reduce((a, d) => a + d.value, 0) / analogDevices.length)
     : 0
-  const roomCount    = new Set(devices.map(d => d.room)).size
-  const skillCount   = (settings.skills || []).filter(s => s.enabled).length
-  const modelShort   = (settings.model || 'typhoon-v2').split('-instruct')[0]
+  const roomCount = new Set(devices.map(d => d.room)).size
+  const skillCount = (settings.skills || []).filter(s => s.enabled).length
+  const modelShort = (settings.model || 'typhoon-v2').split('-instruct')[0]
   const visibleDevices = devices.filter(d => activeArea === 'All' || d.room === activeArea)
-  const mqttUnhealthy  = mqttStatus === 'reconnecting' || mqttStatus === 'error' || mqttStatus === 'offline'
+  const mqttUnhealthy = mqttStatus === 'reconnecting' || mqttStatus === 'error' || mqttStatus === 'offline'
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -216,7 +216,7 @@ export default function App() {
         <main
           className="sh-main"
           style={page === 'chat' ? {
-            backgroundImage: "url('/bg.jpg')",
+            backgroundImage: "url('/syn_icon.jpg')",
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',
