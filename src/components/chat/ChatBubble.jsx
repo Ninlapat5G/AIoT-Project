@@ -14,7 +14,7 @@ const mdComponents = {
 }
 
 const AvatarLogo = () => (
-  <img src="/logo.jpg" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+  <img src="/syn_icon.jpg" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
 )
 
 export default function ChatBubble({ msg, assistantName = 'Assistant' }) {
@@ -64,7 +64,7 @@ export function TypingBubble({ assistantName = 'Assistant' }) {
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
     >
       <div className="sh-msg-avatar">
-        <img src="/logo.jpg" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+        <img src="/syn_icon.jpg" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
       </div>
       <div className="sh-msg-bubble">
         <div className="sh-msg-who mono">{assistantName.toUpperCase()}</div>
