@@ -165,7 +165,9 @@ async function hubCommand(args, ctx) {
     mqttClient.publish(cancelTopic, 'cancel', { qos: 1 })
   }, { once: true })
 
-  const streamPromise = outputTopic ? mqttWaitForStream(outputTopic, 60000) : null
+  const streamPromise = outputTopic
+    ? mqttWaitForStream(outputTopic, 60000, { ackMsg: '(mqtt_start)', ackTimeoutMs: 5000 })
+    : null
 
   try {
     await new Promise((resolve, reject) =>
@@ -177,12 +179,12 @@ async function hubCommand(args, ctx) {
 
   if (!streamPromise) return { success: true, summary: `Task sent to ${device.name}: ${task}` }
 
-  const { chunks, timedOut } = await streamPromise
+  const { chunks, timedOut, ackTimedOut } = await streamPromise
+
+  if (ackTimedOut)
+    return { success: false, error: `ติดต่อ '${device.name}' ไม่ได้ — hub อาจปิดเครื่องอยู่หรือเน็ตหลุด` }
+
   const output = chunks.join('\n')
-
-  if (timedOut && chunks.length === 0)
-    return { success: true, summary: `Task sent to ${device.name}\n\n⚠️ ไม่ได้รับผลลัพธ์ — hub agent อาจออฟไลน์อยู่` }
-
   const note = timedOut ? '\n\n⚠️ ไม่ได้รับ (mqtt_end) — hub agent อาจขาดการเชื่อมต่อ' : ''
   return { success: true, summary: `${output || '(no output)'}${note}` }
 }

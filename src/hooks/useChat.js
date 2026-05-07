@@ -25,9 +25,6 @@ export function useChat({ settings, devicesRef, executeTool }) {
 
     abortControllerRef.current = new AbortController()
 
-    // เก็บ tool calls ใน run นี้เพื่อ append ลง history
-    const toolsThisRun = []
-
     try {
       const { reply } = await runAgent({
         text,
@@ -46,7 +43,6 @@ export function useChat({ settings, devicesRef, executeTool }) {
         },
 
         onToolResult: (name, args, result, round) => {
-          toolsThisRun.push({ name, args })
           // เมื่อ showToolDetails === false ไม่แสดง pill ทีละตัว (จะมี round-summary chip แทน)
           if (settings.showToolDetails !== false) {
             setMessages(prev => [...prev, { role: 'tool', name, args, result, round }])
@@ -96,7 +92,6 @@ export function useChat({ settings, devicesRef, executeTool }) {
 
     } catch (err) {
       if (err.name === 'AbortError') {
-        // ✨ มักเพิ่มข้อความหยุดการทำงานให้ตรงนี้เลยฮะ
         setMessages(prev => {
           const last = prev[prev.length - 1]
           if (last?.role === 'ai' && last?.streaming) {

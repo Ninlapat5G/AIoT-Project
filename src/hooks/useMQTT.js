@@ -67,8 +67,19 @@ export function useMQTT({ broker, port, baseTopic, onMessage }) {
         if (sh) {
           if (val === '(mqtt_end)') {
             clearTimeout(sh.timer)
+            clearTimeout(sh.ackTimer)
             streamHandlersRef.current.delete(topic)
             sh.resolve({ chunks: sh.chunks, timedOut: false })
+          } else if (!sh.ackReceived) {
+            if (val === sh.ackMsg) {
+              sh.ackReceived = true
+              clearTimeout(sh.ackTimer)
+              sh.timer = setTimeout(() => {
+                streamHandlersRef.current.delete(topic)
+                sh.resolve({ chunks: sh.chunks, timedOut: true })
+              }, sh.idleTimeoutMs)
+            }
+            // message ที่ไม่ใช่ ack ก่อนได้รับ ack — ไม่รับ (ผิด protocol)
           } else {
             sh.chunks.push(val)
             clearTimeout(sh.timer)
@@ -89,16 +100,28 @@ export function useMQTT({ broker, port, baseTopic, onMessage }) {
     }
   }, [broker, port, baseTopic])
 
-  const waitForStream = useCallback((fullTopic, idleTimeoutMs = 10000) => {
+  const waitForStream = useCallback((fullTopic, idleTimeoutMs = 10000, opts = {}) => {
+    const { ackMsg, ackTimeoutMs = 5000 } = opts
     return new Promise(resolve => {
       const handler = {
         chunks: [],
         idleTimeoutMs,
         resolve,
-        timer: setTimeout(() => {
+        timer: null,
+        ackMsg:     ackMsg || null,
+        ackReceived: !ackMsg,
+        ackTimer: ackMsg
+          ? setTimeout(() => {
+              streamHandlersRef.current.delete(fullTopic)
+              resolve({ chunks: [], timedOut: false, ackTimedOut: true })
+            }, ackTimeoutMs)
+          : null,
+      }
+      if (!ackMsg) {
+        handler.timer = setTimeout(() => {
           streamHandlersRef.current.delete(fullTopic)
           resolve({ chunks: [], timedOut: true })
-        }, idleTimeoutMs),
+        }, idleTimeoutMs)
       }
       streamHandlersRef.current.set(fullTopic, handler)
     })
