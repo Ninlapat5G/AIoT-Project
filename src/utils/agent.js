@@ -165,9 +165,10 @@ async function toolNode(state) {
   const toolMessages = await Promise.all(promises);
 
   if (settings?.showToolDetails === false && onRoundSummary && collectedResults.length > 0) {
-    generateRoundSummary({ settings, tools: collectedResults, signal })
-      .then(summary => onRoundSummary(summary, currentRound))
-      .catch(() => {});
+    // await ก่อน return — chip ต้อง appear ก่อนที่ next agentNode จะเริ่ม stream
+    // ถ้า fire-and-forget (.then) จะเกิด race: round N+1 stream text ก่อน chip ปรากฏ
+    const summary = await generateRoundSummary({ settings, tools: collectedResults, signal }).catch(() => null)
+    if (summary) onRoundSummary(summary, currentRound)
   }
 
   return { messages: toolMessages, toolRound: currentRound };
