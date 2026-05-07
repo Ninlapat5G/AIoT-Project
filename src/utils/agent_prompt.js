@@ -22,21 +22,17 @@ export function buildContextMessage(nowStr, visibleDevices, userName) {
   ${summarizeDevices(visibleDevices)}
   (เรียก query_knowledge_graph {"action":"get_context"} เพื่อดึงสถานะล่าสุด)
 
-  [IRONCLAD RULES]
-  1. ACTIVE-ONLY ENFORCEMENT: ควบคุมได้เฉพาะ device ที่แสดงอยู่ข้างบน หรือที่ query_knowledge_graph ส่งคืนเท่านั้น หาก device ไม่อยู่ใน graph ให้แจ้ง user ว่าไม่มีในระบบ — ห้ามเรียก tool กับ device นอกรายการ
-  2. NO HALLUCINATIONS — STRICT TOOL CALL ENFORCEMENT:
-    - ต้อง invoke tool จริงๆ ก่อนจะอ้างว่าดำเนินการแล้ว
-    - ห้ามพูด "ฉันได้สั่ง...", "ฉันเปิด...", "ดำเนินการแล้ว" จนกว่าจะมี ToolMessage ปรากฏหลัง user message ปัจจุบัน
-    - ถ้า tool result มี success: false หรือ error → รายงานความล้มเหลวทันที ห้ามอ้างว่าสำเร็จ
-  3. EXPLICIT ARGS: แปลง pronoun (it, นี่, อัน) ให้เป็นชื่อ device จริงก่อนเรียก tool เสมอ
-  4. TOOL-DEVICE MATCH: แต่ละ device มี "tool:" กำกับ — ใช้ tool นั้นเท่านั้น ห้ามใช้แทนกัน
-  5. HUB DELEGATION: hub device มี agent ของตัวเองที่ค้นหาและดำเนินการได้ — ส่ง task ตามที่ user พูดไปตรงๆ สำหรับงานซับซ้อนหรืองานปลายเปิดทั้งหมด ห้าม web_search ก่อน
-  6. SETTINGS & TOOL QUERIES: ถ้า user ถามว่า tool/skill ทำงานยังไง ต้องการอะไร ใช้งานไม่ได้ทำไม หรือต้องการเปิด/ปิด skill — ใช้ manage_settings tool เสมอ ห้ามตอบจากความจำหรือเดาเอง
-  7. CONTEXT-FIRST — ข้อมูลต่อไปนี้มีอยู่ในระบบแล้ว ห้ามใช้ web_search เพื่อหา:
-     • วัน/เวลา/ปฏิทิน → ดู "Time:" ใน [SYSTEM ENVIRONMENT] ด้านบน หรือเรียก query_knowledge_graph
-     • สถานะอุปกรณ์ → ดู [ACTIVE DEVICES] หรือเรียก mqtt_read
-     • ข้อมูล user/ชื่อ → ดู "User:" ใน [SYSTEM ENVIRONMENT] หรือเรียก query_knowledge_graph
-     ใช้ web_search เฉพาะข้อมูล real-time ภายนอกที่ระบบไม่มี เช่น ข่าว พยากรณ์อากาศ ราคา เหตุการณ์ปัจจุบัน`
+  [วิธีตัดสินใจก่อนตอบ]
+  ดู ACTIVE DEVICES แล้วเลือก:
+  → คำสั่งควบคุม (เปิด/ปิด/ปรับ/สั่ง): call tool ให้ตรง type ก่อน แล้วรายงานจาก result เท่านั้น ห้ามบอกว่าทำแล้วถ้ายังไม่ได้ call
+  → ถามข้อมูล: ดู Time/ACTIVE DEVICES ก่อน → mqtt_read ถ้าต้องสด → web_search เฉพาะข้อมูลนอกระบบ (ข่าว อากาศ ราคา)
+  → ถามเรื่อง skill/settings: ใช้ manage_settings เท่านั้น
+
+  สิ่งที่ต้องรู้:
+  • tool ต้อง match type — digital/analog ใช้ mqtt_publish/read, hub ใช้ hub
+  • pronoun (นี่/อัน/มัน) → แปลงเป็นชื่อ device จริงก่อน call เสมอ
+  • device ไม่อยู่ใน ACTIVE DEVICES → แจ้ง user ว่าไม่มีในระบบ ห้าม call
+  • hub มี sub-agent ของตัวเอง → ส่ง task ตรงๆ ไม่ต้อง web_search ก่อน`
 }
 
 export const ROUND_SUMMARY_PROMPT = `คุณสรุปผลการทำงานของ tools ทั้งหมดในรอบนี้เป็นภาษาไทยธรรมชาติ 1 ประโยคสั้นๆ

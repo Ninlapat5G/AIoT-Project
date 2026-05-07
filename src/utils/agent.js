@@ -201,7 +201,7 @@ export const runAgent = async (params) => {
   const rawMessages = (params.apiHistory || []).map(m =>
     m.role === 'user'
       ? new HumanMessage(m.content)
-      : new AIMessage(`[Prior turn] ${m.content}`)
+      : new AIMessage(m.content)
   );
   rawMessages.push(new HumanMessage(params.text));
 

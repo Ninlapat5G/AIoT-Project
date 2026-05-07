@@ -88,14 +88,10 @@ export function useChat({ settings, devicesRef, executeTool }) {
         return prev
       })
 
-      const toolLog = toolsThisRun.length > 0
-        ? '\n[system: used ' + toolsThisRun.map(t => t.name).join(', ') + ']'
-        : ''
-
       setApiHistory(prev => [
         ...prev,
         { role: 'user', content: text },
-        { role: 'assistant', content: reply + toolLog },
+        { role: 'assistant', content: reply },
       ].slice(-30))
 
     } catch (err) {
