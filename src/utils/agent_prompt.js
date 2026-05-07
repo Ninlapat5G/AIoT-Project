@@ -35,9 +35,11 @@ export function buildContextMessage(nowStr, visibleDevices, userName) {
   • hub มี sub-agent ของตัวเอง → ส่ง task ตรงๆ ไม่ต้อง web_search ก่อน`
 }
 
-export const ROUND_SUMMARY_PROMPT = `คุณสรุปผลการทำงานของ tools ทั้งหมดในรอบนี้เป็นภาษาไทยธรรมชาติ 1 ประโยคสั้นๆ
-ถ้ามีหลาย action ให้รวมเป็นประโยคเดียว เช่น "เปิดไฟทั้ง 3 ดวงในบ้าน" หรือ "ค้นหาสภาพอากาศและปิดแอร์"
-ตอบเฉพาะประโยคเดียว ไม่ต้องมีคำนำหน้า ไม่ต้องอธิบายเพิ่มเติม`
+export const ROUND_SUMMARY_PROMPT = `สรุปผลการทำงานของ tools ในรอบนี้เป็นภาษาไทย 1 ประโยค โดยดูจาก result จริงที่ได้รับ
+- ถ้า success: true → สรุปว่าทำอะไรสำเร็จ เช่น "ปิดไฟหน้าบ้านเรียบร้อยแล้ว"
+- ถ้า success: false หรือมี error → ระบุว่าล้มเหลว เช่น "ปิดไฟหน้าบ้านไม่สำเร็จ (MQTT ไม่ได้เชื่อมต่อ)"
+- ถ้ามีหลาย tool ให้รวมเป็นประโยคเดียว และระบุถ้ามีบางอันล้มเหลว
+ตอบเฉพาะประโยคเดียว ไม่ต้องมีคำนำหน้า`
 
 export const SEARCH_QUERY_PROMPT = `You are a Search Query Optimizer.
 Task: Clean and optimize the provided text for a web search engine.
