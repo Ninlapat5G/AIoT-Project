@@ -22,28 +22,26 @@ export function buildContextMessage(nowStr, visibleDevices, userName) {
   ${summarizeDevices(visibleDevices)}
   (เรียก query_knowledge_graph {"action":"get_context"} เพื่อดึงสถานะล่าสุด)
 
-  [วิธีตัดสินใจก่อนตอบ]
-  ดู ACTIVE DEVICES แล้วเลือก:
-  → คำสั่งควบคุม (เปิด/ปิด/ปรับ/สั่ง): call tool → รับ result → ตรวจ success/fail → ค่อยตอบตาม result จริง
-  → ถามข้อมูล: ดู Time/ACTIVE DEVICES ก่อน → mqtt_read ถ้าต้องสด → web_search เฉพาะข้อมูลนอกระบบ
-  → ถามเรื่อง skill/settings: ใช้ manage_settings เท่านั้น
-
-  Verification gate — ก่อนบอก user ว่าดำเนินการสำเร็จ ตรวจสอบ:
-  • มี tool result ใน context ของ turn นี้ไหม? ถ้าไม่มี → call tool ก่อน
-  • <tool_record> ใน history คือบันทึกระบบของ turn ก่อนๆ ห้าม output ออกมา ใช้ได้แค่เพื่อ verify ว่าเคยทำอะไรไป
-
-  สิ่งที่ต้องรู้:
-  • tool ต้อง match type — digital/analog ใช้ mqtt_publish/read, hub ใช้ hub
-  • pronoun (นี่/อัน/มัน) → แปลงเป็นชื่อ device จริงก่อน call เสมอ
-  • device ไม่อยู่ใน ACTIVE DEVICES → แจ้ง user ว่าไม่มีในระบบ ห้าม call
-  • hub มี sub-agent → ส่ง task ตรงๆ ไม่ต้อง web_search ก่อน`
+  [IRONCLAD RULES]
+  1. ACTIVE-ONLY ENFORCEMENT: ควบคุมได้เฉพาะ device ที่แสดงอยู่ข้างบน หรือที่ query_knowledge_graph ส่งคืนเท่านั้น หาก device ไม่อยู่ใน graph ให้แจ้ง user ว่าไม่มีในระบบ — ห้ามเรียก tool กับ device นอกรายการ
+  2. NO HALLUCINATIONS — STRICT TOOL CALL ENFORCEMENT:
+    - ต้อง invoke tool จริงๆ ก่อนจะอ้างว่าดำเนินการแล้ว
+    - ห้ามพูด "ฉันได้สั่ง...", "ฉันเปิด...", "ดำเนินการแล้ว" จนกว่าจะมี ToolMessage ปรากฏหลัง user message ปัจจุบัน
+    - ถ้า tool result มี success: false หรือ error → รายงานความล้มเหลวทันที ห้ามอ้างว่าสำเร็จ
+  3. EXPLICIT ARGS: แปลง pronoun (it, นี่, อัน) ให้เป็นชื่อ device จริงก่อนเรียก tool เสมอ
+  4. TOOL-DEVICE MATCH: แต่ละ device มี "tool:" กำกับ — ใช้ tool นั้นเท่านั้น ห้ามใช้แทนกัน
+  5. HUB DELEGATION: hub device มี agent ของตัวเองที่ค้นหาและดำเนินการได้ — ส่ง task ตามที่ user พูดไปตรงๆ สำหรับงานซับซ้อนหรืองานปลายเปิดทั้งหมด ห้าม web_search ก่อน
+  6. SETTINGS & TOOL QUERIES: ถ้า user ถามว่า tool/skill ทำงานยังไง ต้องการอะไร ใช้งานไม่ได้ทำไม หรือต้องการเปิด/ปิด skill — ใช้ manage_settings tool เสมอ ห้ามตอบจากความจำหรือเดาเอง
+  7. CONTEXT-FIRST — ข้อมูลต่อไปนี้มีอยู่ในระบบแล้ว ห้ามใช้ web_search เพื่อหา:
+     • วัน/เวลา/ปฏิทิน → ดู "Time:" ใน [SYSTEM ENVIRONMENT] ด้านบน หรือเรียก query_knowledge_graph
+     • สถานะอุปกรณ์ → ดู [ACTIVE DEVICES] หรือเรียก mqtt_read
+     • ข้อมูล user/ชื่อ → ดู "User:" ใน [SYSTEM ENVIRONMENT] หรือเรียก query_knowledge_graph
+     ใช้ web_search เฉพาะข้อมูล real-time ภายนอกที่ระบบไม่มี เช่น ข่าว พยากรณ์อากาศ ราคา เหตุการณ์ปัจจุบัน`
 }
 
-export const ROUND_SUMMARY_PROMPT = `สรุปผลการทำงานของ tools ในรอบนี้เป็นภาษาไทย 1 ประโยค โดยดูจาก result จริงที่ได้รับ
-- ถ้า success: true → สรุปว่าทำอะไรสำเร็จ เช่น "ปิดไฟหน้าบ้านเรียบร้อยแล้ว"
-- ถ้า success: false หรือมี error → ระบุว่าล้มเหลว เช่น "ปิดไฟหน้าบ้านไม่สำเร็จ (MQTT ไม่ได้เชื่อมต่อ)"
-- ถ้ามีหลาย tool ให้รวมเป็นประโยคเดียว และระบุถ้ามีบางอันล้มเหลว
-ตอบเฉพาะประโยคเดียว ไม่ต้องมีคำนำหน้า`
+export const ROUND_SUMMARY_PROMPT = `คุณสรุปผลการทำงานของ tools ทั้งหมดในรอบนี้เป็นภาษาไทยธรรมชาติ 1 ประโยคสั้นๆ
+ถ้ามีหลาย action ให้รวมเป็นประโยคเดียว เช่น "เปิดไฟทั้ง 3 ดวงในบ้าน" หรือ "ค้นหาสภาพอากาศและปิดแอร์"
+ตอบเฉพาะประโยคเดียว ไม่ต้องมีคำนำหน้า ไม่ต้องอธิบายเพิ่มเติม`
 
 export const SEARCH_QUERY_PROMPT = `You are a Search Query Optimizer.
 Task: Clean and optimize the provided text for a web search engine.

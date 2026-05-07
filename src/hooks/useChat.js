@@ -46,7 +46,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
         },
 
         onToolResult: (name, args, result, round) => {
-          toolsThisRun.push({ name, args, result })
+          toolsThisRun.push({ name, args })
           // เมื่อ showToolDetails === false ไม่แสดง pill ทีละตัว (จะมี round-summary chip แทน)
           if (settings.showToolDetails !== false) {
             setMessages(prev => [...prev, { role: 'tool', name, args, result, round }])
@@ -91,7 +91,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
       setApiHistory(prev => [
         ...prev,
         { role: 'user', content: text },
-        { role: 'assistant', content: reply, toolCalls: toolsThisRun },
+        { role: 'assistant', content: reply },
       ].slice(-30))
 
     } catch (err) {

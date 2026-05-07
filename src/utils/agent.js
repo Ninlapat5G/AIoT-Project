@@ -198,16 +198,11 @@ const workflow = new StateGraph(AgentState)
 const compiledGraph = workflow.compile();
 
 export const runAgent = async (params) => {
-  const rawMessages = (params.apiHistory || []).map(m => {
-    if (m.role === 'user') return new HumanMessage(m.content)
-    // แนบ tool evidence เป็น metadata — AI อ่านได้เพื่อ verify แต่ห้าม output ออกมา
-    const toolEvidence = m.toolCalls?.length
-      ? '\n<tool_record>' + m.toolCalls.map(t =>
-          `${t.name}→${t.result?.success === false ? 'FAIL:' + (t.result.error || 'error') : 'OK'}`
-        ).join(',') + '</tool_record>'
-      : ''
-    return new AIMessage(m.content + toolEvidence)
-  });
+  const rawMessages = (params.apiHistory || []).map(m =>
+    m.role === 'user'
+      ? new HumanMessage(m.content)
+      : new AIMessage(m.content)
+  );
   rawMessages.push(new HumanMessage(params.text));
 
   // Budget: 128K context − ~3,750 overhead − 1.5× Thai underestimate factor → safe at 20K
