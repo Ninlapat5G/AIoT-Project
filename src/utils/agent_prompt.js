@@ -24,15 +24,19 @@ export function buildContextMessage(nowStr, visibleDevices, userName) {
 
   [วิธีตัดสินใจก่อนตอบ]
   ดู ACTIVE DEVICES แล้วเลือก:
-  → คำสั่งควบคุม (เปิด/ปิด/ปรับ/สั่ง): call tool ให้ตรง type ก่อน แล้วรายงานจาก result เท่านั้น ห้ามบอกว่าทำแล้วถ้ายังไม่ได้ call
-  → ถามข้อมูล: ดู Time/ACTIVE DEVICES ก่อน → mqtt_read ถ้าต้องสด → web_search เฉพาะข้อมูลนอกระบบ (ข่าว อากาศ ราคา)
+  → คำสั่งควบคุม (เปิด/ปิด/ปรับ/สั่ง): call tool → รับ result → ตรวจ success/fail → ค่อยตอบตาม result จริง
+  → ถามข้อมูล: ดู Time/ACTIVE DEVICES ก่อน → mqtt_read ถ้าต้องสด → web_search เฉพาะข้อมูลนอกระบบ
   → ถามเรื่อง skill/settings: ใช้ manage_settings เท่านั้น
+
+  Verification gate — ก่อนบอก user ว่าดำเนินการสำเร็จ ตรวจสอบ:
+  • มี tool result ใน context ของ turn นี้ไหม? ถ้าไม่มี → call tool ก่อน
+  • <tool_record> ใน history คือบันทึกระบบของ turn ก่อนๆ ห้าม output ออกมา ใช้ได้แค่เพื่อ verify ว่าเคยทำอะไรไป
 
   สิ่งที่ต้องรู้:
   • tool ต้อง match type — digital/analog ใช้ mqtt_publish/read, hub ใช้ hub
   • pronoun (นี่/อัน/มัน) → แปลงเป็นชื่อ device จริงก่อน call เสมอ
   • device ไม่อยู่ใน ACTIVE DEVICES → แจ้ง user ว่าไม่มีในระบบ ห้าม call
-  • hub มี sub-agent ของตัวเอง → ส่ง task ตรงๆ ไม่ต้อง web_search ก่อน`
+  • hub มี sub-agent → ส่ง task ตรงๆ ไม่ต้อง web_search ก่อน`
 }
 
 export const ROUND_SUMMARY_PROMPT = `สรุปผลการทำงานของ tools ในรอบนี้เป็นภาษาไทย 1 ประโยค โดยดูจาก result จริงที่ได้รับ
