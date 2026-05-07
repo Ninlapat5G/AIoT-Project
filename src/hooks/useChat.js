@@ -40,13 +40,9 @@ export function useChat({ settings, devicesRef, executeTool }) {
         onToolCall: (name, args, round) => {
           setThinking(false)
           setExecuting(prev => [...prev, { name, args, round }])
-          // Discard pre-tool streaming text (intermediate reasoning before tool calls)
-          // so it doesn't appear as a completed message before the round-summary chip
-          setMessages(prev => {
-            const last = prev[prev.length - 1]
-            if (last?.role === 'ai' && last?.streaming) return prev.slice(0, -1)
-            return prev
-          })
+          // Remove ALL streaming AI messages — pre-tool reasoning text must not appear
+          // as completed responses (fires for every tool call, safe to run multiple times)
+          setMessages(prev => prev.filter(m => !(m.role === 'ai' && m.streaming)))
         },
 
         onToolResult: (name, args, result, round) => {
@@ -63,7 +59,10 @@ export function useChat({ settings, devicesRef, executeTool }) {
         },
 
         onRoundSummary: (summary, round) => {
-          setMessages(prev => [...prev, { role: 'round-summary', summary, round }])
+          setMessages(prev => {
+            const clean = prev.filter(m => !(m.role === 'ai' && m.streaming))
+            return [...clean, { role: 'round-summary', summary, round }]
+          })
         },
 
         onStream: chunk => {
