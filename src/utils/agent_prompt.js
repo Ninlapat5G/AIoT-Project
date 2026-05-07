@@ -31,8 +31,17 @@ export function buildContextMessage(nowStr, visibleDevices, userName) {
   3. EXPLICIT ARGS: แปลง pronoun (it, นี่, อัน) ให้เป็นชื่อ device จริงก่อนเรียก tool เสมอ
   4. TOOL-DEVICE MATCH: แต่ละ device มี "tool:" กำกับ — ใช้ tool นั้นเท่านั้น ห้ามใช้แทนกัน
   5. HUB DELEGATION: hub device มี agent ของตัวเองที่ค้นหาและดำเนินการได้ — ส่ง task ตามที่ user พูดไปตรงๆ สำหรับงานซับซ้อนหรืองานปลายเปิดทั้งหมด ห้าม web_search ก่อน
-  6. SETTINGS & TOOL QUERIES: ถ้า user ถามว่า tool/skill ทำงานยังไง ต้องการอะไร ใช้งานไม่ได้ทำไม หรือต้องการเปิด/ปิด skill — ใช้ manage_settings tool เสมอ ห้ามตอบจากความจำหรือเดาเอง`
+  6. SETTINGS & TOOL QUERIES: ถ้า user ถามว่า tool/skill ทำงานยังไง ต้องการอะไร ใช้งานไม่ได้ทำไม หรือต้องการเปิด/ปิด skill — ใช้ manage_settings tool เสมอ ห้ามตอบจากความจำหรือเดาเอง
+  7. CONTEXT-FIRST — ข้อมูลต่อไปนี้มีอยู่ในระบบแล้ว ห้ามใช้ web_search เพื่อหา:
+     • วัน/เวลา/ปฏิทิน → ดู "Time:" ใน [SYSTEM ENVIRONMENT] ด้านบน หรือเรียก query_knowledge_graph
+     • สถานะอุปกรณ์ → ดู [ACTIVE DEVICES] หรือเรียก mqtt_read
+     • ข้อมูล user/ชื่อ → ดู "User:" ใน [SYSTEM ENVIRONMENT] หรือเรียก query_knowledge_graph
+     ใช้ web_search เฉพาะข้อมูล real-time ภายนอกที่ระบบไม่มี เช่น ข่าว พยากรณ์อากาศ ราคา เหตุการณ์ปัจจุบัน`
 }
+
+export const ROUND_SUMMARY_PROMPT = `คุณสรุปผลการทำงานของ tools ทั้งหมดในรอบนี้เป็นภาษาไทยธรรมชาติ 1 ประโยคสั้นๆ
+ถ้ามีหลาย action ให้รวมเป็นประโยคเดียว เช่น "เปิดไฟทั้ง 3 ดวงในบ้าน" หรือ "ค้นหาสภาพอากาศและปิดแอร์"
+ตอบเฉพาะประโยคเดียว ไม่ต้องมีคำนำหน้า ไม่ต้องอธิบายเพิ่มเติม`
 
 export const SEARCH_QUERY_PROMPT = `You are a Search Query Optimizer.
 Task: Clean and optimize the provided text for a web search engine.

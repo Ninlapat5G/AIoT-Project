@@ -47,7 +47,7 @@ const STAGE_CONTEXTS = {
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useOnboarding({ settings, handleSaveSettings, onComplete, onFarewellStart }) {
+export function useOnboarding({ settings, handleSaveSettings, devicesRef, onComplete, onFarewellStart }) {
   const [completed, setCompleted] = useState(() => loadOnboarding()?.completed || false)
   const [stage, setStage] = useState(() => loadOnboarding()?.stage || 'greeting')
 
@@ -105,6 +105,7 @@ export function useOnboarding({ settings, handleSaveSettings, onComplete, onFare
         userMessage: null,
         apiHistory,
         settings: settingsRef.current,
+        devicesRef,
         signal: abortRef.current.signal,
         onStream: streamChunk,
       })
@@ -154,6 +155,7 @@ export function useOnboarding({ settings, handleSaveSettings, onComplete, onFare
         userMessage: null,
         apiHistory: [],
         settings: settingsRef.current,
+        devicesRef,
         signal: abortRef.current.signal,
         onStream: chunk => {
           greetingReply += chunk
@@ -217,6 +219,7 @@ export function useOnboarding({ settings, handleSaveSettings, onComplete, onFare
         userMessage: text,
         apiHistory,
         settings: currentSettings,
+        devicesRef,
         signal: abortRef.current.signal,
         onStream: chunk => {
           reply += chunk

@@ -6,7 +6,7 @@ import ToolPill from './chat/ToolPill'
 
 export default function ChatPage({
   messages, onSend, onStop, thinking, executing, onClear, modelName, skillCount, msgCount,
-  draft, onDraftChange: setDraft, assistantName = 'Assistant',
+  draft, onDraftChange: setDraft, assistantName = 'Assistant', showToolDetails = true,
 }) {
   const [isListening, setIsListening] = useState(false)
   const scrollRef = useRef(null)
@@ -100,21 +100,34 @@ export default function ChatPage({
           ) : (
             <>
               <div className="sh-side-timestamp mono">— บทสนทนา —</div>
-              {messages.map((m, i) => <ChatBubble key={i} msg={m} assistantName={assistantName} />)}
+              {messages.map((m, i) => <ChatBubble key={i} msg={m} assistantName={assistantName} showToolDetails={showToolDetails} />)}
             </>
           )}
 
-          {/* One pill per running tool — parallel tools show simultaneously */}
+          {/* Tool executing display — full pills or compact chip depending on setting */}
           <AnimatePresence>
-            {executing.map(e => (
-              <ToolPill
-                key={`${e.name}-r${e.round}`}
-                name={e.name}
-                args={e.args}
-                round={e.round}
-                executing
-              />
-            ))}
+            {!showToolDetails && executing.length > 0 ? (
+              <motion.div
+                key="executing-chip"
+                className="sh-action-chip sh-action-chip--executing"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+              >
+                <Icon name="bolt" size={10} />
+                <span>กำลังดำเนินการ…</span>
+              </motion.div>
+            ) : (
+              executing.map(e => (
+                <ToolPill
+                  key={`${e.name}-r${e.round}`}
+                  name={e.name}
+                  args={e.args}
+                  round={e.round}
+                  executing
+                />
+              ))
+            )}
           </AnimatePresence>
 
           <AnimatePresence>

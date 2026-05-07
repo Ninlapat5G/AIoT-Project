@@ -5,6 +5,7 @@ import {
   buildContextMessage,
   SEARCH_QUERY_PROMPT,
   DETECT_NAME_PROMPT,
+  ROUND_SUMMARY_PROMPT,
 } from "./agent_prompt.js";
 import { DEFAULT_API_KEY } from "../config/default_key";
 
@@ -60,6 +61,7 @@ const AgentState = Annotation.Root({
   executeTool: Annotation(),
   onToolCall: Annotation(),
   onToolResult: Annotation(),
+  onRoundSummary: Annotation(),
   onStream: Annotation(),
   signal: Annotation(),
   toolRound: Annotation({
@@ -134,21 +136,24 @@ async function agentNode(state) {
 }
 
 async function toolNode(state) {
-  const { messages, executeTool, onToolCall, onToolResult, toolRound } = state;
+  const { messages, settings, executeTool, onToolCall, onToolResult, onRoundSummary, toolRound, signal } = state;
   const currentRound = toolRound + 1;
 
   const lastMessage = messages[messages.length - 1];
   const toolCalls = lastMessage.tool_calls || [];
 
+  const collectedResults = [];
+
   const promises = toolCalls.map(async (tc) => {
     onToolCall?.(tc.name, tc.args, currentRound);
     let result;
     try {
-      result = await executeTool(tc.name, tc.args, state.signal);
+      result = await executeTool(tc.name, tc.args, signal);
     } catch (err) {
       result = { error: err.message || "Execution failed" };
     }
     onToolResult?.(tc.name, tc.args, result, currentRound);
+    collectedResults.push({ name: tc.name, args: tc.args, result });
 
     return new ToolMessage({
       content: typeof result === "object" ? JSON.stringify(result) : String(result),
@@ -158,6 +163,12 @@ async function toolNode(state) {
   });
 
   const toolMessages = await Promise.all(promises);
+
+  if (settings?.showToolDetails === false && onRoundSummary && collectedResults.length > 0) {
+    generateRoundSummary({ settings, tools: collectedResults, signal })
+      .then(summary => onRoundSummary(summary, currentRound))
+      .catch(() => {});
+  }
 
   return { messages: toolMessages, toolRound: currentRound };
 }
@@ -245,6 +256,37 @@ export async function generateSearchQuery({ settings, query, signal }) {
     return response.query?.trim() || query;
   } catch {
     return query;
+  }
+}
+
+export async function generateRoundSummary({ settings, tools, signal }) {
+  const effectiveKey = settings.apiKey || DEFAULT_API_KEY
+  const llm = new ChatOpenAI({
+    apiKey: effectiveKey,
+    configuration: { apiKey: effectiveKey, baseURL: settings.endpoint, dangerouslyAllowBrowser: true },
+    modelName: settings.model,
+    temperature: 0.1,
+    maxTokens: 60,
+  }).withStructuredOutput({
+    type: 'object',
+    properties: {
+      summary: { type: 'string', description: 'สรุปผลการทำงานของ tools ทั้งหมดในรอบนี้เป็นประโยคเดียว' }
+    },
+    required: ['summary']
+  });
+
+  const input = tools.map(t =>
+    `- ${t.name}(${JSON.stringify(t.args)}) → ${JSON.stringify(t.result).slice(0, 200)}`
+  ).join('\n');
+
+  try {
+    const response = await llm.invoke([
+      new SystemMessage(ROUND_SUMMARY_PROMPT),
+      new HumanMessage(input)
+    ], { signal });
+    return response.summary?.trim() || tools.map(t => t.name).join(', ');
+  } catch {
+    return tools.map(t => t.name).join(', ');
   }
 }
 

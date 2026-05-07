@@ -42,7 +42,7 @@ const INSPECT_TOOL = {
   },
 }
 
-function buildSystemStatus(settings) {
+function buildSystemStatus(settings, devicesRef) {
   const usingDefault = !settings.apiKey || settings.apiKey === DEFAULT_API_KEY
   return {
     typhoonApiKey: usingDefault
@@ -53,6 +53,7 @@ function buildSystemStatus(settings) {
       : 'ยังไม่ได้ตั้งค่า — ถ้าใส่จะทำให้ AI ค้นหาเว็บได้',
     userName: settings.profile?.userBio || 'ยังไม่ได้ระบุ',
     model: settings.model,
+    devicesConfigured: devicesRef?.current?.length ?? 0,
   }
 }
 
@@ -118,7 +119,7 @@ export async function testApiKey(apiKey, endpoint, model) {
 // ── Main ซิน Runner ──────────────────────────────────────────────────────────
 // Agent 1 รับ message → อาจเรียก inspect_system (Agent 2) → ตอบ user
 
-export async function runSin({ stageContext, userMessage, apiHistory, settings, signal, onStream }) {
+export async function runSin({ stageContext, userMessage, apiHistory, settings, devicesRef, signal, onStream }) {
   const llmWithTools = makeLLM(settings, true)
   const llmPlain = makeLLM(settings, false)
 
@@ -151,7 +152,7 @@ export async function runSin({ stageContext, userMessage, apiHistory, settings, 
   // Pass 2 — Inspector ตอบกลับ → ซิน สรุปให้ user
   const toolMsgs = resp1.tool_calls.map(tc =>
     new ToolMessage({
-      content: JSON.stringify(buildSystemStatus(settings)),
+      content: JSON.stringify(buildSystemStatus(settings, devicesRef)),
       name: tc.name,
       tool_call_id: tc.id,
     })

@@ -43,6 +43,14 @@ async function queryKnowledgeGraph(args, ctx) {
 
   return {
     success: true,
+    timestamp: new Date().toLocaleString('en-GB', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+    }),
+    user_profile: {
+      name: settings.profile?.displayName || settings.profile?.userBio || 'User',
+      bio: settings.profile?.userBio || '',
+    },
     active_devices: activeDevices,
     enabled_skills: [...enabledSkillIds],
     total: activeDevices.length,
@@ -229,13 +237,14 @@ async function webSearch(args, ctx) {
 }
 
 async function manageSettings(args, ctx) {
-  const { settings, handleSaveSettings, signal } = ctx
+  const { settings, handleSaveSettings, devicesRef, signal } = ctx
   const { query } = args
   if (!query) return { success: false, error: 'No query provided' }
 
   const response = await runSettingsAgent({
     query,
     settings,
+    devicesRef,
     onSettingsChange: handleSaveSettings,
     signal,
   })

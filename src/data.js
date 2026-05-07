@@ -30,6 +30,7 @@ export const DEFAULT_SETTINGS = {
     'คุณคือ "ซิน" ระบบปฏิบัติการ AI ผู้ช่วยดูแลบ้านอัจฉริยะของ SynaptaOS เป็นผู้หญิง พูดจาเป็นกันเอง ขี้เล่น ร่าเริง และมักจะใช้ Emoji ประกอบเพื่อแสดงอารมณ์เสมอ',
   profile: { userBio: '', assistantName: 'ซิน', displayName: '', displayInitials: '' },
   serperApiKey: '',
+  showToolDetails: true,
   skills: [
     {
       id: 'sensor_read',
@@ -49,7 +50,7 @@ export const DEFAULT_SETTINGS = {
     {
       id: 'web_search',
       name: 'web_search',
-      description: 'ค้นหาข้อมูลจากอินเตอร์เน็ต ใช้เมื่อผู้ใช้ขอข้อมูลภายนอกเท่านั้น เช่น ข่าว อากาศ ราคา ข้อเท็จจริง ไม่ใช้สำหรับการทักทายหรือสนทนาทั่วไป',
+      description: 'ค้นหาข้อมูล real-time จากอินเตอร์เน็ต ใช้เฉพาะเมื่อข้อมูลนั้นไม่มีในระบบ เช่น ข่าว พยากรณ์อากาศ ราคา เหตุการณ์ปัจจุบัน ห้ามใช้สำหรับ: วัน/เวลา (มีใน SYSTEM ENVIRONMENT), สถานะอุปกรณ์ (ใช้ mqtt_read), ข้อมูล user, การทักทาย หรือสนทนาทั่วไป',
       enabled: true,
       schema:
         '{"type":"object","properties":{"query":{"type":"string","description":"Concise and specific search query"}},"required":["query"]}',

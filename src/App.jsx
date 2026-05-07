@@ -136,6 +136,7 @@ export default function App() {
   const onboarding = useOnboarding({
     settings,
     handleSaveSettings,
+    devicesRef,
     onFarewellStart: useCallback(() => setPage('chat'), []),
     onComplete: useCallback(() => setPage('chat'), []),
   })
@@ -349,6 +350,7 @@ export default function App() {
                     draft={chatDraft}
                     onDraftChange={setChatDraft}
                     assistantName={onboarding.active ? 'ซิน' : (settings.profile?.assistantName || 'ซิน')}
+                    showToolDetails={onboarding.active ? true : (settings.showToolDetails ?? true)}
                   />
                 </ErrorBoundary>
               </motion.div>

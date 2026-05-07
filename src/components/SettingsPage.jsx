@@ -173,6 +173,17 @@ export default function SettingsPage({ settings, onSave, mqttStatus = 'offline',
               <label className="mono">System Prompt</label>
               <textarea rows={6} value={s.systemPrompt} onChange={e => set('systemPrompt', e.target.value)} />
             </div>
+            <div className="sh-skill-head" style={{ marginTop: 8 }}>
+              <div className="sh-skill-meta">
+                <div className="sh-skill-name mono">แสดงรายละเอียด Tool Call</div>
+                <div className="sh-skill-desc">
+                  {(s.showToolDetails ?? true)
+                    ? 'แสดง tool name, args, result ทุก call — ปิดเพื่อให้ AI สรุปเป็นประโยคแทน'
+                    : 'AI จะสรุปทุก action ในรอบเป็น 1 ประโยค เช่น "เปิดไฟทั้งหมดในบ้าน"'}
+                </div>
+              </div>
+              <Toggle on={s.showToolDetails ?? true} onChange={v => set('showToolDetails', v)} />
+            </div>
           </section>
 
           {/* 03 Skills */}

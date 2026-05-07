@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import ToolPill from './ToolPill'
+import Icon from '../ui/Icon'
 
 const mdComponents = {
   a: ({ href, children }) => (
@@ -18,6 +19,20 @@ const AvatarLogo = () => (
 )
 
 export default function ChatBubble({ msg, assistantName = 'Assistant' }) {
+  if (msg.role === 'round-summary') {
+    return (
+      <motion.div
+        className="sh-action-chip"
+        initial={{ opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2 }}
+      >
+        <Icon name="bolt" size={10} />
+        <span>{msg.summary}</span>
+      </motion.div>
+    )
+  }
+
   if (msg.role === 'tool') {
     return <ToolPill name={msg.name} args={msg.args} result={msg.result} round={msg.round} />
   }

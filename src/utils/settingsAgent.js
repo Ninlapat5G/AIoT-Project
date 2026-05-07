@@ -89,7 +89,11 @@ const AGENT_TOOLS = [
 
 // ── Tool Executors ────────────────────────────────────────────────────────────
 
-function execReadSettings(settings) {
+function execReadSettings(settings, devicesRef) {
+  const devices = devicesRef?.current || []
+  const enabledSkillNames = new Set((settings.skills || []).filter(s => s.enabled).map(s => s.name))
+  const hubDevices = devices.filter(d => d.type === 'hub')
+
   return {
     skills: (settings.skills || []).map(sk => ({
       name: sk.name,
@@ -102,6 +106,11 @@ function execReadSettings(settings) {
     mqttBroker:  settings.mqtt?.broker,
     mqttPort:    settings.mqtt?.port,
     userName:    settings.profile?.userBio || 'not set',
+    devicesTotal: devices.length,
+    hubDevices: hubDevices.map(d => ({
+      name: d.name,
+      hubSkillEnabled: enabledSkillNames.has('hub'),
+    })),
   }
 }
 
@@ -118,7 +127,7 @@ function execToggleSkill({ skill_name, enabled }, settings, onSettingsChange) {
 
 // ── Runner ────────────────────────────────────────────────────────────────────
 
-export async function runSettingsAgent({ query, settings, onSettingsChange, signal }) {
+export async function runSettingsAgent({ query, settings, devicesRef, onSettingsChange, signal }) {
   const apiKey = settings.apiKey || DEFAULT_API_KEY
   const llm = new ChatOpenAI({
     apiKey,
@@ -141,7 +150,7 @@ export async function runSettingsAgent({ query, settings, onSettingsChange, sign
   const toolMsgs = resp1.tool_calls.map(tc => {
     let result
     if (tc.name === 'read_settings') {
-      result = execReadSettings(settings)
+      result = execReadSettings(settings, devicesRef)
     } else if (tc.name === 'toggle_skill') {
       result = execToggleSkill(tc.args, settings, onSettingsChange)
     } else {

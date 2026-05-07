@@ -25,6 +25,9 @@ export function useChat({ settings, devicesRef, executeTool }) {
 
     abortControllerRef.current = new AbortController()
 
+    // เก็บ tool calls ใน run นี้เพื่อ append ลง history
+    const toolsThisRun = []
+
     try {
       const { reply } = await runAgent({
         text,
@@ -40,13 +43,20 @@ export function useChat({ settings, devicesRef, executeTool }) {
         },
 
         onToolResult: (name, args, result, round) => {
-          setMessages(prev => [...prev, { role: 'tool', name, args, result, round }])
+          toolsThisRun.push({ name, args })
+          // เมื่อ showToolDetails === false ไม่แสดง pill ทีละตัว (จะมี round-summary chip แทน)
+          if (settings.showToolDetails !== false) {
+            setMessages(prev => [...prev, { role: 'tool', name, args, result, round }])
+          }
           setExecuting(prev => {
             const next = prev.filter(e => !(e.name === name && e.round === round))
-            // Last tool in this round finished — back to thinking (planner / responder)
             if (next.length === 0) setThinking(true)
             return next
           })
+        },
+
+        onRoundSummary: (summary, round) => {
+          setMessages(prev => [...prev, { role: 'round-summary', summary, round }])
         },
 
         onStream: chunk => {
@@ -72,10 +82,16 @@ export function useChat({ settings, devicesRef, executeTool }) {
         return prev
       })
 
+      const toolLog = toolsThisRun.length > 0
+        ? '\n[tools: ' + toolsThisRun.map(t =>
+            `${t.name}(${JSON.stringify(t.args).slice(0, 80)})`
+          ).join(', ') + ']'
+        : ''
+
       setApiHistory(prev => [
         ...prev,
         { role: 'user', content: text },
-        { role: 'assistant', content: reply },
+        { role: 'assistant', content: reply + toolLog },
       ].slice(-30))
 
     } catch (err) {

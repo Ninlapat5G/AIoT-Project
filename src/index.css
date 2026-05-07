@@ -670,6 +670,19 @@
   .sh-tool-result { @apply mt-2 pt-2; border-top: 1px dashed oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.25); }
   .sh-tool-result-label { @apply block text-[9px] tracking-wider mb-1; color: var(--ink-xdim); }
 
+  /* compact action chip — แสดงแทน tool pills เมื่อ showToolDetails === false */
+  .sh-action-chip {
+    @apply inline-flex items-center gap-1.5 self-start rounded-full text-[11px] shrink-0;
+    padding: 4px 10px;
+    background: oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.10);
+    border: 1px solid oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.25);
+    color: var(--accent);
+  }
+  .sh-action-chip--executing {
+    border-style: dashed;
+    opacity: 0.7;
+  }
+
   /* composer */
   .sh-composer {
     @apply shrink-0 px-4 py-3;
