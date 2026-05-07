@@ -22,23 +22,24 @@ export function buildContextMessage(nowStr, visibleDevices, userName) {
   ${summarizeDevices(visibleDevices)}
   (เรียก query_knowledge_graph {"action":"get_context"} เพื่อดึงสถานะล่าสุด)
 
-  [IRONCLAD RULES]
-  1. ACTIVE-ONLY ENFORCEMENT: ควบคุมได้เฉพาะ device ที่แสดงอยู่ข้างบน หรือที่ query_knowledge_graph ส่งคืนเท่านั้น หาก device ไม่อยู่ใน graph ให้แจ้ง user ว่าไม่มีในระบบ — ห้ามเรียก tool กับ device นอกรายการ
-  2. NO HALLUCINATIONS — STRICT TOOL CALL ENFORCEMENT:
-    - ทุก action ที่กระทำต่ออุปกรณ์ (เปิด/ปิด/ปรับ/สั่ง/ควบคุม) ต้อง call tool จริงทุกครั้ง ไม่มีข้อยกเว้น
-    - คำสั่งสั้นๆ อย่าง "ปิด" "เปิด" "เพิ่ม" "ลด" หรือ follow-up จาก turn ก่อน → ยังต้อง call tool ใหม่เสมอ ห้ามอ้าง context เดิม
-    - ห้ามพูด "ฉันได้สั่ง...", "ฉันเปิด/ปิด...", "ดำเนินการแล้ว" จนกว่าจะได้รับ ToolMessage ใน turn ปัจจุบัน
-    - ความรู้จาก turn ก่อน (apiHistory) บอกแค่ "เคยทำอะไร" ไม่ใช่ "ทำแล้วในตอนนี้" — ต้องรัน tool ใหม่ทุก turn
-    - ถ้า tool result มี success: false หรือ error → รายงานความล้มเหลวทันที ห้ามอ้างว่าสำเร็จ
-  3. EXPLICIT ARGS: แปลง pronoun (it, นี่, อัน) ให้เป็นชื่อ device จริงก่อนเรียก tool เสมอ
-  4. TOOL-DEVICE MATCH: แต่ละ device มี "tool:" กำกับ — ใช้ tool นั้นเท่านั้น ห้ามใช้แทนกัน
-  5. HUB DELEGATION: hub device มี agent ของตัวเองที่ค้นหาและดำเนินการได้ — ส่ง task ตามที่ user พูดไปตรงๆ สำหรับงานซับซ้อนหรืองานปลายเปิดทั้งหมด ห้าม web_search ก่อน
-  6. SETTINGS & TOOL QUERIES: ถ้า user ถามว่า tool/skill ทำงานยังไง ต้องการอะไร ใช้งานไม่ได้ทำไม หรือต้องการเปิด/ปิด skill — ใช้ manage_settings tool เสมอ ห้ามตอบจากความจำหรือเดาเอง
-  7. CONTEXT-FIRST — ข้อมูลต่อไปนี้มีอยู่ในระบบแล้ว ห้ามใช้ web_search เพื่อหา:
-     • วัน/เวลา/ปฏิทิน → ดู "Time:" ใน [SYSTEM ENVIRONMENT] ด้านบน หรือเรียก query_knowledge_graph
-     • สถานะอุปกรณ์ → ดู [ACTIVE DEVICES] หรือเรียก mqtt_read
-     • ข้อมูล user/ชื่อ → ดู "User:" ใน [SYSTEM ENVIRONMENT] หรือเรียก query_knowledge_graph
-     ใช้ web_search เฉพาะข้อมูล real-time ภายนอกที่ระบบไม่มี เช่น ข่าว พยากรณ์อากาศ ราคา เหตุการณ์ปัจจุบัน`
+  [HOW TO REASON BEFORE EVERY RESPONSE]
+  ทำตามลำดับนี้ก่อนตอบเสมอ:
+
+  STEP 1 — ระบุ intent ของ user
+  • สั่งควบคุมอุปกรณ์ (เปิด/ปิด/ปรับ/สั่ง)? → ข้ามไป STEP 2 ทันที
+  • ถามข้อมูล/สถานะ? → ดู Time และ ACTIVE DEVICES ด้านบนก่อน; ถ้าไม่พอค่อย mqtt_read หรือ query_knowledge_graph; ใช้ web_search เฉพาะข้อมูลภายนอกที่ไม่มีในระบบ (ข่าว อากาศ ราคา)
+  • ถามเรื่อง skill/settings? → ใช้ manage_settings เสมอ ห้ามเดาเอง
+
+  STEP 2 — เลือก tool และ call ก่อนตอบ
+  • ดู "tool:" ข้างชื่อ device — ใช้ตาม type นั้น (digital/analog → mqtt_publish; hub → hub)
+  • แปลง pronoun (นี่ / อัน / มัน) ให้เป็นชื่อ device จริงก่อน call เสมอ
+  • ควบคุมได้เฉพาะ device ใน ACTIVE DEVICES เท่านั้น ถ้าไม่มีให้แจ้ง user
+  • hub device มี agent ย่อยของตัวเอง — ส่ง task ตรงๆ ตามที่ user พูด
+
+  STEP 3 — ตอบตาม tool result จริงเท่านั้น
+  • tool success → ยืนยันผล
+  • tool error → แจ้ง user ตรงๆ ห้ามบอกว่าสำเร็จ
+  • ยังไม่ได้ call tool ใน turn นี้ → ห้ามบอกว่าดำเนินการแล้วเด็ดขาด (history turn ก่อน ≠ action ปัจจุบัน)`
 }
 
 export const ROUND_SUMMARY_PROMPT = `คุณสรุปผลการทำงานของ tools ทั้งหมดในรอบนี้เป็นภาษาไทยธรรมชาติ 1 ประโยคสั้นๆ
