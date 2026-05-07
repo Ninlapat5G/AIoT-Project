@@ -110,12 +110,28 @@ export default function ChatPage({
               <motion.div
                 key="executing-chip"
                 className="sh-action-chip sh-action-chip--executing"
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
+                initial={{ opacity: 0, scale: 0.9, y: 6 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: -4 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               >
-                <Icon name="bolt" size={10} />
-                <span>กำลังดำเนินการ…</span>
+                <motion.span
+                  animate={{ opacity: [1, 0.35, 1] }}
+                  transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut' }}
+                >
+                  <Icon name="bolt" size={10} />
+                </motion.span>
+                <span>กำลังดำเนินการ</span>
+                <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center', marginLeft: 2 }}>
+                  {[0, 1, 2].map(i => (
+                    <motion.span
+                      key={i}
+                      style={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: 'currentColor', display: 'inline-block' }}
+                      animate={{ opacity: [0.3, 1, 0.3], y: [0, -2, 0] }}
+                      transition={{ repeat: Infinity, duration: 1.2, delay: i * 0.15, ease: 'easeInOut' }}
+                    />
+                  ))}
+                </span>
               </motion.div>
             ) : (
               executing.map(e => (

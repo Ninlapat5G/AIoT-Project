@@ -267,12 +267,6 @@ export async function generateRoundSummary({ settings, tools, signal }) {
     modelName: settings.model,
     temperature: 0.1,
     maxTokens: 60,
-  }).withStructuredOutput({
-    type: 'object',
-    properties: {
-      summary: { type: 'string', description: 'สรุปผลการทำงานของ tools ทั้งหมดในรอบนี้เป็นประโยคเดียว' }
-    },
-    required: ['summary']
   });
 
   const input = tools.map(t =>
@@ -284,7 +278,8 @@ export async function generateRoundSummary({ settings, tools, signal }) {
       new SystemMessage(ROUND_SUMMARY_PROMPT),
       new HumanMessage(input)
     ], { signal });
-    return response.summary?.trim() || tools.map(t => t.name).join(', ');
+    const content = typeof response.content === 'string' ? response.content : '';
+    return content.trim() || tools.map(t => t.name).join(', ');
   } catch {
     return tools.map(t => t.name).join(', ');
   }

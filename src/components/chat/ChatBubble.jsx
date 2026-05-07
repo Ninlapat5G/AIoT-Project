@@ -23,11 +23,17 @@ export default function ChatBubble({ msg, assistantName = 'Assistant' }) {
     return (
       <motion.div
         className="sh-action-chip"
-        initial={{ opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2 }}
+        initial={{ opacity: 0, scale: 0.82, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 450, damping: 26 }}
       >
-        <Icon name="bolt" size={10} />
+        <motion.span
+          initial={{ rotate: -25, scale: 1.4 }}
+          animate={{ rotate: 0, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 18, delay: 0.08 }}
+        >
+          <Icon name="bolt" size={10} />
+        </motion.span>
         <span>{msg.summary}</span>
       </motion.div>
     )
