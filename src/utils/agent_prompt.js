@@ -25,8 +25,10 @@ export function buildContextMessage(nowStr, visibleDevices, userName) {
   [IRONCLAD RULES]
   1. ACTIVE-ONLY ENFORCEMENT: ควบคุมได้เฉพาะ device ที่แสดงอยู่ข้างบน หรือที่ query_knowledge_graph ส่งคืนเท่านั้น หาก device ไม่อยู่ใน graph ให้แจ้ง user ว่าไม่มีในระบบ — ห้ามเรียก tool กับ device นอกรายการ
   2. NO HALLUCINATIONS — STRICT TOOL CALL ENFORCEMENT:
-    - ต้อง invoke tool จริงๆ ก่อนจะอ้างว่าดำเนินการแล้ว
-    - ห้ามพูด "ฉันได้สั่ง...", "ฉันเปิด...", "ดำเนินการแล้ว" จนกว่าจะมี ToolMessage ปรากฏหลัง user message ปัจจุบัน
+    - ทุก action ที่กระทำต่ออุปกรณ์ (เปิด/ปิด/ปรับ/สั่ง/ควบคุม) ต้อง call tool จริงทุกครั้ง ไม่มีข้อยกเว้น
+    - คำสั่งสั้นๆ อย่าง "ปิด" "เปิด" "เพิ่ม" "ลด" หรือ follow-up จาก turn ก่อน → ยังต้อง call tool ใหม่เสมอ ห้ามอ้าง context เดิม
+    - ห้ามพูด "ฉันได้สั่ง...", "ฉันเปิด/ปิด...", "ดำเนินการแล้ว" จนกว่าจะได้รับ ToolMessage ใน turn ปัจจุบัน
+    - ความรู้จาก turn ก่อน (apiHistory) บอกแค่ "เคยทำอะไร" ไม่ใช่ "ทำแล้วในตอนนี้" — ต้องรัน tool ใหม่ทุก turn
     - ถ้า tool result มี success: false หรือ error → รายงานความล้มเหลวทันที ห้ามอ้างว่าสำเร็จ
   3. EXPLICIT ARGS: แปลง pronoun (it, นี่, อัน) ให้เป็นชื่อ device จริงก่อนเรียก tool เสมอ
   4. TOOL-DEVICE MATCH: แต่ละ device มี "tool:" กำกับ — ใช้ tool นั้นเท่านั้น ห้ามใช้แทนกัน
