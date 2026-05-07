@@ -91,6 +91,7 @@ def _handle_task(task: str, received_at: float) -> None:
         return
 
     _kill_event.clear()
+    _pub("(mqtt_start)")
     dispatch_ms = (time.perf_counter() - received_at) * 1000
     print(f"\n[Hub] Task : {task}")
     print(f"      MQTT dispatch : {dispatch_ms:.0f} ms")
