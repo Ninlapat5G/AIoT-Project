@@ -89,9 +89,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
       })
 
       const toolLog = toolsThisRun.length > 0
-        ? '\n[tools: ' + toolsThisRun.map(t =>
-            `${t.name}(${JSON.stringify(t.args).slice(0, 80)})`
-          ).join(', ') + ']'
+        ? '\n[system: used ' + toolsThisRun.map(t => t.name).join(', ') + ']'
         : ''
 
       setApiHistory(prev => [
