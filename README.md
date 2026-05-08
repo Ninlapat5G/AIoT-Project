@@ -117,8 +117,6 @@ hub/
        │
        ├── mqtt_publish / mqtt_read ──► IoT Devices
        └── hub ──► MQTT ──► Hub Agent (Python)
-                              └── ReAct loop
-                                   ├── os_exec (stream, cancel)
-                                   └── web_search (Serper)
+                              └── ReAct loop (os + web search)
 ```
 
