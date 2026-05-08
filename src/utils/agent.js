@@ -181,34 +181,62 @@ async function toolNode(state) {
 
 // ── 3. Guard Node ────────────────────────────────────────────────────────────
 
-function guardNode(state) {
-  const { messages, prevToolResults } = state;
+const GUARD_PROMPT = `คุณคือ Guard Agent — วิเคราะห์ว่า response ที่ agent กำลังจะตอบนั้นตรงกับความจริงไหม
 
-  // หา index ของ HumanMessage ล่าสุด เพื่อแยก messages ของ turn นี้
+ดูข้อมูลที่ให้มาแล้วสรุป 1-2 ประโยคสั้นๆ:
+- ถ้าคำสั่งต้องการ action แต่ไม่มี tool ถูกเรียก → บอกว่ายังไม่ได้ดำเนินการจริง
+- ถ้า tool ถูกเรียกแล้วสำเร็จ → ยืนยันสั้นๆ ว่าทำอะไรไปบ้าง
+- ถ้า tool ล้มเหลว → บอกว่าล้มเหลวและสาเหตุ
+- ถ้าเป็นแค่คำถามหรือสนทนา ไม่ต้อง action → บอกว่าไม่ต้องดำเนินการ
+ตอบเป็นข้อเท็จจริงสั้นๆ ไม่ต้องแนะนำว่าควรพูดอะไร`
+
+async function guardNode(state) {
+  const { messages, settings, prevToolResults, signal } = state;
+
+  // แยก messages ของ turn นี้ออกมา
   let lastHumanIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
   }
-
-  const userText = lastHumanIdx >= 0 ? messages[lastHumanIdx].content : '';
   const turnMsgs = lastHumanIdx >= 0 ? messages.slice(lastHumanIdx) : messages;
-  const toolMsgs = turnMsgs.filter(m => m instanceof ToolMessage);
 
-  const toolFacts = toolMsgs.length > 0
+  const userText   = messages[lastHumanIdx]?.content || '';
+  const toolMsgs   = turnMsgs.filter(m => m instanceof ToolMessage);
+  const draftMsg   = [...turnMsgs].reverse().find(m => m instanceof AIMessage && !m.tool_calls?.length);
+  const draftText  = draftMsg?.content || '';
+
+  const toolsStr = toolMsgs.length > 0
     ? toolMsgs.map(m => `• ${m.name}: ${String(m.content).slice(0, 200)}`).join('\n')
-    : 'ไม่มีการดำเนินการใดๆ เกิดขึ้นใน turn นี้';
+    : 'ไม่มี';
 
-  const prevCtx = prevToolResults
-    ? `\n[บริบทจาก turn ก่อน: ${prevToolResults}]`
-    : '';
+  const input =
+    `${prevToolResults ? `[บริบทจาก turn ก่อน: ${prevToolResults}]\n` : ''}` +
+    `คำสั่ง user: ${userText}\n` +
+    `Tool ที่เรียกจริงใน turn นี้:\n${toolsStr}\n` +
+    `Draft response ของ agent: "${draftText}"`;
 
-  const factSummary =
-    `[REALITY CHECK — ใช้ข้อมูลนี้เป็นฐานในการตอบ]\n` +
-    `คำสั่ง: ${userText}\n` +
-    `สิ่งที่เกิดขึ้นจริง:\n${toolFacts}${prevCtx}`;
+  const effectiveKey = settings.apiKey || DEFAULT_API_KEY;
+  const llm = new ChatOpenAI({
+    apiKey: effectiveKey,
+    configuration: { apiKey: effectiveKey, baseURL: settings.endpoint, dangerouslyAllowBrowser: true },
+    modelName: settings.model,
+    temperature: 0,
+    maxTokens: 80,
+  });
+
+  let verdict;
+  try {
+    const res = await llm.invoke(
+      [new SystemMessage(GUARD_PROMPT), new HumanMessage(input)],
+      { signal }
+    );
+    verdict = typeof res.content === 'string' ? res.content.trim() : toolsStr;
+  } catch {
+    verdict = toolMsgs.length > 0 ? toolsStr : 'ไม่มีการดำเนินการใดๆ';
+  }
 
   return {
-    messages: [new SystemMessage(factSummary)],
+    messages: [new SystemMessage(`[REALITY CHECK]\n${verdict}`)],
     guardDone: true,
   };
 }
