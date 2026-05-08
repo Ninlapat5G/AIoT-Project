@@ -11,6 +11,9 @@ dist/
 # IoT simulation scripts (not part of web app)
 simulate device/
 
+# Legacy OS control agent (superseded by hub/)
+os_control/
+
 # Old single-file version (superseded by Vite project)
 /app.jsx
 /styles.css
@@ -34,3 +37,6 @@ __pycache__/
 *.pyc
 *.pyo
 SynaptaNode/README_V1.md
+hub/run_hub.bat
+# Graphify
+graphify-out/
