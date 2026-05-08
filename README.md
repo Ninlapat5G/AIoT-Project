@@ -6,7 +6,7 @@ AI-powered smart home dashboard พูดภาษาไทย ควบคุ�
 
 ## Powered by Typhoon AI
 
-SynaptaOS ใช้ [Typhoon v2](https://opentyphoon.ai) โดย SCBX เป็น AI หลักในการสนทนาและควบคุมอุปกรณ์ — ออกแบบมาสำหรับภาษาไทย รองรับการผสม Thai-English
+SynaptaOS ใช้ [Typhoon v2.5](https://opentyphoon.ai) โดย SCBX เป็น AI หลักในการสนทนาและควบคุมอุปกรณ์ — ออกแบบมาสำหรับภาษาไทย รองรับการผสม Thai-English และมี function calling ที่แม่นยำสำหรับงาน agentic
 
 > รับ API Key ฟรีได้ที่: [playground.opentyphoon.ai/settings/api-key](https://playground.opentyphoon.ai/settings/api-key)
 
@@ -19,6 +19,7 @@ SynaptaOS ใช้ [Typhoon v2](https://opentyphoon.ai) โดย SCBX เป�
 - **Hub Agent** — สั่งงานคอมพิวเตอร์ remote ด้วย AI (ReAct loop + Safety + Web Search)
 - **หลาย Device Type** — digital / analog / hub รวมในที่เดียว
 - **Web Search** — AI ค้นหาข้อมูลผ่าน Serper API ได้
+- **Guard Node** — ตรวจสอบความจริงก่อน agent ตอบ ป้องกัน hallucination
 - **Zero Backend** — ทุกอย่างรันในเบราว์เซอร์ ฝาก Vercel ได้เลย
 
 ---
@@ -84,6 +85,8 @@ hub/
 | `mqtt_read` | อ่านสถานะจาก device |
 | `hub` | สั่งงาน Hub Agent (ReAct loop, streams output) |
 | `web_search` | ค้นหาผ่าน Serper API |
+| `manage_settings` | อ่าน/แก้ไข settings ผ่านภาษาธรรมชาติ |
+| `query_knowledge_graph` | ดึงสถานะ devices และ skills ที่ active ณ ขณะนั้น |
 
 ---
 
@@ -92,28 +95,61 @@ hub/
 | ส่วน | เทคโนโลยี |
 |---|---|
 | UI | React 18 + Vite 5 + Tailwind CSS |
-| AI / Agent | LangGraph ReAct + Typhoon v2 |
+| AI / Agent | LangGraph ReAct + Typhoon v2.5 |
 | IoT | MQTT over WebSocket (mqtt.js) |
-| Hub Agent | Python + OpenAI ReAct loop + paho-mqtt |
+| Hub Agent | Python + OpenAI-compatible ReAct loop + paho-mqtt |
 | Deploy | Vercel (static) |
 
 ---
 
 ## สถาปัตยกรรม
 
+### Frontend Agent (LangGraph)
+
 ```
 ผู้ใช้ พิมพ์/พูด
        │
        ▼
-  LangGraph ReAct Loop
-  ┌──────────────────┐
-  │ agent → tools    │
-  │ (loop until done)│
-  └──────────────────┘
+  ┌─────────────────────────────────────────┐
+  │           LangGraph ReAct Loop          │
+  │                                         │
+  │   agentNode ──► tools? ──► toolNode     │
+  │       ▲                       │         │
+  │       └───────────────────────┘         │
+  │                                         │
+  │   เมื่อ agent พร้อมตอบ (ไม่มี tool อีก)  │
+  │       │                                 │
+  │       ▼                                 │
+  │   guardNode  ← ตรวจความจริงของ turn นี้  │
+  │       │         โดยดูจาก:               │
+  │       │         · คำสั่ง user            │
+  │       │         · tool ที่เรียกจริง      │
+  │       │         · ผล turn ก่อนหน้า       │
+  │       │                                 │
+  │       ▼                                 │
+  │   agentNode (ตอบด้วยข้อมูลจริง)          │
+  └─────────────────────────────────────────┘
        │
-       ├── mqtt_publish/read → IoT Devices
-       └── hub → MQTT → Hub Agent (Python)
-                         └── ReAct loop
-                              ├── os_exec (run command, stream output)
-                              └── web_search (Serper)
+       ├── mqtt_publish / mqtt_read ──► IoT Devices
+       └── hub ──► MQTT ──► Hub Agent (Python)
+                              └── ReAct loop
+                                   ├── os_exec (stream, cancel)
+                                   └── web_search (Serper)
 ```
+
+### Guard Node — แนวคิด
+
+**ปัญหาที่แก้**: agent บางครั้งตอบว่า "เปิดแล้วค่ะ" โดยไม่ได้สั่งงาน tool จริง (hallucination)
+
+**วิธีทำงาน**:
+1. Guard รันหลัง tool calls ทั้งหมดเสร็จ ก่อน agent เขียน response สุดท้าย
+2. Guard สรุปสิ่งที่เกิดขึ้นจริงในรอบนี้ — tool ไหนถูกเรียก ได้ผลอะไร
+3. สรุปนั้นถูกฉีดเข้า context ให้ agent เห็น
+4. Agent เขียน response สุดท้ายจากข้อมูลจริง ไม่ใช่จากการเดา
+
+**สิ่งที่ guard เห็น**:
+- ToolMessage ของ turn ก่อนหน้า 1 turn (บริบทอุปกรณ์ล่าสุด)
+- HumanMessage ปัจจุบัน (user สั่งอะไร)
+- ToolMessages ของ turn นี้ (ทำจริงไหม ได้ผลอะไร)
+
+**ผลที่ได้**: ลดความจำเป็นของ hallucination rules ในระดับ prompt — enforcement ย้ายมาอยู่ในระดับ architecture แทน
