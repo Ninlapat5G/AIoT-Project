@@ -123,7 +123,17 @@ async function agentNode(state) {
     buildContextMessage(nowString(), visibleDevices, settings.profile?.userBio || 'User')
   );
 
-  const fullMessages = [personaMessage, contextMessage, ...messages];
+  // เมื่อ guard รันแล้ว ให้กรอง draft AIMessage ออก (ตัวที่อยู่ก่อน REALITY CHECK)
+  // เพื่อไม่ให้ LLM anchor กับ draft ที่อาจหลอน แล้วเลือกเชื่อ REALITY CHECK แทน
+  const activeMessages = guardDone
+    ? messages.filter((m, idx) => {
+        if (!(m instanceof AIMessage) || m.tool_calls?.length) return true
+        const next = messages[idx + 1]
+        return !(next instanceof SystemMessage && String(next.content).startsWith('[REALITY CHECK]'))
+      })
+    : messages
+
+  const fullMessages = [personaMessage, contextMessage, ...activeMessages];
 
   let finalMessage;
   const stream = await agent.stream(fullMessages, { signal });
