@@ -66,8 +66,13 @@ const AgentState = Annotation.Root({
   signal: Annotation(),
   toolRound: Annotation({
     reducer: (curr, next) => next,
-    default: () => 0
-  })
+    default: () => 0,
+  }),
+  guardDone: Annotation({
+    reducer: (_, next) => next,
+    default: () => false,
+  }),
+  prevToolResults: Annotation(),
 });
 
 // ── 2. Nodes (Main Agent) ────────────────────────────────────────────────────
@@ -174,26 +179,63 @@ async function toolNode(state) {
   return { messages: toolMessages, toolRound: currentRound };
 }
 
-// ── 3. Graph Logic (ReAct Loop) ──────────────────────────────────────────────
+// ── 3. Guard Node ────────────────────────────────────────────────────────────
+
+function guardNode(state) {
+  const { messages, prevToolResults } = state;
+
+  // หา index ของ HumanMessage ล่าสุด เพื่อแยก messages ของ turn นี้
+  let lastHumanIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
+  }
+
+  const userText = lastHumanIdx >= 0 ? messages[lastHumanIdx].content : '';
+  const turnMsgs = lastHumanIdx >= 0 ? messages.slice(lastHumanIdx) : messages;
+  const toolMsgs = turnMsgs.filter(m => m instanceof ToolMessage);
+
+  const toolFacts = toolMsgs.length > 0
+    ? toolMsgs.map(m => `• ${m.name}: ${String(m.content).slice(0, 200)}`).join('\n')
+    : 'ไม่มีการดำเนินการใดๆ เกิดขึ้นใน turn นี้';
+
+  const prevCtx = prevToolResults
+    ? `\n[บริบทจาก turn ก่อน: ${prevToolResults}]`
+    : '';
+
+  const factSummary =
+    `[REALITY CHECK — ใช้ข้อมูลนี้เป็นฐานในการตอบ]\n` +
+    `คำสั่ง: ${userText}\n` +
+    `สิ่งที่เกิดขึ้นจริง:\n${toolFacts}${prevCtx}`;
+
+  return {
+    messages: [new SystemMessage(factSummary)],
+    guardDone: true,
+  };
+}
+
+// ── 4. Graph Logic (ReAct Loop) ──────────────────────────────────────────────
 
 function shouldContinue(state) {
   const lastMessage = state.messages[state.messages.length - 1];
-  if (lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
+  if (lastMessage.tool_calls?.length > 0) {
     if (state.toolRound >= 3) {
       console.warn("[Agent] Reached max tool rounds. Forcing exit.");
       return END;
     }
     return "tools";
   }
+  if (!state.guardDone) return "guard";
   return END;
 }
 
 const workflow = new StateGraph(AgentState)
   .addNode("agent", agentNode)
   .addNode("tools", toolNode)
+  .addNode("guard", guardNode)
   .addEdge(START, "agent")
   .addConditionalEdges("agent", shouldContinue)
-  .addEdge("tools", "agent");
+  .addEdge("tools", "agent")
+  .addEdge("guard", "agent");
 
 const compiledGraph = workflow.compile();
 
@@ -218,6 +260,8 @@ export const runAgent = async (params) => {
     ...params,
     messages: previousMessages,
     toolRound: 0,
+    guardDone: false,
+    prevToolResults: params.prevToolResults ?? null,
   });
 
   const lastMsg = finalState.messages[finalState.messages.length - 1];

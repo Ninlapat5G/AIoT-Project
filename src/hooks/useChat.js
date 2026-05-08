@@ -8,6 +8,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
   const [executing, setExecuting]   = useState([])  // array — parallel tools run simultaneously
 
   const abortControllerRef = useRef(null)
+  const prevToolResultsRef = useRef(null)
 
   const stopChat = useCallback(() => {
     if (abortControllerRef.current) {
@@ -24,6 +25,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
     setExecuting([])
 
     abortControllerRef.current = new AbortController()
+    const toolsThisTurn = []
 
     try {
       const { reply } = await runAgent({
@@ -32,6 +34,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
         deviceList: devicesRef.current,
         apiHistory,
         executeTool,
+        prevToolResults: prevToolResultsRef.current,
         signal: abortControllerRef.current.signal,
 
         onToolCall: (name, args, round) => {
@@ -43,6 +46,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
         },
 
         onToolResult: (name, args, result, round) => {
+          toolsThisTurn.push({ name, result })
           // เมื่อ showToolDetails === false ไม่แสดง pill ทีละตัว (จะมี round-summary chip แทน)
           if (settings.showToolDetails !== false) {
             setMessages(prev => [...prev, { role: 'tool', name, args, result, round }])
@@ -83,6 +87,10 @@ export function useChat({ settings, devicesRef, executeTool }) {
         }
         return prev
       })
+
+      prevToolResultsRef.current = toolsThisTurn.length > 0
+        ? toolsThisTurn.map(t => `${t.name}→${JSON.stringify(t.result).slice(0, 150)}`).join('; ')
+        : null
 
       setApiHistory(prev => [
         ...prev,
