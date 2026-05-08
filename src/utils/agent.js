@@ -78,7 +78,7 @@ const AgentState = Annotation.Root({
 // ── 2. Nodes (Main Agent) ────────────────────────────────────────────────────
 
 async function agentNode(state) {
-  const { settings, deviceList, messages, signal, onStream, toolRound } = state;
+  const { settings, deviceList, messages, signal, onStream, toolRound, guardDone } = state;
 
   // Filter devices by enabled skills.
   // Mapping: device.type → skill names that grant access
@@ -132,7 +132,8 @@ async function agentNode(state) {
     if (!finalMessage) finalMessage = chunk;
     else finalMessage = finalMessage.concat(chunk);
 
-    if (chunk.content && !chunk.tool_call_chunks?.length) {
+    // stream เฉพาะ response สุดท้าย (หลัง guard ฉีด REALITY CHECK แล้ว)
+    if (chunk.content && !chunk.tool_call_chunks?.length && guardDone) {
       onStream?.(chunk.content);
     }
   }
