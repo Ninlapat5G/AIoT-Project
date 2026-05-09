@@ -316,7 +316,15 @@ async function responderNode(state) {
   }
   const userText = messages[lastHumanIdx]?.content || '';
   const turnMsgs = lastHumanIdx >= 0 ? messages.slice(lastHumanIdx) : messages;
-  const toolMsgs = turnMsgs.filter(m => m instanceof ToolMessage);
+
+  // เก็บ HumanMsg + AIMsg(tool_calls) + ToolMsg — ลำดับที่ถูกต้องสำหรับ model
+  // ตัดทิ้ง: draft text-only AIMsg (อาจหลอน) และ [GUARD] SystemMsg
+  const cleanTurnMsgs = turnMsgs.filter(m =>
+    m instanceof HumanMessage ||
+    (m instanceof AIMessage && m.tool_calls?.length > 0) ||
+    m instanceof ToolMessage
+  );
+
   const cleanHistory = messages
     .slice(Math.max(0, lastHumanIdx - 6), lastHumanIdx)
     .filter(m => (m instanceof HumanMessage) || (m instanceof AIMessage && !m.tool_calls?.length && String(m.content).length > 0));
@@ -333,8 +341,7 @@ async function responderNode(state) {
     new SystemMessage(settings.systemPrompt || 'You are a helpful smart home assistant.'),
     new SystemMessage(buildContextMessage(nowString(), visibleDevices, settings.profile?.userBio || 'User')),
     ...cleanHistory,
-    new HumanMessage(userText),
-    ...toolMsgs,
+    ...cleanTurnMsgs,
   ];
 
   const stream = await llm.stream(fullMessages, { signal });
@@ -350,9 +357,8 @@ async function responderNode(state) {
 
 // ── 6. Graph ─────────────────────────────────────────────────────────────────
 
-// Guard ตรวจเฉพาะ turn ที่มี home automation tools — ป้องกัน false positive กรณีถามกลับ/สนทนา
-const HOME_TOOLS = new Set(['mqtt_publish']);
-
+// Guard ตรวจเฉพาะ turn ที่ agent พยายามเรียก mqtt_publish (จริงหรือหลอน)
+// เช็คจาก tool_calls ใน AIMessage — ครอบคลุมทั้งกรณีเรียกจริงและกรณีหลอน
 function shouldContinue(state) {
   const lastMessage = state.messages[state.messages.length - 1];
   if (lastMessage.tool_calls?.length > 0) {
@@ -363,15 +369,18 @@ function shouldContinue(state) {
     return "tools";
   }
 
-  // เช็คว่า turn นี้มีการเรียก home automation tools จริงไหม
   let lastHumanIdx = -1;
   for (let i = state.messages.length - 1; i >= 0; i--) {
     if (state.messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
   }
   const turnMsgs = lastHumanIdx >= 0 ? state.messages.slice(lastHumanIdx) : state.messages;
-  const hasHomeTools = turnMsgs.some(m => m instanceof ToolMessage && HOME_TOOLS.has(m.name));
 
-  return hasHomeTools ? "guard" : "responder";
+  // ตรวจว่า turn นี้มี agent พยายามเรียก mqtt_publish (ไม่ว่าจะสำเร็จหรือเปล่า)
+  const hasMqttIntent = turnMsgs.some(m =>
+    m instanceof AIMessage && m.tool_calls?.some(tc => tc.name === 'mqtt_publish')
+  );
+
+  return hasMqttIntent ? "guard" : "responder";
 }
 
 const workflow = new StateGraph(AgentState)
