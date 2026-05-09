@@ -103,20 +103,36 @@ hub/
 
 ## สถาปัตยกรรม
 
-### Frontend Agent (LangGraph)
+### Frontend Agent (LangGraph StateGraph)
 
 ```
 ผู้ใช้ พิมพ์/พูด
        │
        ▼
-  LangGraph ReAct Loop
-  ┌──────────────────┐
-  │ agent → tools    │
-  │ (loop until done)│
-  └──────────────────┘
+    agent ──► tool_calls? ──► tools ──► บันทึก lastCommandedDevice ใน state
+       │                         │
+       │ (ไม่มี tool_calls)       └──► agent (loop)
        │
-       ├── mqtt_publish / mqtt_read ──► IoT Devices
-       └── hub ──► MQTT ──► Hub Agent (Python)
-                              └── ReAct loop (os + web search)
+       ├── lastCommandedDevice != null ──► guard (ตรวจหลอน)
+       │                                     │
+       │                               retry? ──► executor ──► tools ──► responder
+       │                                     │
+       │                               ไม่ retry ──► responder
+       │
+       └── lastCommandedDevice == null ──► responder (AI ถาม user ก่อน)
+
+responder ──► stream คำตอบ ──► END
+```
+
+**Guard System — ป้องกัน hallucination**
+- `lastCommandedDevice` เก็บ device ล่าสุดที่ถูกสั่งใน session state (reset เมื่อล้างแชท)
+- Guard อ่าน KG state ปัจจุบันของ device นั้น เทียบกับ draft response ของ agent
+- ถ้า agent อ้างว่าทำสำเร็จแต่ tool ไม่ได้ถูกเรียก → executor บังคับ tool call ใหม่
+- ครอบคลุมทุก device type (digital / analog / hub) ผ่าน KG
+
+```
+tools ──► MQTT ──► IoT Devices (digital / analog)
+      └──► MQTT ──► Hub Agent (Python)
+                      └── ReAct loop (os_exec + web_search)
 ```
 

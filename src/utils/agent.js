@@ -350,7 +350,6 @@ async function responderNode(state) {
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
   }
-  const userText = messages[lastHumanIdx]?.content || '';
   const turnMsgs = lastHumanIdx >= 0 ? messages.slice(lastHumanIdx) : messages;
 
   // เก็บ HumanMsg + AIMsg(tool_calls) + ToolMsg — ลำดับที่ถูกต้องสำหรับ model
