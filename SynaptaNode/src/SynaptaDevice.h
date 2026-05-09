@@ -34,7 +34,7 @@ public:
     void set(bool state);
     void set(int  value);
 
-    // ANALOG: fade ระหว่างค่าเก่ากับค่าใหม่ในเวลา ms (default 100ms)
+    // ANALOG: fade ระหว่างค่าเก่ากับค่าใหม่ในเวลา ms (default 200ms)
     // 0 = instant; ค่าใน MQTT/state = target — pin จะค่อย ๆ ขยับเอง
     void setFadeMs(uint32_t ms) { _fadeMs = ms; }
 
@@ -78,7 +78,7 @@ private:
 #endif
 
     // ── PWM fade + gamma state (ANALOG only) ─────────────────────────────────
-    uint32_t _fadeMs       = 100;   // V1 default: 100ms smooth (was 0 = instant)
+    uint32_t _fadeMs       = 200;   // V1 default: 200ms smooth (was 0 = instant)
     int      _pwmTarget    = 0;     // ค่าที่ user สั่งล่าสุด
     int      _pwmCurrent   = 0;     // ค่าจริงที่เขียนลง pin ตอนนี้
     int      _fadeStartVal = 0;

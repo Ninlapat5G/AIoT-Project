@@ -12,8 +12,8 @@
 SynaptaDigital relay ("bedroom-relay",  "bedroom", 2);
 SynaptaAnalog  dimmer("bedroom-dimmer", "bedroom", 4);
 
-// PWM ของ dimmer ตอนนี้ default fade 100ms อัตโนมัติ — ไม่ต้องตั้งเอง
-// ปรับได้ใน setup():  dimmer.fade(300);   // ช้าลง
+// PWM ของ dimmer ตอนนี้ default fade 200ms อัตโนมัติ — ไม่ต้องตั้งเอง
+// ปรับได้ใน setup():  dimmer.fade(500);   // ช้าลง
 //                     dimmer.fade(0);     // instant (ของเก่า)
 
 
