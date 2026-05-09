@@ -34,6 +34,10 @@ public:
     void set(bool state);
     void set(int  value);
 
+    // ANALOG: fade ระหว่างค่าเก่ากับค่าใหม่ในเวลา ms (0 = instant — default)
+    // ค่าใน MQTT/state แสดงเป็นเป้าหมาย — pin จะค่อย ๆ ขยับมาเอง
+    void setFadeMs(uint32_t ms) { _fadeMs = ms; }
+
     // Current value — used by RuleEngine for condition evaluation
     float value() const;
 
@@ -68,6 +72,13 @@ private:
     int8_t _pwmChannel = -1;  // LEDC channel for ESP32 core 2.x
 #endif
 
+    // ── PWM fade state (ANALOG only) ─────────────────────────────────────────
+    uint32_t _fadeMs       = 0;     // 0 = instant (default — backwards compat)
+    int      _pwmTarget    = 0;     // ค่าที่ user สั่งล่าสุด
+    int      _pwmCurrent   = 0;     // ค่าจริงที่เขียนลง pin ตอนนี้
+    int      _fadeStartVal = 0;
+    uint32_t _fadeStartMs  = 0;
+
     uint8_t  _btnPin         = 255;
     bool     _btnLastReading = HIGH;
     bool     _btnPressed     = false;
@@ -80,6 +91,9 @@ private:
     void _executeDigital(bool on);
     void _executeAnalog (int  val);
     void _publishState  ();
+
+    void _writePWM(int v);   // wrapper เลือก ledcWrite ตาม core 2.x/3.x
+    void _tickFade();        // เรียกใน _loop() — ขยับ _pwmCurrent → _pwmTarget
 
     static String _normalise(const String& s);
 };

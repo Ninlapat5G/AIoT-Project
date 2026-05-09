@@ -81,6 +81,9 @@ void SynaptaDevice::_loop() {
         }
     }
 
+    // PWM fade — ขยับ current → target ทีละนิดทุก loop tick
+    if (_type == NODE_ANALOG) _tickFade();
+
     if (_btnPin != 255) {
         bool reading = (digitalRead(_btnPin) == LOW);
 
@@ -151,15 +154,52 @@ void SynaptaDevice::_executeDigital(bool on) {
 }
 
 void SynaptaDevice::_executeAnalog(int val) {
-    _stateFloat = val;
-    if (_pin != 255) {
-#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
-        ledcWrite(_pin, val);
-#else
-        if (_pwmChannel >= 0) ledcWrite(_pwmChannel, val);
-#endif
+    _stateFloat = val;       // state ที่ publish = target ที่ user สั่ง
+    _pwmTarget  = val;
+
+    if (_fadeMs == 0 || _pin == 255) {
+        // instant — เขียน pin ทันที (เหมือนเดิม)
+        _pwmCurrent = val;
+        _writePWM(val);
+    } else {
+        // เริ่ม fade — _tickFade() ใน _loop จะขยับ _pwmCurrent ทีละ tick
+        _fadeStartVal = _pwmCurrent;
+        _fadeStartMs  = millis();
     }
+
     if (_cbAnalog) _cbAnalog(val);
+}
+
+// ── PWM helpers ─────────────────────────────────────────────────────────────
+
+void SynaptaDevice::_writePWM(int v) {
+    if (_pin == 255) return;
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcWrite(_pin, v);
+#else
+    if (_pwmChannel >= 0) ledcWrite(_pwmChannel, v);
+#endif
+}
+
+void SynaptaDevice::_tickFade() {
+    if (_fadeMs == 0)              return;   // instant mode — ไม่ทำอะไร
+    if (_pin == 255)               return;
+    if (_pwmCurrent == _pwmTarget) return;   // ถึงเป้าแล้ว
+
+    uint32_t elapsed = millis() - _fadeStartMs;
+    int next;
+    if (elapsed >= _fadeMs) {
+        next = _pwmTarget;
+    } else {
+        // linear interpolation: start + (target - start) * elapsed / total
+        long delta = (long)(_pwmTarget - _fadeStartVal) * (long)elapsed;
+        next = _fadeStartVal + (int)(delta / (long)_fadeMs);
+    }
+
+    if (next != _pwmCurrent) {
+        _pwmCurrent = next;
+        _writePWM(next);
+    }
 }
 
 void SynaptaDevice::_publishState() {

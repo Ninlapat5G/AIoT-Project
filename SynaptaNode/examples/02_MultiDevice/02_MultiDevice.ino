@@ -12,6 +12,10 @@
 SynaptaDigital relay ("bedroom-relay",  "bedroom", 2);
 SynaptaAnalog  dimmer("bedroom-dimmer", "bedroom", 4);
 
+// ── หรือเปิด smooth fade เลย (ค่อย ๆ ขยับใน 500ms ทุกครั้งที่เปลี่ยนค่า) ─────
+//   SynaptaAnalog dimmer("bedroom-dimmer", "bedroom", 4);
+//   dimmer.fade(500);   // เรียกใน setup() ก็ได้
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // วิธีเขียน callback 2 แบบ — เลือกตามถนัด
@@ -37,6 +41,9 @@ void setup() {
 
     // ใช้แบบที่ 1: ส่งชื่อ function เข้าไป
     relay.onCommand(onRelayChange);
+
+    // เปิด smooth fade — dimmer ค่อย ๆ ปรับค่าใน 500ms (default = instant)
+    dimmer.fade(500);
 
     // ─────────────────────────────────────────────────────────────────────────
     // แบบที่ 2: lambda — เขียน function ทันทีในวงเล็บ

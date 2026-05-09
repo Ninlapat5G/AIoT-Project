@@ -41,6 +41,10 @@ public:
 
     int  level() const    { return (int)value(); }
     void setLevel(int v)  { set(v); }
+
+    // เปิดโหมด fade — ค่อย ๆ ขยับระหว่างค่าเก่ากับค่าใหม่ในเวลา ms
+    // chainable: SynaptaAnalog dim("...","...", 4); dim.fade(500);
+    SynaptaAnalog& fade(uint32_t ms) { setFadeMs(ms); return *this; }
 };
 
 
