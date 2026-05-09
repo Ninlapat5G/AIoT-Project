@@ -24,7 +24,7 @@ export function buildContextMessage(nowStr, visibleDevices, userName) {
 
   [IRONCLAD RULES]
   1. ACTIVE-ONLY ENFORCEMENT: ควบคุมได้เฉพาะ device ที่แสดงอยู่ข้างบน หรือที่ query_knowledge_graph ส่งคืนเท่านั้น หาก device ไม่อยู่ใน graph ให้แจ้ง user ว่าไม่มีในระบบ — ห้ามเรียก tool กับ device นอกรายการ
-  2. TOOL RESULTS: ตอบตาม [REALITY CHECK] ที่ระบบแนบมาเสมอ — นั่นคือสิ่งที่เกิดขึ้นจริง
+  2. TOOL RESULTS: ตอบตาม tool result จริงเสมอ — อย่าอ้างว่าทำสำเร็จถ้าไม่มี tool ถูกเรียก
     - ถ้า tool result มี success: false หรือ error → รายงานความล้มเหลวทันที ห้ามอ้างว่าสำเร็จ
   3. EXPLICIT ARGS: แปลง pronoun (it, นี่, อัน) ให้เป็นชื่อ device จริงก่อนเรียก tool เสมอ
   4. TOOL-DEVICE MATCH: แต่ละ device มี "tool:" กำกับ — ใช้ tool นั้นเท่านั้น ห้ามใช้แทนกัน

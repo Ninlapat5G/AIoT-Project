@@ -68,7 +68,11 @@ const AgentState = Annotation.Root({
     reducer: (curr, next) => next,
     default: () => 0,
   }),
-  guardDone: Annotation({
+  guardRetry: Annotation({
+    reducer: (_, next) => next,
+    default: () => false,
+  }),
+  postExecutor: Annotation({
     reducer: (_, next) => next,
     default: () => false,
   }),
@@ -78,7 +82,7 @@ const AgentState = Annotation.Root({
 // ── 2. Nodes (Main Agent) ────────────────────────────────────────────────────
 
 async function agentNode(state) {
-  const { settings, deviceList, messages, signal, onStream, toolRound, guardDone } = state;
+  const { settings, deviceList, messages, signal, toolRound } = state;
 
   // Filter devices by enabled skills.
   // Mapping: device.type → skill names that grant access
@@ -123,29 +127,13 @@ async function agentNode(state) {
     buildContextMessage(nowString(), visibleDevices, settings.profile?.userBio || 'User')
   );
 
-  // เมื่อ guard รันแล้ว ให้กรอง draft AIMessage ออก (ตัวที่อยู่ก่อน REALITY CHECK)
-  // เพื่อไม่ให้ LLM anchor กับ draft ที่อาจหลอน แล้วเลือกเชื่อ REALITY CHECK แทน
-  const activeMessages = guardDone
-    ? messages.filter((m, idx) => {
-        if (!(m instanceof AIMessage) || m.tool_calls?.length) return true
-        const next = messages[idx + 1]
-        return !(next instanceof SystemMessage && String(next.content).startsWith('[REALITY CHECK]'))
-      })
-    : messages
-
-  const fullMessages = [personaMessage, contextMessage, ...activeMessages];
+  const fullMessages = [personaMessage, contextMessage, ...messages];
 
   let finalMessage;
   const stream = await agent.stream(fullMessages, { signal });
-
   for await (const chunk of stream) {
     if (!finalMessage) finalMessage = chunk;
     else finalMessage = finalMessage.concat(chunk);
-
-    // stream เฉพาะ response สุดท้าย (หลัง guard ฉีด REALITY CHECK แล้ว)
-    if (chunk.content && !chunk.tool_call_chunks?.length && guardDone) {
-      onStream?.(chunk.content);
-    }
   }
 
   return { messages: [finalMessage] };
@@ -192,35 +180,39 @@ async function toolNode(state) {
 
 // ── 3. Guard Node ────────────────────────────────────────────────────────────
 
-const GUARD_PROMPT = `คุณคือ Guard Agent — วิเคราะห์ว่า response ที่ agent กำลังจะตอบนั้นตรงกับความจริงไหม
-
-ดูข้อมูลที่ให้มาแล้วสรุป 1-2 ประโยคสั้นๆ:
-- ถ้าคำสั่งต้องการ action แต่ไม่มี tool ถูกเรียก → บอกว่ายังไม่ได้ดำเนินการจริง
-- ถ้า tool ถูกเรียกแล้วสำเร็จ → ยืนยันสั้นๆ ว่าทำอะไรไปบ้าง
-- ถ้า tool ล้มเหลว → บอกว่าล้มเหลวและสาเหตุ
-- ถ้าเป็นแค่คำถามหรือสนทนา ไม่ต้อง action → บอกว่าไม่ต้องดำเนินการ
-ตอบเป็นข้อเท็จจริงสั้นๆ ไม่ต้องแนะนำว่าควรพูดอะไร`
+const GUARD_PROMPT = `คุณคือ Guard Agent — ตรวจสอบว่า agent ตอบตามความจริงหรือหลอน
+วิเคราะห์แล้วตอบ JSON:
+- retry=true ถ้า: user ต้องการ action, agent บอกว่าทำสำเร็จแล้ว, แต่ไม่มี tool ถูกเรียกเลย
+- retry=false ถ้า: tool ถูกเรียกแล้ว (ไม่ว่าสำเร็จหรือล้มเหลว) หรือเป็นแค่คำถาม/สนทนา
+reason (เฉพาะตอน retry=true): ระบุว่าต้องเรียก tool อะไร กับ device อะไร เช่น "ต้องเรียก mqtt_publish เพื่อเปิดไฟหน้าบ้าน"`
 
 async function guardNode(state) {
-  const { messages, settings, prevToolResults, signal } = state;
+  const { messages, settings, deviceList, prevToolResults, signal } = state;
 
-  // แยก messages ของ turn นี้ออกมา
+  const enabledSkills = new Set((settings.skills || []).filter(s => s.enabled).map(s => s.name));
+  const deviceTypeAccess = { digital: ['mqtt_publish', 'mqtt_read'], analog: ['mqtt_publish', 'mqtt_read'], hub: ['hub'] };
+  const visibleDevices = (deviceList || []).filter(d => {
+    const required = deviceTypeAccess[d.type];
+    return !required || required.some(skill => enabledSkills.has(skill));
+  });
+
   let lastHumanIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
   }
   const turnMsgs = lastHumanIdx >= 0 ? messages.slice(lastHumanIdx) : messages;
 
-  const userText   = messages[lastHumanIdx]?.content || '';
-  const toolMsgs   = turnMsgs.filter(m => m instanceof ToolMessage);
-  const draftMsg   = [...turnMsgs].reverse().find(m => m instanceof AIMessage && !m.tool_calls?.length);
-  const draftText  = draftMsg?.content || '';
+  const userText  = messages[lastHumanIdx]?.content || '';
+  const toolMsgs  = turnMsgs.filter(m => m instanceof ToolMessage);
+  const draftMsg  = [...turnMsgs].reverse().find(m => m instanceof AIMessage && !m.tool_calls?.length);
+  const draftText = draftMsg?.content || '';
 
   const toolsStr = toolMsgs.length > 0
     ? toolMsgs.map(m => `• ${m.name}: ${String(m.content).slice(0, 200)}`).join('\n')
     : 'ไม่มี';
 
   const input =
+    `[Active Devices]\n${buildContextMessage(nowString(), visibleDevices, settings.profile?.userBio || 'User')}\n\n` +
     `${prevToolResults ? `[บริบทจาก turn ก่อน: ${prevToolResults}]\n` : ''}` +
     `คำสั่ง user: ${userText}\n` +
     `Tool ที่เรียกจริงใน turn นี้:\n${toolsStr}\n` +
@@ -233,26 +225,116 @@ async function guardNode(state) {
     modelName: settings.model,
     temperature: 0,
     maxTokens: 80,
+  }).withStructuredOutput({
+    type: 'object',
+    properties: {
+      retry:  { type: 'boolean' },
+      reason: { type: 'string' },
+    },
+    required: ['retry', 'reason'],
   });
 
-  let verdict;
+  let retry = false, reason = '';
   try {
     const res = await llm.invoke(
       [new SystemMessage(GUARD_PROMPT), new HumanMessage(input)],
       { signal }
     );
-    verdict = typeof res.content === 'string' ? res.content.trim() : toolsStr;
+    retry  = res.retry  ?? false;
+    reason = res.reason ?? '';
   } catch {
-    verdict = toolMsgs.length > 0 ? toolsStr : 'ไม่มีการดำเนินการใดๆ';
+    // ถ้า guard พัง ปล่อยผ่าน (ดีกว่า block user)
   }
 
   return {
-    messages: [new SystemMessage(`[REALITY CHECK]\n${verdict}`)],
-    guardDone: true,
+    messages: retry ? [new SystemMessage(`[GUARD] ${reason} — กรุณาเรียก tool ให้ถูกต้อง`)] : [],
+    guardRetry: retry,
   };
 }
 
-// ── 4. Graph Logic (ReAct Loop) ──────────────────────────────────────────────
+// ── 4. Executor Node (ตาม guard's instruction เท่านั้น) ──────────────────────
+
+async function executorNode(state) {
+  const { settings, deviceList, messages, signal } = state;
+
+  const enabledSkills = new Set((settings.skills || []).filter(s => s.enabled).map(s => s.name));
+  const deviceTypeAccess = { digital: ['mqtt_publish', 'mqtt_read'], analog: ['mqtt_publish', 'mqtt_read'], hub: ['hub'] };
+  const visibleDevices = (deviceList || []).filter(d => {
+    const required = deviceTypeAccess[d.type];
+    return !required || required.some(skill => enabledSkills.has(skill));
+  });
+
+  const tools = buildLangChainTools(settings);
+  if (tools.length === 0) return { postExecutor: true };
+
+  const effectiveKey = settings.apiKey || DEFAULT_API_KEY;
+  const llm = new ChatOpenAI({
+    apiKey: effectiveKey,
+    configuration: { apiKey: effectiveKey, baseURL: settings.endpoint, dangerouslyAllowBrowser: true },
+    modelName: settings.model,
+    temperature: 0,
+  }).bindTools(tools);
+
+  let lastHumanIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
+  }
+  const userText = messages[lastHumanIdx]?.content || '';
+
+  const guardMsg = messages[messages.length - 1];
+  const guardHint = (guardMsg instanceof SystemMessage && String(guardMsg.content).startsWith('[GUARD]'))
+    ? '\n\n' + guardMsg.content
+    : '';
+
+  const result = await llm.invoke([
+    new SystemMessage(
+      buildContextMessage(nowString(), visibleDevices, settings.profile?.userBio || 'User') +
+      '\n\nดำเนินการตามคำสั่งผู้ใช้ด้วยการเรียก tool ที่ถูกต้องทันที' + guardHint
+    ),
+    new HumanMessage(userText),
+  ], { signal });
+
+  return { messages: [result], postExecutor: true };
+}
+
+// ── 5. Responder Node (stream คำตอบสุดท้ายถึง user) ─────────────────────────
+
+async function responderNode(state) {
+  const { messages, settings, deviceList, signal, onStream } = state;
+
+  const enabledSkills = new Set((settings.skills || []).filter(s => s.enabled).map(s => s.name));
+  const deviceTypeAccess = { digital: ['mqtt_publish', 'mqtt_read'], analog: ['mqtt_publish', 'mqtt_read'], hub: ['hub'] };
+  const visibleDevices = (deviceList || []).filter(d => {
+    const required = deviceTypeAccess[d.type];
+    return !required || required.some(skill => enabledSkills.has(skill));
+  });
+
+  const effectiveKey = settings.apiKey || DEFAULT_API_KEY;
+  const llm = new ChatOpenAI({
+    apiKey: effectiveKey,
+    configuration: { apiKey: effectiveKey, baseURL: settings.endpoint, dangerouslyAllowBrowser: true },
+    modelName: settings.model,
+    temperature: 0.3,
+  });
+
+  const fullMessages = [
+    new SystemMessage(settings.systemPrompt || 'You are a helpful smart home assistant.'),
+    new SystemMessage(buildContextMessage(nowString(), visibleDevices, settings.profile?.userBio || 'User')),
+    ...messages,
+  ];
+
+  const stream = await llm.stream(fullMessages, { signal });
+  let finalMsg;
+  for await (const chunk of stream) {
+    if (chunk.content) onStream?.(chunk.content);
+    if (!finalMsg) finalMsg = chunk;
+    else finalMsg = finalMsg.concat(chunk);
+  }
+
+  return { messages: [finalMsg ?? new AIMessage('ขออภัยค่ะ เกิดข้อผิดพลาด')] };
+}
+
+// ── 6. Graph ─────────────────────────────────────────────────────────────────
 
 function shouldContinue(state) {
   const lastMessage = state.messages[state.messages.length - 1];
@@ -263,18 +345,24 @@ function shouldContinue(state) {
     }
     return "tools";
   }
-  if (!state.guardDone) return "guard";
-  return END;
+  return "guard";
 }
 
 const workflow = new StateGraph(AgentState)
   .addNode("agent", agentNode)
   .addNode("tools", toolNode)
   .addNode("guard", guardNode)
+  .addNode("executor", executorNode)
+  .addNode("responder", responderNode)
   .addEdge(START, "agent")
   .addConditionalEdges("agent", shouldContinue)
-  .addEdge("tools", "agent")
-  .addEdge("guard", "agent");
+  .addConditionalEdges("tools", state => state.postExecutor ? "responder" : "agent")
+  .addConditionalEdges("guard", state => state.guardRetry ? "executor" : "responder")
+  .addConditionalEdges("executor", state => {
+    const last = state.messages[state.messages.length - 1];
+    return last?.tool_calls?.length > 0 ? "tools" : "responder";
+  })
+  .addEdge("responder", END);
 
 const compiledGraph = workflow.compile();
 
@@ -299,7 +387,6 @@ export const runAgent = async (params) => {
     ...params,
     messages: previousMessages,
     toolRound: 0,
-    guardDone: false,
     prevToolResults: params.prevToolResults ?? null,
   });
 
