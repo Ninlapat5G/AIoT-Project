@@ -351,7 +351,7 @@ async function responderNode(state) {
 // ── 6. Graph ─────────────────────────────────────────────────────────────────
 
 // Guard ตรวจเฉพาะ turn ที่มี home automation tools — ป้องกัน false positive กรณีถามกลับ/สนทนา
-const HOME_TOOLS = new Set(['mqtt_publish', 'mqtt_read', 'hub', 'query_knowledge_graph']);
+const HOME_TOOLS = new Set(['mqtt_publish']);
 
 function shouldContinue(state) {
   const lastMessage = state.messages[state.messages.length - 1];
