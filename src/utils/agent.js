@@ -82,7 +82,7 @@ const AgentState = Annotation.Root({
 // ── 2. Nodes (Main Agent) ────────────────────────────────────────────────────
 
 async function agentNode(state) {
-  const { settings, deviceList, messages, signal, toolRound } = state;
+  const { settings, deviceList, messages, signal } = state;
 
   // Filter devices by enabled skills.
   // Mapping: device.type → skill names that grant access
@@ -309,6 +309,18 @@ async function responderNode(state) {
     return !required || required.some(skill => enabledSkills.has(skill));
   });
 
+  // สร้าง message list สะอาด: ไม่รวม draft ที่อาจหลอน / [GUARD] / tool_call artifacts
+  let lastHumanIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
+  }
+  const userText = messages[lastHumanIdx]?.content || '';
+  const turnMsgs = lastHumanIdx >= 0 ? messages.slice(lastHumanIdx) : messages;
+  const toolMsgs = turnMsgs.filter(m => m instanceof ToolMessage);
+  const cleanHistory = messages
+    .slice(Math.max(0, lastHumanIdx - 6), lastHumanIdx)
+    .filter(m => (m instanceof HumanMessage) || (m instanceof AIMessage && !m.tool_calls?.length && String(m.content).length > 0));
+
   const effectiveKey = settings.apiKey || DEFAULT_API_KEY;
   const llm = new ChatOpenAI({
     apiKey: effectiveKey,
@@ -320,7 +332,9 @@ async function responderNode(state) {
   const fullMessages = [
     new SystemMessage(settings.systemPrompt || 'You are a helpful smart home assistant.'),
     new SystemMessage(buildContextMessage(nowString(), visibleDevices, settings.profile?.userBio || 'User')),
-    ...messages,
+    ...cleanHistory,
+    new HumanMessage(userText),
+    ...toolMsgs,
   ];
 
   const stream = await llm.stream(fullMessages, { signal });
@@ -400,7 +414,7 @@ export const runAgent = async (params) => {
   return { reply: finalReply };
 };
 
-// ── 4. Sub-Agents ────────────────────────────────────────────────────────────
+// ── 7. Sub-Agents ────────────────────────────────────────────────────────────
 
 export async function generateSearchQuery({ settings, query, signal }) {
   const effectiveKey = settings.apiKey || DEFAULT_API_KEY
