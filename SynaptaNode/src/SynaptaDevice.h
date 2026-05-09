@@ -45,8 +45,12 @@ public:
     String _cmdTopic  (const String& base) const;
     String _stateTopic(const String& base) const;
 
+    // Manifest entry — JSON object used by SynaptaNode for discovery publish
+    String _manifestEntry(const String& base) const;
+
     const String& getId()  const { return _id; }
     DeviceType    getType() const { return _type; }
+    const char*   typeName() const;       // "digital" | "analog" | "sensor"
 
 private:
     String     _id, _room;

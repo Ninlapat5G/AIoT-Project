@@ -1,9 +1,5 @@
 /*
- * 02_MultiDevice — Multiple devices on one ESP32
- *
- * Web App setup — add each device with its matching id & room:
- *   bedroom-relay  | bedroom | digital
- *   bedroom-dimmer | bedroom | analog
+ * 02_MultiDevice — หลาย device บน ESP32 ตัวเดียว + วิธีเขียน callback 2 แบบ
  *
  * Wiring:
  *   Relay IN   → GPIO 2
@@ -12,37 +8,62 @@
 
 #include <Synapta.h>
 
-SynaptaDevice relay ("bedroom-relay",  "bedroom", NODE_DIGITAL);
-SynaptaDevice dimmer("bedroom-dimmer", "bedroom", NODE_ANALOG);
+// ── ประกาศ device — Digital + Analog บนบอร์ดเดียว ────────────────────────────
+SynaptaDigital relay ("bedroom-relay",  "bedroom", 2);
+SynaptaAnalog  dimmer("bedroom-dimmer", "bedroom", 4);
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// วิธีเขียน callback 2 แบบ — เลือกตามถนัด
+// ─────────────────────────────────────────────────────────────────────────────
+
+// แบบที่ 1: เขียน function ปกติ (เหมือน Arduino เดิม)
+// ── ข้อดี: คุ้นเคย อ่านง่าย แยก logic ได้ชัด
+void onRelayChange(bool on) {
+    if (on) {
+        Serial.println("Relay: ON");
+    } else {
+        Serial.println("Relay: OFF");
+    }
+}
+
 
 void setup() {
     Serial.begin(115200);
 
-    Synapta.begin("YOUR_WIFI_SSID", "YOUR_WIFI_PASSWORD", "Mylab/smarthome");
+    Synapta.wifi("YOUR_WIFI_SSID", "YOUR_WIFI_PASSWORD")
+           .baseTopic("Mylab/smarthome")
+           .start();
 
-    // Auto-control GPIO — no callback needed.
-    // Web App sends "true" → HIGH, "false" → LOW
-    relay.attachPin(2);
+    // ใช้แบบที่ 1: ส่งชื่อ function เข้าไป
+    relay.onCommand(onRelayChange);
 
-    // Auto PWM — Web App sends 0–255 → ledcWrite
-    dimmer.attachPWM(4);
-
-    // Optional: extra logic on top of attachPin/attachPWM
-    relay.onCommand([](bool on) {
-        if (on) {
-            Serial.println("Relay: ON");
-        } else {
-            Serial.println("Relay: OFF");
-        }
-    });
-
+    // ─────────────────────────────────────────────────────────────────────────
+    // แบบที่ 2: lambda — เขียน function ทันทีในวงเล็บ
+    // syntax: [](type ชื่อ) { code; }
+    //   []        = capture (ส่วนใหญ่ใช้ว่าง — ไม่ต้องเข้าใจตอนนี้ก็ได้)
+    //   (int val) = พารามิเตอร์ที่จะรับ
+    //   { ... }   = body ของ function
+    // ── ข้อดี: code อยู่ตรงที่ register ไม่ต้องตั้งชื่อ function
+    // ─────────────────────────────────────────────────────────────────────────
     dimmer.onValue([](int val) {
         Serial.print("Dimmer: ");
         Serial.print(val);
         Serial.println("/255");
     });
+
+    // ── เทียบ — โค้ดข้างบนเหมือนเขียนแบบนี้แล้วเรียก dimmer.onValue(onDimmer) ──
+    // void onDimmer(int val) {
+    //     Serial.print("Dimmer: "); Serial.print(val); Serial.println("/255");
+    // }
 }
 
 void loop() {
     Synapta.loop();
 }
+
+/*
+ * ── สั่งจาก code ──
+ *   relay.turnOn();    relay.turnOff();    relay.toggle();
+ *   dimmer.setLevel(128);   int v = dimmer.level();
+ */

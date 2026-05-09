@@ -111,6 +111,33 @@ String SynaptaDevice::_stateTopic(const String& base) const {
     return base + "/" + _normalise(_room) + "/" + _id + "/state";
 }
 
+const char* SynaptaDevice::typeName() const {
+    if (_type == NODE_DIGITAL) return "digital";
+    if (_type == NODE_ANALOG)  return "analog";
+    return "sensor";
+}
+
+// Build one JSON object describing this device — joined into the node manifest.
+// Note: id/room are trusted user input — no escaping done. Avoid quotes/backslashes.
+String SynaptaDevice::_manifestEntry(const String& base) const {
+    String j = "{\"id\":\"";
+    j += _id;
+    j += "\",\"room\":\"";
+    j += _room;
+    j += "\",\"type\":\"";
+    j += typeName();
+    j += "\",\"stateTopic\":\"";
+    j += _stateTopic(base);
+    j += "\"";
+    if (_type != NODE_SENSOR) {
+        j += ",\"cmdTopic\":\"";
+        j += _cmdTopic(base);
+        j += "\"";
+    }
+    j += "}";
+    return j;
+}
+
 void SynaptaDevice::_executeDigital(bool on) {
     _stateBool = on;
     if (_pin != 255) {

@@ -10,10 +10,25 @@
 
 class SynaptaNodeClass {
 public:
+    // ── V1 Fluent / step-by-step config ──────────────────────────────────────
+    // ใช้แบบ chain: Synapta.wifi(...).broker(...).baseTopic(...).start();
+    // หรือทีละบรรทัด:
+    //   Synapta.wifi("MYWIFI", "PASSWORD");
+    //   Synapta.baseTopic("Mylab/smarthome");
+    //   Synapta.start();
+    SynaptaNodeClass& wifi      (const char* ssid, const char* pass);
+    SynaptaNodeClass& broker    (const char* host, int port = 8883, bool tls = true);
+    SynaptaNodeClass& mqttAuth  (const char* user, const char* pass);
+    SynaptaNodeClass& baseTopic (const char* base);
+    SynaptaNodeClass& nodeId    (const char* id);
+    void              start();             // เริ่มจริง — เชื่อม WiFi + MQTT
+
+    // ── Legacy API (ยังใช้ได้) ────────────────────────────────────────────────
     void begin(const char* ssid, const char* pass, const char* baseTopic);
     void begin();
     void configure(const char* ssid, const char* pass, const char* baseTopic);
 
+    // ── Runtime ──────────────────────────────────────────────────────────────
     void loop();
     bool isConnected();
 
@@ -35,15 +50,18 @@ private:
     std::function<void()> _cbDisconnect;
 
     bool     _wasConnected    = false;
+    bool     _wifiBeginCalled = false;   // กัน WiFi.begin ซ้ำระหว่าง connecting
     uint32_t _lastReconnectMs = 0;
 
     void _init();
-    void _connectWiFi();
+    void _connectWiFi();        // non-blocking — แค่ trigger WiFi.begin
     bool _connectMQTT();
+    void _publishManifest();    // V1: ประกาศ device list ตอน connect
 
-    String _macSuffix()   const;
-    String _nodeId()      const;
-    String _statusTopic() const;
+    String _macSuffix()     const;
+    String _nodeId()        const;
+    String _statusTopic()   const;
+    String _manifestTopic() const;
 
     // PubSubClient requires a static callback
     static void _mqttCallback(char* topic, uint8_t* payload, unsigned int len);

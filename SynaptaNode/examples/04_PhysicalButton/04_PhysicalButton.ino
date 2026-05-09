@@ -1,46 +1,57 @@
 /*
- * 04_PhysicalButton — Physical toggle button + MQTT sync
+ * 04_PhysicalButton — ปุ่มกดจริงบน GPIO + sync ไป MQTT
  *
- * When the button is pressed:
- *   1. Device state is toggled locally
- *   2. GPIO is updated
- *   3. New state is published → Web App UI updates
+ * กดปุ่ม:
+ *   1. toggle state ใน device
+ *   2. GPIO เปลี่ยนตาม
+ *   3. publish state ใหม่ → Web App UI อัพเดทตาม
  *
- * Web App setup:
- *   Name: Bedroom Lamp   Room: bedroom   ID: bedroom-lamp   Type: digital
+ * แม้ WiFi หลุด ปุ่มยังกดเปิด/ปิดได้ปกติ (state จะ sync เมื่อ MQTT กลับมา)
  *
  * Wiring:
  *   Relay IN → GPIO 2
- *   Button   → GPIO 5, other pin → GND  (internal pull-up, active-low)
+ *   Button   → GPIO 5, ขาอีกข้าง → GND  (internal pull-up, active-low)
  */
 
 #include <Synapta.h>
 
-SynaptaDevice lamp("bedroom-lamp", "bedroom", NODE_DIGITAL);
+// pin 2 = GPIO ที่ผูก output (relay)
+SynaptaDigital lamp("bedroom-lamp", "bedroom", 2);
+
+
+// ── callback แบบ free function (ไม่ต้องใช้ lambda) ──
+void onLampChange(bool on) {
+    if (on) {
+        Serial.println("Lamp: ON");
+    } else {
+        Serial.println("Lamp: OFF");
+    }
+}
+
+void onConnected() {
+    Serial.println("[Synapta] Connected");
+}
+
+void onDisconnected() {
+    Serial.println("[Synapta] Disconnected — button still works");
+}
+
 
 void setup() {
     Serial.begin(115200);
 
-    Synapta.begin("YOUR_WIFI_SSID", "YOUR_WIFI_PASSWORD", "Mylab/smarthome");
+    // ── config ทีละบรรทัด — Arduino style ──
+    Synapta.wifi("YOUR_WIFI_SSID", "YOUR_WIFI_PASSWORD");
+    Synapta.baseTopic("Mylab/smarthome");
+    Synapta.start();
 
-    lamp.attachPin(2);      // auto-drive GPIO 2
-    lamp.attachButton(5);   // monitor GPIO 5 as toggle button
+    // ── ผูกปุ่มเข้า device ──
+    lamp.attachButton(5);   // GPIO 5 — internal pull-up, debounce 50ms
 
-    lamp.onCommand([](bool on) {
-        if (on) {
-            Serial.println("Lamp: ON");
-        } else {
-            Serial.println("Lamp: OFF");
-        }
-    });
-
-    Synapta.onConnect([]() {
-        Serial.println("[Synapta] Connected");
-    });
-
-    Synapta.onDisconnect([]() {
-        Serial.println("[Synapta] Disconnected — button still works");
-    });
+    // ── ผูก callback (ใช้ free function ที่ประกาศไว้ข้างบน) ──
+    lamp.onCommand(onLampChange);
+    Synapta.onConnect(onConnected);
+    Synapta.onDisconnect(onDisconnected);
 }
 
 void loop() {

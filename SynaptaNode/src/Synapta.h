@@ -5,4 +5,5 @@
 
 #include "NodeConfig.h"
 #include "SynaptaDevice.h"
+#include "SynaptaDevices.h"   // V1: SynaptaDigital / SynaptaAnalog / SynaptaSensor
 #include "SynaptaNode.h"
