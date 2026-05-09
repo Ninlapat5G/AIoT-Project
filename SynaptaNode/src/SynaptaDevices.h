@@ -42,9 +42,12 @@ public:
     int  level() const    { return (int)value(); }
     void setLevel(int v)  { set(v); }
 
-    // เปิดโหมด fade — ค่อย ๆ ขยับระหว่างค่าเก่ากับค่าใหม่ในเวลา ms
-    // chainable: SynaptaAnalog dim("...","...", 4); dim.fade(500);
+    // ปรับเวลา fade (default 100ms) — chainable
     SynaptaAnalog& fade(uint32_t ms) { setFadeMs(ms); return *this; }
+
+    // เปิด gamma correction สำหรับ LED — ค่า 2.2 = สายตามนุษย์ (default ถ้าไม่ใส่)
+    // ใช้กับ LED แล้วจะดูเปลี่ยนนุ่มนวลกว่า linear PWM มาก
+    SynaptaAnalog& gamma(float g = 2.2f) { setGamma(g); return *this; }
 };
 
 

@@ -1,5 +1,10 @@
 #include "SynaptaDevice.h"
 #include "SynaptaNode.h"
+#include <math.h>
+
+// Static gamma LUT — shared across all analog devices
+uint8_t SynaptaDevice::_gammaLut[256];
+float   SynaptaDevice::_gammaValue = 0.0f;
 
 SynaptaDevice::SynaptaDevice(const char* id, const char* room, DeviceType type)
     : _id(id), _room(room), _type(type)
@@ -174,11 +179,36 @@ void SynaptaDevice::_executeAnalog(int val) {
 
 void SynaptaDevice::_writePWM(int v) {
     if (_pin == 255) return;
+    int actual = v;
+    if (_useGamma) {
+        if (actual < 0)   actual = 0;
+        if (actual > 255) actual = 255;
+        actual = _gammaLut[actual];
+    }
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
-    ledcWrite(_pin, v);
+    ledcWrite(_pin, actual);
 #else
-    if (_pwmChannel >= 0) ledcWrite(_pwmChannel, v);
+    if (_pwmChannel >= 0) ledcWrite(_pwmChannel, actual);
 #endif
+}
+
+// ── Gamma correction ─────────────────────────────────────────────────────────
+// LUT ที่คำนวณ pow(i/255, g)*255 แล้ว — ใช้ lookup แทน pow() runtime
+// Shared static — ถ้า 2 devices เรียก setGamma() ต่างค่า อันสุดท้ายชนะ
+
+void SynaptaDevice::setGamma(float g) {
+    if (g <= 1.0f) {
+        _useGamma = false;     // 1.0 หรือต่ำกว่า = linear (no correction)
+        return;
+    }
+    _useGamma = true;
+    if (g != _gammaValue) {
+        _gammaValue = g;
+        for (int i = 0; i < 256; i++) {
+            float n = (float)i / 255.0f;
+            _gammaLut[i] = (uint8_t)(powf(n, g) * 255.0f + 0.5f);
+        }
+    }
 }
 
 void SynaptaDevice::_tickFade() {

@@ -12,9 +12,9 @@
 SynaptaDigital relay ("bedroom-relay",  "bedroom", 2);
 SynaptaAnalog  dimmer("bedroom-dimmer", "bedroom", 4);
 
-// ── หรือเปิด smooth fade เลย (ค่อย ๆ ขยับใน 500ms ทุกครั้งที่เปลี่ยนค่า) ─────
-//   SynaptaAnalog dimmer("bedroom-dimmer", "bedroom", 4);
-//   dimmer.fade(500);   // เรียกใน setup() ก็ได้
+// PWM ของ dimmer ตอนนี้ default fade 100ms อัตโนมัติ — ไม่ต้องตั้งเอง
+// ปรับได้ใน setup():  dimmer.fade(300);   // ช้าลง
+//                     dimmer.fade(0);     // instant (ของเก่า)
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,8 +42,13 @@ void setup() {
     // ใช้แบบที่ 1: ส่งชื่อ function เข้าไป
     relay.onCommand(onRelayChange);
 
-    // เปิด smooth fade — dimmer ค่อย ๆ ปรับค่าใน 500ms (default = instant)
-    dimmer.fade(500);
+    // ── ถ้า dimmer เป็น LED ── เปิด gamma เพื่อให้ตาเห็น "ค่อยๆ สว่าง" สมจริง
+    // ตาคนรับรู้ความสว่างไม่เป็นเส้นตรง → ค่า PWM 128 ไม่ได้ดู "สว่างครึ่งหนึ่ง"
+    // gamma(2.2) ปรับให้ระดับที่ user สั่ง = ระดับที่ตาเห็น
+    dimmer.gamma();   // = gamma(2.2) — preset สำหรับ LED
+
+    // ── ถ้าเป็น motor/heater ── ปิด gamma (default ปิดอยู่แล้ว)
+    // dimmer.gamma(1.0);   // หรือไม่ต้องเรียกเลย
 
     // ─────────────────────────────────────────────────────────────────────────
     // แบบที่ 2: lambda — เขียน function ทันทีในวงเล็บ

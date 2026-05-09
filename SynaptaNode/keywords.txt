@@ -62,6 +62,8 @@ level	KEYWORD2
 setLevel	KEYWORD2
 fade	KEYWORD2
 setFadeMs	KEYWORD2
+gamma	KEYWORD2
+setGamma	KEYWORD2
 
 # ── Sensor convenience (V1) ──
 read	KEYWORD2
