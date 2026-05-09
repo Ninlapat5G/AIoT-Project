@@ -350,6 +350,9 @@ async function responderNode(state) {
 
 // ── 6. Graph ─────────────────────────────────────────────────────────────────
 
+// Guard ตรวจเฉพาะ turn ที่มี home automation tools — ป้องกัน false positive กรณีถามกลับ/สนทนา
+const HOME_TOOLS = new Set(['mqtt_publish', 'mqtt_read', 'hub', 'query_knowledge_graph']);
+
 function shouldContinue(state) {
   const lastMessage = state.messages[state.messages.length - 1];
   if (lastMessage.tool_calls?.length > 0) {
@@ -359,7 +362,16 @@ function shouldContinue(state) {
     }
     return "tools";
   }
-  return "guard";
+
+  // เช็คว่า turn นี้มีการเรียก home automation tools จริงไหม
+  let lastHumanIdx = -1;
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    if (state.messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
+  }
+  const turnMsgs = lastHumanIdx >= 0 ? state.messages.slice(lastHumanIdx) : state.messages;
+  const hasHomeTools = turnMsgs.some(m => m instanceof ToolMessage && HOME_TOOLS.has(m.name));
+
+  return hasHomeTools ? "guard" : "responder";
 }
 
 const workflow = new StateGraph(AgentState)
