@@ -22,9 +22,10 @@ async function queryKnowledgeGraph(args, ctx) {
 
   if (action !== 'get_context') return { success: false, error: `Unknown action: ${action}` }
 
-  const now = new Date().toLocaleString('en-GB', {
+  const now = new Date().toLocaleString('th-TH-u-ca-gregory', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+    hour: '2-digit', minute: '2-digit',
+    timeZone: 'Asia/Bangkok', timeZoneName: 'short',
   })
 
   return {

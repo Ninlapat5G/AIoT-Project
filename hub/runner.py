@@ -19,7 +19,6 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -111,7 +110,7 @@ def run(
     Returns the final LLM summary string.
     """
     if now is None:
-        now = datetime.now().strftime("%A %d %B %Y %H:%M")
+        now = kg.now_thai()
 
     # ── 1. Reset session state ────────────────────────────────────────────────
     os_exec.reset_cwd()

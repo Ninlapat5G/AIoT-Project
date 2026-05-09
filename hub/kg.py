@@ -18,10 +18,31 @@ import platform
 import time
 from collections import deque
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import psutil
+
+# ── Thai date helper ──────────────────────────────────────────────────────────
+# ไม่ใช้ locale ของเครื่อง (เปลี่ยนตาม OS) — map เองให้คงเส้นคงวา
+
+_BKK = ZoneInfo('Asia/Bangkok')
+_THAI_DAYS = ['วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี',
+              'วันศุกร์', 'วันเสาร์', 'วันอาทิตย์']
+_THAI_MONTHS = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน',
+                'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม',
+                'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
+
+
+def now_thai() -> str:
+    """คืนเวลาแบบไทย เช่น 'วันศุกร์ที่ 9 พฤษภาคม ค.ศ. 2026 เวลา 14:23 น. (GMT+7)'"""
+    n = datetime.now(_BKK)
+    return (
+        f'{_THAI_DAYS[n.weekday()]}ที่ {n.day} {_THAI_MONTHS[n.month]} '
+        f'ค.ศ. {n.year} เวลา {n.hour:02d}:{n.minute:02d} น. (GMT+7)'
+    )
 
 # ── Static machine info (คำนวณครั้งเดียวตอน import) ─────────────────────────────
 

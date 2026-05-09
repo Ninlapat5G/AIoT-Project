@@ -18,9 +18,12 @@ import { DEFAULT_API_KEY } from "../config/default_key";
 // ── 0. Helpers ────────────────────────────────────────────────────────────────
 
 function nowString() {
-  return new Date().toLocaleString('en-GB', {
+  // th-TH-u-ca-gregory: ใช้ label ไทย แต่ปียัง ค.ศ. (LLM ไม่งงกับ พ.ศ.)
+  // timeZone: 'Asia/Bangkok' บังคับให้คงเส้นคงวาแม้ user อยู่ TZ อื่น
+  return new Date().toLocaleString('th-TH-u-ca-gregory', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+    hour: '2-digit', minute: '2-digit',
+    timeZone: 'Asia/Bangkok', timeZoneName: 'short',
   });
 }
 
