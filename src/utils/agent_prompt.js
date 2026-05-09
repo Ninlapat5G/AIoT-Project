@@ -1,41 +1,35 @@
 // ── Agent System Prompts ─────────────────────────────────────────────────────
-// All LLM system prompts are centralized here.
-// Dynamic prompts are exported as functions; static ones as constants.
+// แยกเป็น 3 ก้อน:
+//   1. IRONCLAD_RULES — กฎตายตัว ไม่เปลี่ยน (ใส่ใน node ที่ต้องบังคับใช้: agent, executor)
+//   2. buildContextMessage — KG snapshot สด (ทุก node ที่ต้องเห็นสถานะบ้าน)
+//   3. Sub-agent prompts (search, name, summary) — งานเฉพาะกิจ
 
-function summarizeDevices(deviceList) {
-  return (deviceList || [])
-    .map(d => {
-      const sub = d.subTopic ? ` | subTopic: ${d.subTopic}` : ''
-      if (d.type === 'analog')
-        return `${d.name} (${d.room}) — analog | tool: mqtt_publish / mqtt_read | state: ${d.value}/${d.max ?? 255} | pubTopic: ${d.pubTopic}${sub}`
-      if (d.type === 'hub')
-        return `${d.name} (${d.room}) — hub | tool: hub | pubTopic: ${d.pubTopic}`
-      return `${d.name} (${d.room}) — digital | tool: mqtt_publish / mqtt_read | state: ${d.on ? 'ON' : 'OFF'} | pubTopic: ${d.pubTopic}${sub}`
-    }).join('\n') || 'No active devices on dashboard'
+import { snapshotText } from './kg.js'
+
+// ── 1. IRONCLAD RULES (constant) ─────────────────────────────────────────────
+// กฎเหล่านี้ไม่เคยเปลี่ยน — เก็บไว้ที่เดียว node ไหนต้องการก็ดึงไปใช้
+export const IRONCLAD_RULES = `[IRONCLAD RULES]
+1. ACTIVE-ONLY ENFORCEMENT: ควบคุมได้เฉพาะ device ที่อยู่ใน [KNOWLEDGE GRAPH] หรือที่ query_knowledge_graph ส่งคืนเท่านั้น หาก device ไม่อยู่ใน graph ให้แจ้ง user ว่าไม่มีในระบบ — ห้ามเรียก tool กับ device นอกรายการ
+2. TOOL RESULTS: ตอบตาม tool result จริงเสมอ — อย่าอ้างว่าทำสำเร็จถ้าไม่มี tool ถูกเรียก
+   - ถ้า tool result มี success: false หรือ error → รายงานความล้มเหลวทันที ห้ามอ้างว่าสำเร็จ
+3. EXPLICIT ARGS: แปลง pronoun (it, นี่, อัน) ให้เป็นชื่อ device จริงก่อนเรียก tool เสมอ
+4. TOOL-DEVICE MATCH: แต่ละ device มี "tool:" กำกับใน KG — ใช้ tool นั้นเท่านั้น ห้ามใช้แทนกัน
+5. HUB DELEGATION: hub device มี agent ของตัวเองที่ค้นหาและดำเนินการได้ — ส่ง task ตามที่ user พูดไปตรงๆ สำหรับงานซับซ้อนหรืองานปลายเปิดทั้งหมด ห้าม web_search ก่อน
+6. SETTINGS & TOOL QUERIES: ถ้า user ถามว่า tool/skill ทำงานยังไง ต้องการอะไร ใช้งานไม่ได้ทำไม หรือต้องการเปิด/ปิด skill — ใช้ manage_settings tool เสมอ ห้ามตอบจากความจำหรือเดาเอง
+7. CONTEXT-FIRST — ข้อมูลต่อไปนี้มีอยู่ในระบบแล้ว ห้ามใช้ web_search เพื่อหา:
+   • วัน/เวลา/ปฏิทิน → ดู Time ใน [KNOWLEDGE GRAPH] ด้านบน
+   • สถานะอุปกรณ์ → ดู [KNOWLEDGE GRAPH] หรือเรียก mqtt_read
+   • ข้อมูล user/ชื่อ → ดู User ใน [KNOWLEDGE GRAPH]
+   ใช้ web_search เฉพาะข้อมูล real-time ภายนอก เช่น ข่าว พยากรณ์อากาศ ราคา เหตุการณ์ปัจจุบัน`
+
+// ── 2. KG context (dynamic) ──────────────────────────────────────────────────
+// ส่ง devices/settings/now → คืน snapshot text จาก kg.js
+// (เปลี่ยน argument signature: รับ object เดียว สอดคล้องกับ kg.js)
+export function buildContextMessage({ devices, settings, now }) {
+  return snapshotText({ devices, settings, now })
 }
 
-export function buildContextMessage(nowStr, visibleDevices, userName) {
-  return `[SYSTEM ENVIRONMENT]
-  Time: ${nowStr} | User: ${userName}
-
-  [ACTIVE DEVICES — Knowledge Graph snapshot]
-  ${summarizeDevices(visibleDevices)}
-  (เรียก query_knowledge_graph {"action":"get_context"} เพื่อดึงสถานะล่าสุด)
-
-  [IRONCLAD RULES]
-  1. ACTIVE-ONLY ENFORCEMENT: ควบคุมได้เฉพาะ device ที่แสดงอยู่ข้างบน หรือที่ query_knowledge_graph ส่งคืนเท่านั้น หาก device ไม่อยู่ใน graph ให้แจ้ง user ว่าไม่มีในระบบ — ห้ามเรียก tool กับ device นอกรายการ
-  2. TOOL RESULTS: ตอบตาม tool result จริงเสมอ — อย่าอ้างว่าทำสำเร็จถ้าไม่มี tool ถูกเรียก
-    - ถ้า tool result มี success: false หรือ error → รายงานความล้มเหลวทันที ห้ามอ้างว่าสำเร็จ
-  3. EXPLICIT ARGS: แปลง pronoun (it, นี่, อัน) ให้เป็นชื่อ device จริงก่อนเรียก tool เสมอ
-  4. TOOL-DEVICE MATCH: แต่ละ device มี "tool:" กำกับ — ใช้ tool นั้นเท่านั้น ห้ามใช้แทนกัน
-  5. HUB DELEGATION: hub device มี agent ของตัวเองที่ค้นหาและดำเนินการได้ — ส่ง task ตามที่ user พูดไปตรงๆ สำหรับงานซับซ้อนหรืองานปลายเปิดทั้งหมด ห้าม web_search ก่อน
-  6. SETTINGS & TOOL QUERIES: ถ้า user ถามว่า tool/skill ทำงานยังไง ต้องการอะไร ใช้งานไม่ได้ทำไม หรือต้องการเปิด/ปิด skill — ใช้ manage_settings tool เสมอ ห้ามตอบจากความจำหรือเดาเอง
-  7. CONTEXT-FIRST — ข้อมูลต่อไปนี้มีอยู่ในระบบแล้ว ห้ามใช้ web_search เพื่อหา:
-     • วัน/เวลา/ปฏิทิน → ดู "Time:" ใน [SYSTEM ENVIRONMENT] ด้านบน หรือเรียก query_knowledge_graph
-     • สถานะอุปกรณ์ → ดู [ACTIVE DEVICES] หรือเรียก mqtt_read
-     • ข้อมูล user/ชื่อ → ดู "User:" ใน [SYSTEM ENVIRONMENT] หรือเรียก query_knowledge_graph
-     ใช้ web_search เฉพาะข้อมูล real-time ภายนอกที่ระบบไม่มี เช่น ข่าว พยากรณ์อากาศ ราคา เหตุการณ์ปัจจุบัน`
-}
+// ── 3. Sub-agent prompts ─────────────────────────────────────────────────────
 
 export const ROUND_SUMMARY_PROMPT = `คุณสรุปผลการทำงานของ tools ทั้งหมดในรอบนี้เป็นภาษาไทยธรรมชาติ 1 ประโยคสั้นๆ
 ถ้ามีหลาย action ให้รวมเป็นประโยคเดียว เช่น "เปิดไฟทั้ง 3 ดวงในบ้าน" หรือ "ค้นหาสภาพอากาศและปิดแอร์"

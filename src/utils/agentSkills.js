@@ -10,8 +10,11 @@
 //   3. Add its definition to DEFAULT_SETTINGS.skills in data.js
 
 import { generateSearchQuery } from './agent.js'
+import { snapshotJson } from './kg.js'
+import { runSettingsAgent } from './settingsAgent.js'
 
 // ── Knowledge Graph Tool ───────────────────────────────────────────────────────
+// Delegate ทั้งหมดไปที่ kg.js — single source of truth
 
 async function queryKnowledgeGraph(args, ctx) {
   const { settings, devicesRef } = ctx
@@ -19,44 +22,16 @@ async function queryKnowledgeGraph(args, ctx) {
 
   if (action !== 'get_context') return { success: false, error: `Unknown action: ${action}` }
 
-  const enabledSkillIds = new Set(
-    (settings.skills || []).filter(s => s.enabled).map(s => s.name)
-  )
-
-  const activeDevices = (devicesRef.current || [])
-    .filter(d => d.type !== 'os_terminal')
-    .filter(d => {
-      if (d.type === 'hub') return enabledSkillIds.has('hub')
-      return enabledSkillIds.has('mqtt_publish') || enabledSkillIds.has('mqtt_read')
-    })
-    .map(d => ({
-      name: d.name,
-      room: d.room,
-      type: d.type,
-      state: d.type === 'digital' ? (d.on ? 'ON' : 'OFF')
-           : d.type === 'analog'  ? `${d.value}/${d.max ?? 255}`
-           : null,
-      pubTopic: d.pubTopic,
-      subTopic: d.subTopic ?? null,
-      tool: d.type === 'hub' ? 'hub' : 'mqtt_publish / mqtt_read',
-    }))
+  const now = new Date().toLocaleString('en-GB', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+  })
 
   return {
     success: true,
-    timestamp: new Date().toLocaleString('en-GB', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-      hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
-    }),
-    user_profile: {
-      name: settings.profile?.displayName || settings.profile?.userBio || 'User',
-      bio: settings.profile?.userBio || '',
-    },
-    active_devices: activeDevices,
-    enabled_skills: [...enabledSkillIds],
-    total: activeDevices.length,
+    ...snapshotJson({ devices: devicesRef.current, settings, now }),
   }
 }
-import { runSettingsAgent } from './settingsAgent.js'
 
 const SERPER_URL = 'https://google.serper.dev/search'
 

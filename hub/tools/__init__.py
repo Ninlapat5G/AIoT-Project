@@ -8,11 +8,12 @@ To add a new tool:
 That's it — runner.py picks it up automatically.
 """
 
-from . import os_exec, web_search
+from . import os_exec, web_search, query_kg
 
 _REGISTRY = {
     "os_exec":    os_exec,
     "web_search": web_search,
+    "query_kg":   query_kg,
 }
 
 SCHEMAS = [mod.SCHEMA for mod in _REGISTRY.values()]

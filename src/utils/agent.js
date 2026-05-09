@@ -3,18 +3,38 @@ import { ChatOpenAI } from "@langchain/openai";
 import { SystemMessage, HumanMessage, ToolMessage, AIMessage, trimMessages } from "@langchain/core/messages";
 import {
   buildContextMessage,
+  IRONCLAD_RULES,
   SEARCH_QUERY_PROMPT,
   DETECT_NAME_PROMPT,
   ROUND_SUMMARY_PROMPT,
 } from "./agent_prompt.js";
+import {
+  visibleDevices,
+  findDeviceByTopic,
+  describeDeviceState,
+} from "./kg.js";
 import { DEFAULT_API_KEY } from "../config/default_key";
 
 // ── 0. Helpers ────────────────────────────────────────────────────────────────
+
 function nowString() {
   return new Date().toLocaleString('en-GB', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
   });
+}
+
+function makeLLM(settings, { temperature = 0.1, maxTokens, structured } = {}) {
+  const apiKey = settings.apiKey || DEFAULT_API_KEY;
+  let llm = new ChatOpenAI({
+    apiKey,
+    configuration: { apiKey, baseURL: settings.endpoint, dangerouslyAllowBrowser: true },
+    modelName: settings.model,
+    temperature,
+    ...(maxTokens ? { maxTokens } : {}),
+  });
+  if (structured) llm = llm.withStructuredOutput(structured);
+  return llm;
 }
 
 const KG_TOOL = {
@@ -34,7 +54,7 @@ const KG_TOOL = {
       required: ["action"]
     }
   }
-}
+};
 
 function buildLangChainTools(settings) {
   const skillTools = (settings.skills || [])
@@ -48,6 +68,14 @@ function buildLangChainTools(settings) {
       }
     }));
   return [KG_TOOL, ...skillTools];
+}
+
+// สร้าง message ก้อนสถานะ KG (ใช้ใน node ที่ต้องเห็นบ้าน + อุปกรณ์)
+function kgMessage(state) {
+  const devices = visibleDevices(state.deviceList, state.settings);
+  return new SystemMessage(
+    buildContextMessage({ devices, settings: state.settings, now: nowString() })
+  );
 }
 
 // ── 1. State Definition ──────────────────────────────────────────────────────
@@ -76,72 +104,46 @@ const AgentState = Annotation.Root({
     reducer: (_, next) => next,
     default: () => false,
   }),
-  prevToolResults: Annotation(),
+  // tool ที่ถูกเรียกในรอบล่าสุด (toolNode บันทึก) — guard ใช้ตรวจ
+  // รูปแบบ: { name, args, result } | null
+  lastToolCall: Annotation({
+    reducer: (_, next) => next,
+    default: () => null,
+  }),
+  // device ที่เพิ่งสั่งใน turn นี้ — เซ็ตโดย toolNode หลัง mqtt_publish/hub
   lastCommandedDevice: Annotation({
     reducer: (_, next) => next,
     default: () => null,
   }),
 });
 
-// ── 2. Nodes (Main Agent) ────────────────────────────────────────────────────
+// ── 2. Agent Node ─────────────────────────────────────────────────────────────
+// คนคิดหลัก: เห็น KG + กฎ + ประวัติ → ตัดสินใจเรียก tool หรือตอบ
 
 async function agentNode(state) {
-  const { settings, deviceList, messages, signal } = state;
+  const persona = new SystemMessage(
+    state.settings.systemPrompt || "You are a helpful smart home assistant."
+  );
+  const rules = new SystemMessage(IRONCLAD_RULES);
+  const kg    = kgMessage(state);
 
-  // Filter devices by enabled skills.
-  // Mapping: device.type → skill names that grant access
-  //   digital / analog → mqtt_publish OR mqtt_read (either one is enough)
-  //   hub              → hub
-  // Add new entries here whenever a new device type / skill pair is introduced.
-  const enabledSkills = new Set(
-    (settings.skills || []).filter(s => s.enabled).map(s => s.name)
-  )
-  const deviceTypeAccess = {
-    digital: ['mqtt_publish', 'mqtt_read'],
-    analog:  ['mqtt_publish', 'mqtt_read'],
-    hub:     ['hub'],
-  }
-  const visibleDevices = (deviceList || []).filter(d => {
-    const required = deviceTypeAccess[d.type]
-    // Unknown device types: always visible (future-proof)
-    if (!required) return true
-    return required.some(skill => enabledSkills.has(skill))
-  })
-
-  const effectiveKey = settings.apiKey || DEFAULT_API_KEY
-  const llm = new ChatOpenAI({
-    apiKey: effectiveKey,
-    configuration: {
-      apiKey: effectiveKey,
-      baseURL: settings.endpoint,
-      dangerouslyAllowBrowser: true
-    },
-    modelName: settings.model,
-    temperature: 0.1,
-  });
-
-  const tools = buildLangChainTools(settings);
+  const tools = buildLangChainTools(state.settings);
+  const llm   = makeLLM(state.settings);
   const agent = tools.length > 0 ? llm.bindTools(tools) : llm;
 
-  const personaMessage = new SystemMessage(
-    settings.systemPrompt || "You are a helpful smart home assistant."
-  );
-
-  const contextMessage = new SystemMessage(
-    buildContextMessage(nowString(), visibleDevices, settings.profile?.userBio || 'User')
-  );
-
-  const fullMessages = [personaMessage, contextMessage, ...messages];
+  const fullMessages = [persona, rules, kg, ...state.messages];
 
   let finalMessage;
-  const stream = await agent.stream(fullMessages, { signal });
+  const stream = await agent.stream(fullMessages, { signal: state.signal });
   for await (const chunk of stream) {
-    if (!finalMessage) finalMessage = chunk;
-    else finalMessage = finalMessage.concat(chunk);
+    finalMessage = finalMessage ? finalMessage.concat(chunk) : chunk;
   }
 
   return { messages: [finalMessage] };
 }
+
+// ── 3. Tool Node ──────────────────────────────────────────────────────────────
+// รัน tool calls แบบ parallel + บันทึก lastToolCall / lastCommandedDevice
 
 async function toolNode(state) {
   const { messages, settings, executeTool, onToolCall, onToolResult, onRoundSummary, toolRound, signal } = state;
@@ -149,10 +151,9 @@ async function toolNode(state) {
 
   const lastMessage = messages[messages.length - 1];
   const toolCalls = lastMessage.tool_calls || [];
+  const collected = [];
 
-  const collectedResults = [];
-
-  const promises = toolCalls.map(async (tc) => {
+  const toolMessages = await Promise.all(toolCalls.map(async (tc) => {
     onToolCall?.(tc.name, tc.args, currentRound);
     let result;
     try {
@@ -161,27 +162,29 @@ async function toolNode(state) {
       result = { error: err.message || "Execution failed" };
     }
     onToolResult?.(tc.name, tc.args, result, currentRound);
-    collectedResults.push({ name: tc.name, args: tc.args, result });
+    collected.push({ name: tc.name, args: tc.args, result });
 
     return new ToolMessage({
       content: typeof result === "object" ? JSON.stringify(result) : String(result),
       name: tc.name,
-      tool_call_id: tc.id
+      tool_call_id: tc.id,
     });
-  });
+  }));
 
-  const toolMessages = await Promise.all(promises);
+  // บันทึก tool call ตัวสุดท้ายใน batch (สำคัญต่อ guard) + device ที่ถูกสั่ง
+  const stateUpdate = {
+    messages: toolMessages,
+    toolRound: currentRound,
+    lastToolCall: collected[collected.length - 1] || null,
+  };
 
-  // บันทึก device ล่าสุดที่ถูกสั่ง — ค้นหาจาก KG โดยใช้ tool call ที่ run ในรอบนี้
-  const stateUpdate = { messages: toolMessages, toolRound: currentRound };
-  for (const call of collectedResults) {
-    let device = null;
-    let payload = null;
+  for (const call of collected) {
+    let device = null, payload = null;
     if (call.name === 'mqtt_publish') {
-      device = (state.deviceList || []).find(d => d.pubTopic === call.args?.topic);
+      device  = findDeviceByTopic(state.deviceList, call.args?.topic);
       payload = call.args?.payload;
     } else if (call.name === 'hub') {
-      device = (state.deviceList || []).find(d => d.type === 'hub');
+      device  = (state.deviceList || []).find(d => d.type === 'hub');
       payload = call.args?.task;
     }
     if (device) {
@@ -193,81 +196,76 @@ async function toolNode(state) {
     }
   }
 
-  if (settings?.showToolDetails === false && onRoundSummary && collectedResults.length > 0) {
-    // await ก่อน return — chip ต้อง appear ก่อนที่ next agentNode จะเริ่ม stream
-    // ถ้า fire-and-forget (.then) จะเกิด race: round N+1 stream text ก่อน chip ปรากฏ
-    const summary = await generateRoundSummary({ settings, tools: collectedResults, signal }).catch(() => null)
-    if (summary) onRoundSummary(summary, currentRound)
+  // รอบสรุป (chip) — ถ้าผู้ใช้ปิด showToolDetails
+  if (settings?.showToolDetails === false && onRoundSummary && collected.length > 0) {
+    const summary = await generateRoundSummary({ settings, tools: collected, signal }).catch(() => null);
+    if (summary) onRoundSummary(summary, currentRound);
   }
 
   return stateUpdate;
 }
 
-// ── 3. Guard Node ────────────────────────────────────────────────────────────
+// ── 4. Guard Node ────────────────────────────────────────────────────────────
+// หน้าที่เดียว: ตรวจว่า "ที่ agent บอกว่าทำแล้ว ทำจริงและตรงกับที่ user สั่งไหม?"
+// ดู 4 อย่าง: คำสั่ง user (turn นี้) + tool ล่าสุด + device ใน KG + draft text
+// ไม่ดู turn ก่อนๆ — agent เข้าใจ context history เองอยู่แล้ว
 
-const GUARD_PROMPT = `คุณคือ Guard Agent — ตรวจสอบว่า agent ตอบตามความจริงหรือหลอน
-วิเคราะห์แล้วตอบ JSON:
-- retry=true ถ้า: user ต้องการ action, agent บอกว่าทำสำเร็จแล้ว, แต่ไม่มี tool ถูกเรียกเลย
-- retry=false ถ้า: tool ถูกเรียกแล้ว (ไม่ว่าสำเร็จหรือล้มเหลว) หรือเป็นแค่คำถาม/สนทนา
-reason (เฉพาะตอน retry=true): ระบุว่าต้องเรียก tool อะไร กับ device อะไร เช่น "ต้องเรียก mqtt_publish เพื่อเปิดไฟหน้าบ้าน"`
+const GUARD_PROMPT = `คุณคือ Guard — ตรวจสอบว่า agent ทำตามคำสั่ง user หรือเปล่า
+
+ตอบ JSON:
+- retry=true เมื่อ:
+  • agent อ้างว่าทำ action สำเร็จ แต่ไม่มี tool ถูกเรียก (หลอน)
+  • หรือ tool ที่เรียก/device ที่ถูกสั่ง ไม่ตรงกับสิ่งที่ user ขอ
+- retry=false เมื่อ: tool ถูกเรียกถูก device ตรงกับคำสั่ง user (ไม่ว่าผลจะสำเร็จหรือล้มเหลว) หรือเป็นแค่คำถาม/สนทนา
+
+reason (เฉพาะตอน retry=true): บอกว่าควรเรียก tool อะไร กับ device ไหน — สั้นๆ`;
 
 async function guardNode(state) {
-  const { messages, settings, deviceList, prevToolResults, signal } = state;
+  const { messages, settings, lastToolCall, lastCommandedDevice, signal } = state;
 
-  const enabledSkills = new Set((settings.skills || []).filter(s => s.enabled).map(s => s.name));
-  const deviceTypeAccess = { digital: ['mqtt_publish', 'mqtt_read'], analog: ['mqtt_publish', 'mqtt_read'], hub: ['hub'] };
-  const visibleDevices = (deviceList || []).filter(d => {
-    const required = deviceTypeAccess[d.type];
-    return !required || required.some(skill => enabledSkills.has(skill));
-  });
-
+  // 1. หา user message ล่าสุด (เฉพาะ turn นี้)
   let lastHumanIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
   }
-  const turnMsgs = lastHumanIdx >= 0 ? messages.slice(lastHumanIdx) : messages;
+  const userText = messages[lastHumanIdx]?.content || '';
 
-  const userText  = messages[lastHumanIdx]?.content || '';
-  const toolMsgs  = turnMsgs.filter(m => m instanceof ToolMessage);
-  const draftMsg  = [...turnMsgs].reverse().find(m => m instanceof AIMessage && !m.tool_calls?.length);
+  // 2. หา draft message (AIMessage ตัวล่าสุดที่ไม่มี tool_calls)
+  const draftMsg = [...messages].reverse().find(
+    m => m instanceof AIMessage && !m.tool_calls?.length
+  );
   const draftText = draftMsg?.content || '';
 
-  const toolsStr = toolMsgs.length > 0
-    ? toolMsgs.map(m => `• ${m.name}: ${String(m.content).slice(0, 200)}`).join('\n')
+  // 3. สถานะ device ที่เพิ่งสั่ง (เทียบกับ KG ปัจจุบัน)
+  const lcdSection = (() => {
+    if (!lastCommandedDevice) return 'ไม่มี device ที่ถูกสั่งใน turn นี้';
+    const current = (state.deviceList || []).find(d => d.pubTopic === lastCommandedDevice.pubTopic);
+    const kgState = current ? describeDeviceState(current) : 'ไม่พบใน KG';
+    return `${lastCommandedDevice.name} (${lastCommandedDevice.room}) | payload ที่ส่ง: ${lastCommandedDevice.payload} | KG ตอนนี้: ${kgState}`;
+  })();
+
+  // 4. tool call ล่าสุด
+  const toolSection = lastToolCall
+    ? `${lastToolCall.name}(${JSON.stringify(lastToolCall.args)}) → ${JSON.stringify(lastToolCall.result).slice(0, 200)}`
     : 'ไม่มี';
 
-  // ดึงสถานะ KG ปัจจุบันของ device ที่ถูกสั่งล่าสุด (บันทึกโดย toolNode หลัง mqtt_publish)
-  const lcd = state.lastCommandedDevice;
-  const lcdSection = lcd ? (() => {
-    const current = visibleDevices.find(d => d.pubTopic === lcd.pubTopic);
-    const kgState = !current ? 'ไม่พบใน KG'
-      : current.type === 'analog' ? `value: ${current.value}/${current.max ?? 255}`
-      : `state: ${current.on ? 'ON' : 'OFF'}`;
-    return `[Device ที่สั่งล่าสุด]\n• ${lcd.name} (${lcd.room}) | payload ที่ส่ง: ${lcd.payload} | KG ปัจจุบัน: ${kgState}\n`;
-  })() : '';
-
   const input =
-    `[Active Devices]\n${buildContextMessage(nowString(), visibleDevices, settings.profile?.userBio || 'User')}\n\n` +
-    `${prevToolResults ? `[บริบทจาก turn ก่อน: ${prevToolResults}]\n` : ''}` +
-    `คำสั่ง user: ${userText}\n` +
-    `Tool ที่เรียกจริงใน turn นี้:\n${toolsStr}\n` +
-    lcdSection +
-    `Draft response ของ agent: "${draftText}"`;
+    `[คำสั่ง user (turn นี้)]\n"${userText}"\n\n` +
+    `[Tool ที่เรียกล่าสุด]\n${toolSection}\n\n` +
+    `[Device ที่ถูกสั่ง]\n${lcdSection}\n\n` +
+    `[Draft response ของ agent]\n"${draftText}"`;
 
-  const effectiveKey = settings.apiKey || DEFAULT_API_KEY;
-  const llm = new ChatOpenAI({
-    apiKey: effectiveKey,
-    configuration: { apiKey: effectiveKey, baseURL: settings.endpoint, dangerouslyAllowBrowser: true },
-    modelName: settings.model,
+  const llm = makeLLM(settings, {
     temperature: 0,
     maxTokens: 80,
-  }).withStructuredOutput({
-    type: 'object',
-    properties: {
-      retry:  { type: 'boolean' },
-      reason: { type: 'string' },
+    structured: {
+      type: 'object',
+      properties: {
+        retry:  { type: 'boolean' },
+        reason: { type: 'string' },
+      },
+      required: ['retry', 'reason'],
     },
-    required: ['retry', 'reason'],
   });
 
   let retry = false, reason = '';
@@ -278,8 +276,9 @@ async function guardNode(state) {
     );
     retry  = res.retry  ?? false;
     reason = res.reason ?? '';
-  } catch {
-    // ถ้า guard พัง ปล่อยผ่าน (ดีกว่า block user)
+  } catch (err) {
+    // ถ้า guard พัง → ปล่อยผ่าน (ดีกว่า block user) แต่ log ไว้
+    console.warn('[Guard] failed, passing through:', err?.message);
   }
 
   return {
@@ -288,29 +287,15 @@ async function guardNode(state) {
   };
 }
 
-// ── 4. Executor Node (ตาม guard's instruction เท่านั้น) ──────────────────────
+// ── 5. Executor Node — รัน tool ตาม guard hint ───────────────────────────────
 
 async function executorNode(state) {
-  const { settings, deviceList, messages, signal } = state;
-
-  const enabledSkills = new Set((settings.skills || []).filter(s => s.enabled).map(s => s.name));
-  const deviceTypeAccess = { digital: ['mqtt_publish', 'mqtt_read'], analog: ['mqtt_publish', 'mqtt_read'], hub: ['hub'] };
-  const visibleDevices = (deviceList || []).filter(d => {
-    const required = deviceTypeAccess[d.type];
-    return !required || required.some(skill => enabledSkills.has(skill));
-  });
+  const { settings, messages, signal } = state;
 
   const tools = buildLangChainTools(settings);
   if (tools.length === 0) return { postExecutor: true };
 
-  const effectiveKey = settings.apiKey || DEFAULT_API_KEY;
-  const llm = new ChatOpenAI({
-    apiKey: effectiveKey,
-    configuration: { apiKey: effectiveKey, baseURL: settings.endpoint, dangerouslyAllowBrowser: true },
-    modelName: settings.model,
-    temperature: 0,
-  }).bindTools(tools);
-
+  // หา user text ล่าสุด + guard hint
   let lastHumanIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
@@ -322,38 +307,29 @@ async function executorNode(state) {
     ? '\n\n' + guardMsg.content
     : '';
 
+  const llm = makeLLM(settings, { temperature: 0 }).bindTools(tools);
+
   const result = await llm.invoke([
-    new SystemMessage(
-      buildContextMessage(nowString(), visibleDevices, settings.profile?.userBio || 'User') +
-      '\n\nดำเนินการตามคำสั่งผู้ใช้ด้วยการเรียก tool ที่ถูกต้องทันที' + guardHint
-    ),
+    kgMessage(state),
+    new SystemMessage('ดำเนินการตามคำสั่งผู้ใช้ด้วยการเรียก tool ที่ถูกต้องทันที' + guardHint),
     new HumanMessage(userText),
   ], { signal });
 
   return { messages: [result], postExecutor: true };
 }
 
-// ── 5. Responder Node (stream คำตอบสุดท้ายถึง user) ─────────────────────────
+// ── 6. Responder Node — stream คำตอบสุดท้ายถึง user ──────────────────────────
 
 async function responderNode(state) {
-  const { messages, settings, deviceList, signal, onStream } = state;
+  const { messages, settings, signal, onStream } = state;
 
-  const enabledSkills = new Set((settings.skills || []).filter(s => s.enabled).map(s => s.name));
-  const deviceTypeAccess = { digital: ['mqtt_publish', 'mqtt_read'], analog: ['mqtt_publish', 'mqtt_read'], hub: ['hub'] };
-  const visibleDevices = (deviceList || []).filter(d => {
-    const required = deviceTypeAccess[d.type];
-    return !required || required.some(skill => enabledSkills.has(skill));
-  });
-
-  // สร้าง message list สะอาด: ไม่รวม draft ที่อาจหลอน / [GUARD] / tool_call artifacts
+  // หา turn ปัจจุบัน + ตัด draft/[GUARD]/empty AI msgs ทิ้ง
   let lastHumanIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
   }
   const turnMsgs = lastHumanIdx >= 0 ? messages.slice(lastHumanIdx) : messages;
 
-  // เก็บ HumanMsg + AIMsg(tool_calls) + ToolMsg — ลำดับที่ถูกต้องสำหรับ model
-  // ตัดทิ้ง: draft text-only AIMsg (อาจหลอน) และ [GUARD] SystemMsg
   const cleanTurnMsgs = turnMsgs.filter(m =>
     m instanceof HumanMessage ||
     (m instanceof AIMessage && m.tool_calls?.length > 0) ||
@@ -362,19 +338,16 @@ async function responderNode(state) {
 
   const cleanHistory = messages
     .slice(Math.max(0, lastHumanIdx - 6), lastHumanIdx)
-    .filter(m => (m instanceof HumanMessage) || (m instanceof AIMessage && !m.tool_calls?.length && String(m.content).length > 0));
+    .filter(m =>
+      (m instanceof HumanMessage) ||
+      (m instanceof AIMessage && !m.tool_calls?.length && String(m.content).length > 0)
+    );
 
-  const effectiveKey = settings.apiKey || DEFAULT_API_KEY;
-  const llm = new ChatOpenAI({
-    apiKey: effectiveKey,
-    configuration: { apiKey: effectiveKey, baseURL: settings.endpoint, dangerouslyAllowBrowser: true },
-    modelName: settings.model,
-    temperature: 0.3,
-  });
+  const llm = makeLLM(settings, { temperature: 0.3 });
 
   const fullMessages = [
     new SystemMessage(settings.systemPrompt || 'You are a helpful smart home assistant.'),
-    new SystemMessage(buildContextMessage(nowString(), visibleDevices, settings.profile?.userBio || 'User')),
+    kgMessage(state),
     ...cleanHistory,
     ...cleanTurnMsgs,
   ];
@@ -383,14 +356,24 @@ async function responderNode(state) {
   let finalMsg;
   for await (const chunk of stream) {
     if (chunk.content) onStream?.(chunk.content);
-    if (!finalMsg) finalMsg = chunk;
-    else finalMsg = finalMsg.concat(chunk);
+    finalMsg = finalMsg ? finalMsg.concat(chunk) : chunk;
   }
 
   return { messages: [finalMsg ?? new AIMessage('ขออภัยค่ะ เกิดข้อผิดพลาด')] };
 }
 
-// ── 6. Graph ─────────────────────────────────────────────────────────────────
+// ── 7. Graph Routing ─────────────────────────────────────────────────────────
+// agent → tools (ถ้ามี tool_calls) → guard / responder
+//
+// Guard ทำงานเฉพาะ home automation เท่านั้น (mqtt_publish, hub)
+// ไม่ทริกเมื่อ tool ที่เรียกเป็น web_search / query_kg / manage_settings ฯลฯ
+//
+// Trigger guard เมื่อหนึ่งในสองเงื่อนไขจริง:
+//   (a) tool ล่าสุดเป็น home automation → ตรวจว่าเรียกถูก device ตามที่ user สั่ง
+//   (b) draft อ้าง action สำเร็จ — จับกรณีหลอนที่ไม่เรียก tool เลย
+
+const HOME_AUTOMATION_TOOLS = new Set(['mqtt_publish', 'hub']);
+const ACTION_CLAIM_RE = /เปิด|ปิด|ตั้ง|ลด|เพิ่ม|ปรับ|เรียบร้อย|สำเร็จ|เสร็จ|แล้วค่ะ|แล้วครับ|ให้แล้ว|ดำเนินการ/;
 
 function shouldContinue(state) {
   const lastMessage = state.messages[state.messages.length - 1];
@@ -402,9 +385,11 @@ function shouldContinue(state) {
     return "tools";
   }
 
-  // guard ทำงานเฉพาะเมื่อเคยมี mqtt_publish ที่ run จริงแล้ว (lastCommandedDevice ถูกเซ็ตโดย toolNode)
-  // ถ้ายัง null → AI ยังไม่รู้ว่าสั่ง device ไหน → ให้ถามก่อน → responder
-  return state.lastCommandedDevice != null ? "guard" : "responder";
+  const lastToolWasHomeAutomation = HOME_AUTOMATION_TOOLS.has(state.lastToolCall?.name);
+  const draft = String(lastMessage.content || '');
+  const claimsAction = ACTION_CLAIM_RE.test(draft);
+
+  return (lastToolWasHomeAutomation || claimsAction) ? "guard" : "responder";
 }
 
 const workflow = new StateGraph(AgentState)
@@ -424,6 +409,8 @@ const workflow = new StateGraph(AgentState)
   .addEdge("responder", END);
 
 const compiledGraph = workflow.compile();
+
+// ── 8. Public API ────────────────────────────────────────────────────────────
 
 export const runAgent = async (params) => {
   const rawMessages = (params.apiHistory || []).map(m =>
@@ -446,8 +433,8 @@ export const runAgent = async (params) => {
     ...params,
     messages: previousMessages,
     toolRound: 0,
-    prevToolResults: params.prevToolResults ?? null,
-    lastCommandedDevice: params.lastCommandedDevice ?? null,
+    lastToolCall: null,
+    lastCommandedDevice: null,
   });
 
   const lastMsg = finalState.messages[finalState.messages.length - 1];
@@ -460,30 +447,22 @@ export const runAgent = async (params) => {
   return { reply: finalReply, lastCommandedDevice: finalState.lastCommandedDevice ?? null };
 };
 
-// ── 7. Sub-Agents ────────────────────────────────────────────────────────────
+// ── 9. Sub-Agents ────────────────────────────────────────────────────────────
 
 export async function generateSearchQuery({ settings, query, signal }) {
-  const effectiveKey = settings.apiKey || DEFAULT_API_KEY
-  const llm = new ChatOpenAI({
-    apiKey: effectiveKey,
-    configuration: { apiKey: effectiveKey, baseURL: settings.endpoint, dangerouslyAllowBrowser: true },
-    modelName: settings.model,
-    temperature: 0.1,
-  }).withStructuredOutput({
-    type: 'object',
-    properties: {
-      query: { type: 'string', description: 'Optimized search query for web search engine' }
+  const llm = makeLLM(settings, {
+    structured: {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'Optimized search query for web search engine' } },
+      required: ['query'],
     },
-    required: ['query']
   });
 
-  const messages = [
-    new SystemMessage(SEARCH_QUERY_PROMPT),
-    new HumanMessage(`Raw query: "${query}"`)
-  ];
-
   try {
-    const response = await llm.invoke(messages, { signal });
+    const response = await llm.invoke([
+      new SystemMessage(SEARCH_QUERY_PROMPT),
+      new HumanMessage(`Raw query: "${query}"`),
+    ], { signal });
     return response.query?.trim() || query;
   } catch {
     return query;
@@ -491,14 +470,7 @@ export async function generateSearchQuery({ settings, query, signal }) {
 }
 
 export async function generateRoundSummary({ settings, tools, signal }) {
-  const effectiveKey = settings.apiKey || DEFAULT_API_KEY
-  const llm = new ChatOpenAI({
-    apiKey: effectiveKey,
-    configuration: { apiKey: effectiveKey, baseURL: settings.endpoint, dangerouslyAllowBrowser: true },
-    modelName: settings.model,
-    temperature: 0.1,
-    maxTokens: 60,
-  });
+  const llm = makeLLM(settings, { maxTokens: 60 });
 
   const input = tools.map(t =>
     `- ${t.name}(${JSON.stringify(t.args)}) → ${JSON.stringify(t.result).slice(0, 200)}`
@@ -507,7 +479,7 @@ export async function generateRoundSummary({ settings, tools, signal }) {
   try {
     const response = await llm.invoke([
       new SystemMessage(ROUND_SUMMARY_PROMPT),
-      new HumanMessage(input)
+      new HumanMessage(input),
     ], { signal });
     const content = typeof response.content === 'string' ? response.content : '';
     return content.trim() || tools.map(t => t.name).join(', ');
@@ -517,25 +489,18 @@ export async function generateRoundSummary({ settings, tools, signal }) {
 }
 
 export async function detectAssistantName({ settings, systemPrompt, signal }) {
-  const effectiveKey = settings.apiKey || DEFAULT_API_KEY
-  const llm = new ChatOpenAI({
-    apiKey: effectiveKey,
-    configuration: { apiKey: effectiveKey, baseURL: settings.endpoint, dangerouslyAllowBrowser: true },
-    modelName: settings.model,
+  const llm = makeLLM(settings, {
     temperature: 0,
-  }).withStructuredOutput({
-    type: 'object',
-    properties: {
-      name: { type: 'string', description: 'The AI assistant name, or empty string if not found' }
+    structured: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'The AI assistant name, or empty string if not found' } },
+      required: ['name'],
     },
-    required: ['name']
   });
 
-  const messages = [
+  const response = await llm.invoke([
     new SystemMessage(DETECT_NAME_PROMPT),
-    new HumanMessage(`System prompt:\n${systemPrompt}`)
-  ];
-
-  const response = await llm.invoke(messages, { signal });
+    new HumanMessage(`System prompt:\n${systemPrompt}`),
+  ], { signal });
   return response.name?.trim() || null;
 }

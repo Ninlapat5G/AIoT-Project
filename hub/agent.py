@@ -18,11 +18,11 @@ import threading
 import time
 from pathlib import Path
 
-import psutil
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 
 import runner
+import kg
 from tools import os_exec
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -42,23 +42,6 @@ OS_TYPE = os.getenv("OS_TYPE") or _OS_MAP.get(platform.system(), "linux")
 
 def _t(suffix: str) -> str:
     return f"{BASE}/{suffix}" if BASE else suffix
-
-
-def _system_info() -> str:
-    mem   = psutil.virtual_memory()
-    disk  = psutil.disk_usage("/")
-    cpu_f = psutil.cpu_freq()
-    freq  = f" @ {cpu_f.max / 1000:.1f} GHz" if cpu_f else ""
-    return (
-        f"OS: {platform.system()} {platform.release()} ({platform.version()})\n"
-        f"CPU: {platform.processor() or 'unknown'} — {psutil.cpu_count(logical=False)} cores{freq}\n"
-        f"RAM: {mem.total // (1024**3)} GB total, {mem.available // (1024**3)} GB free\n"
-        f"Disk: {disk.total // (1024**3)} GB total, {disk.free // (1024**3)} GB free\n"
-        f"Hostname: {platform.node()}"
-    )
-
-
-SYSTEM_INFO = _system_info()
 
 
 CMD_TOPIC    = _t(f"hub/{AGENT}/cmd")
@@ -101,7 +84,6 @@ def _handle_task(task: str, received_at: float) -> None:
         result = runner.run(
             task=task,
             os_type=OS_TYPE,
-            system_info=SYSTEM_INFO,
             pub=_pub,
             kill_event=_kill_event,
             timeout=TIMEOUT,
@@ -153,8 +135,8 @@ def main():
     global _client
     print("SynaptaOS Hub Agent")
     print(f"  Broker : {BROKER}:{PORT}{'  [TLS]' if USE_TLS else ''}")
-    for line in SYSTEM_INFO.splitlines():
-        print(f"  {line}")
+    print()
+    print(kg.snapshot_text())
     print()
 
     _client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
