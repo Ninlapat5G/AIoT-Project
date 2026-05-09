@@ -9,6 +9,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
 
   const abortControllerRef = useRef(null)
   const prevToolResultsRef = useRef(null)
+  const lastCommandedDeviceRef = useRef(null)
 
   const stopChat = useCallback(() => {
     if (abortControllerRef.current) {
@@ -28,13 +29,14 @@ export function useChat({ settings, devicesRef, executeTool }) {
     const toolsThisTurn = []
 
     try {
-      const { reply } = await runAgent({
+      const { reply, lastCommandedDevice } = await runAgent({
         text,
         settings,
         deviceList: devicesRef.current,
         apiHistory,
         executeTool,
         prevToolResults: prevToolResultsRef.current,
+        lastCommandedDevice: lastCommandedDeviceRef.current,
         signal: abortControllerRef.current.signal,
 
         onToolCall: (name, args, round) => {
@@ -91,6 +93,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
       prevToolResultsRef.current = toolsThisTurn.length > 0
         ? toolsThisTurn.map(t => `${t.name}→${JSON.stringify(t.result).slice(0, 150)}`).join('; ')
         : null
+      lastCommandedDeviceRef.current = lastCommandedDevice ?? lastCommandedDeviceRef.current
 
       setApiHistory(prev => [
         ...prev,
@@ -127,6 +130,8 @@ export function useChat({ settings, devicesRef, executeTool }) {
     stopChat()
     setMessages([])
     setApiHistory([])
+    prevToolResultsRef.current = null
+    lastCommandedDeviceRef.current = null
   }, [stopChat])
 
   return { messages, thinking, executing, sendMessage, clearChat, stopChat }

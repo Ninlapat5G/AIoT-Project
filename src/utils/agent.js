@@ -77,6 +77,10 @@ const AgentState = Annotation.Root({
     default: () => false,
   }),
   prevToolResults: Annotation(),
+  lastCommandedDevice: Annotation({
+    reducer: (_, next) => next,
+    default: () => null,
+  }),
 });
 
 // ── 2. Nodes (Main Agent) ────────────────────────────────────────────────────
@@ -168,6 +172,27 @@ async function toolNode(state) {
 
   const toolMessages = await Promise.all(promises);
 
+  // บันทึก device ล่าสุดที่ถูกสั่ง — ค้นหาจาก KG โดยใช้ tool call ที่ run ในรอบนี้
+  const stateUpdate = { messages: toolMessages, toolRound: currentRound };
+  for (const call of collectedResults) {
+    let device = null;
+    let payload = null;
+    if (call.name === 'mqtt_publish') {
+      device = (state.deviceList || []).find(d => d.pubTopic === call.args?.topic);
+      payload = call.args?.payload;
+    } else if (call.name === 'hub') {
+      device = (state.deviceList || []).find(d => d.type === 'hub');
+      payload = call.args?.task;
+    }
+    if (device) {
+      stateUpdate.lastCommandedDevice = {
+        name: device.name, room: device.room, type: device.type,
+        pubTopic: device.pubTopic, payload,
+      };
+      break;
+    }
+  }
+
   if (settings?.showToolDetails === false && onRoundSummary && collectedResults.length > 0) {
     // await ก่อน return — chip ต้อง appear ก่อนที่ next agentNode จะเริ่ม stream
     // ถ้า fire-and-forget (.then) จะเกิด race: round N+1 stream text ก่อน chip ปรากฏ
@@ -175,7 +200,7 @@ async function toolNode(state) {
     if (summary) onRoundSummary(summary, currentRound)
   }
 
-  return { messages: toolMessages, toolRound: currentRound };
+  return stateUpdate;
 }
 
 // ── 3. Guard Node ────────────────────────────────────────────────────────────
@@ -211,11 +236,22 @@ async function guardNode(state) {
     ? toolMsgs.map(m => `• ${m.name}: ${String(m.content).slice(0, 200)}`).join('\n')
     : 'ไม่มี';
 
+  // ดึงสถานะ KG ปัจจุบันของ device ที่ถูกสั่งล่าสุด (บันทึกโดย toolNode หลัง mqtt_publish)
+  const lcd = state.lastCommandedDevice;
+  const lcdSection = lcd ? (() => {
+    const current = visibleDevices.find(d => d.pubTopic === lcd.pubTopic);
+    const kgState = !current ? 'ไม่พบใน KG'
+      : current.type === 'analog' ? `value: ${current.value}/${current.max ?? 255}`
+      : `state: ${current.on ? 'ON' : 'OFF'}`;
+    return `[Device ที่สั่งล่าสุด]\n• ${lcd.name} (${lcd.room}) | payload ที่ส่ง: ${lcd.payload} | KG ปัจจุบัน: ${kgState}\n`;
+  })() : '';
+
   const input =
     `[Active Devices]\n${buildContextMessage(nowString(), visibleDevices, settings.profile?.userBio || 'User')}\n\n` +
     `${prevToolResults ? `[บริบทจาก turn ก่อน: ${prevToolResults}]\n` : ''}` +
     `คำสั่ง user: ${userText}\n` +
     `Tool ที่เรียกจริงใน turn นี้:\n${toolsStr}\n` +
+    lcdSection +
     `Draft response ของ agent: "${draftText}"`;
 
   const effectiveKey = settings.apiKey || DEFAULT_API_KEY;
@@ -357,8 +393,6 @@ async function responderNode(state) {
 
 // ── 6. Graph ─────────────────────────────────────────────────────────────────
 
-// Guard ตรวจเฉพาะ turn ที่ agent พยายามเรียก mqtt_publish (จริงหรือหลอน)
-// เช็คจาก tool_calls ใน AIMessage — ครอบคลุมทั้งกรณีเรียกจริงและกรณีหลอน
 function shouldContinue(state) {
   const lastMessage = state.messages[state.messages.length - 1];
   if (lastMessage.tool_calls?.length > 0) {
@@ -369,18 +403,9 @@ function shouldContinue(state) {
     return "tools";
   }
 
-  let lastHumanIdx = -1;
-  for (let i = state.messages.length - 1; i >= 0; i--) {
-    if (state.messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
-  }
-  const turnMsgs = lastHumanIdx >= 0 ? state.messages.slice(lastHumanIdx) : state.messages;
-
-  // ตรวจว่า turn นี้มี agent พยายามเรียก mqtt_publish (ไม่ว่าจะสำเร็จหรือเปล่า)
-  const hasMqttIntent = turnMsgs.some(m =>
-    m instanceof AIMessage && m.tool_calls?.some(tc => tc.name === 'mqtt_publish')
-  );
-
-  return hasMqttIntent ? "guard" : "responder";
+  // guard ทำงานเฉพาะเมื่อเคยมี mqtt_publish ที่ run จริงแล้ว (lastCommandedDevice ถูกเซ็ตโดย toolNode)
+  // ถ้ายัง null → AI ยังไม่รู้ว่าสั่ง device ไหน → ให้ถามก่อน → responder
+  return state.lastCommandedDevice != null ? "guard" : "responder";
 }
 
 const workflow = new StateGraph(AgentState)
@@ -423,6 +448,7 @@ export const runAgent = async (params) => {
     messages: previousMessages,
     toolRound: 0,
     prevToolResults: params.prevToolResults ?? null,
+    lastCommandedDevice: params.lastCommandedDevice ?? null,
   });
 
   const lastMsg = finalState.messages[finalState.messages.length - 1];
@@ -432,7 +458,7 @@ export const runAgent = async (params) => {
     finalReply = "ขออภัยค่ะ ระบบพยายามดำเนินการหลายครั้งแต่ไม่สำเร็จ ลองสั่งใหม่อีกครั้งนะคะ 🥺";
   }
 
-  return { reply: finalReply };
+  return { reply: finalReply, lastCommandedDevice: finalState.lastCommandedDevice ?? null };
 };
 
 // ── 7. Sub-Agents ────────────────────────────────────────────────────────────
