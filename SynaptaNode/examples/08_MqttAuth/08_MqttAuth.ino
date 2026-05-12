@@ -14,11 +14,11 @@ SynaptaDigital relay("bedroom/relay");
 void setup() {
     Serial.begin(115200);
 
-    Synapta.wifi    ("YOUR_WIFI_SSID",   "YOUR_WIFI_PASSWORD")
-           .broker  ("your.broker.com",  8883, true)     // host, port, TLS
-           .mqttAuth("YOUR_MQTT_USER",   "YOUR_MQTT_PASS")
-           .baseTopic("Mylab/smarthome")
-           .start();
+    Synapta.wifi("YOUR_WIFI_SSID", "YOUR_WIFI_PASSWORD");
+    Synapta.broker("your.broker.com", 8883, true);          // host, port, TLS
+    Synapta.mqttAuth("YOUR_MQTT_USER", "YOUR_MQTT_PASS");
+    Synapta.baseTopic("Mylab/smarthome");
+    Synapta.start();
 }
 
 void loop() {

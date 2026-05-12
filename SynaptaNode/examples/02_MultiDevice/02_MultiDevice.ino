@@ -18,9 +18,9 @@ void onRelayChange(bool on) {
 void setup() {
     Serial.begin(115200);
 
-    Synapta.wifi("YOUR_WIFI_SSID", "YOUR_WIFI_PASSWORD")
-           .baseTopic("Mylab/smarthome")
-           .start();
+    Synapta.wifi("YOUR_WIFI_SSID", "YOUR_WIFI_PASSWORD");
+    Synapta.baseTopic("Mylab/smarthome");
+    Synapta.start();
 
     // ส่งชื่อ function เข้าไปตรงๆ — ไม่ต้อง lambda
     relay.onCommand(onRelayChange);
