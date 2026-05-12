@@ -13,45 +13,28 @@
 
 DHT dht(15, DHT22);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 2 วิธีประกาศ sensor — เลือกตามถนัด
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ── วิธีที่ 1: callback แยก function (Arduino style) ─────────────────────────
 float readTemp() {
     float t = dht.readTemperature();
-    if (isnan(t)) {
-        Serial.println("Sensor read failed");
-        return 0.0f;
-    }
-    Serial.print("Temperature: ");
-    Serial.print(t);
-    Serial.println(" C");
+    if (isnan(t)) { Serial.println("Sensor read failed"); return 0.0f; }
     return t;
 }
 
-SynaptaSensor temp("bedroom-temp", "bedroom");
+// ── วิธีที่ 1: ผูก callback ใน setup() ──
+SynaptaSensor temp("bedroom/temp");
 
-
-// ── วิธีที่ 2: ใส่ทุกอย่างใน constructor (compact, ใช้ lambda) ────────────────
-// SynaptaSensor temp("bedroom-temp", "bedroom", 30000, []() {
-//     return dht.readTemperature();
-// });
+// ── วิธีที่ 2: ระบุ interval + function ใน constructor เลย ──
+// SynaptaSensor temp("bedroom/temp", 30000, readTemp);
 
 
 void setup() {
     Serial.begin(115200);
     dht.begin();
 
-    // ── config ──
     Synapta.wifi("YOUR_WIFI_SSID", "YOUR_WIFI_PASSWORD");
     Synapta.baseTopic("Mylab/smarthome");
     Synapta.start();
 
-    // ── ผูก sensor (ถ้าใช้วิธีที่ 1) — read ทุก 30 วินาที ──
-    temp.every(30000, readTemp);
-
-    // ถ้าใช้วิธีที่ 2 ตัดบรรทัด temp.every() ทิ้งได้เลย
+    temp.every(30000, readTemp);   // ตัดออกได้ถ้าใช้วิธีที่ 2
 }
 
 void loop() {
