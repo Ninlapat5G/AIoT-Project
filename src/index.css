@@ -323,6 +323,7 @@
            transition-colors duration-200 cursor-default;
     background: var(--card);
     border: 1px solid var(--line);
+    container-type: inline-size;
   }
   .sh-card.is-on {
     border-color: oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.4);
@@ -411,6 +412,15 @@
     color: oklch(0.65 0.18 25);
   }
   .sh-card-remove:hover { background: oklch(0.65 0.18 25 / 0.12); }
+  /* narrow-card responsive: shrink footer buttons when card < 260px */
+  @container (max-width: 260px) {
+    .sh-card-edit-foot .sh-btn-primary,
+    .sh-card-edit-foot .sh-btn-ghost,
+    .sh-card-edit-foot .sh-card-remove {
+      padding: 0.25rem 0.5rem;
+      font-size: 0.625rem;
+    }
+  }
 
   /* add tile */
   .sh-add {
