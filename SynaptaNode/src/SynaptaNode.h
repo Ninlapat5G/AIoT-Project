@@ -10,12 +10,12 @@
 
 class SynaptaNodeClass {
 public:
-    // ── V1 Fluent / step-by-step config ──────────────────────────────────────
-    // ใช้แบบ chain: Synapta.wifi(...).broker(...).baseTopic(...).start();
-    // หรือทีละบรรทัด:
+    // ── V1 Config — เรียกใน setup() ก่อน start() ──────────────────────────────
+    // ตัวอย่าง:
     //   Synapta.wifi("MYWIFI", "PASSWORD");
     //   Synapta.baseTopic("Mylab/smarthome");
     //   Synapta.start();
+    // broker() / mqttAuth() / nodeId() เรียกเฉพาะถ้าต้องการเปลี่ยนจาก default
     SynaptaNodeClass& wifi      (const char* ssid, const char* pass);
     SynaptaNodeClass& broker    (const char* host, int port = 8883, bool tls = true);
     SynaptaNodeClass& mqttAuth  (const char* user, const char* pass);

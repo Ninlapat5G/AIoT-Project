@@ -9,8 +9,11 @@
 //   SynaptaSensor  temp("sensors/temp");
 //
 //   void setup() {
+//     Serial.begin(115200);
+//     Synapta.wifi("MyWiFi", "pass");
+//     Synapta.baseTopic("Mylab/smarthome");
+//     Synapta.start();
 //     temp.every(5000, readTemp);
-//     Synapta.begin("MyWiFi", "pass", "Mylab/smarthome");
 //   }
 //
 // Pin assignment: Web App → Edit device → ใส่ Pin → Save
@@ -42,10 +45,11 @@ public:
     int  level()       const { return (int)value(); }
     void setLevel(int v)     { set(v); }
 
-    // fade + gamma เป็น chainable — ใช้ตอนประกาศ global
-    // ตัวอย่าง: SynaptaAnalog dim("bedroom/dimmer"); dim.fade(300).gamma();
-    SynaptaAnalog& fade (uint32_t ms)  { setFadeMs(ms); return *this; }
-    SynaptaAnalog& gamma(float g = 2.2f) { setGamma(g); return *this; }
+    // ตัวอย่าง:
+    //   dim.fade(300);   // ค่อยๆ เปลี่ยนค่าใน 300ms
+    //   dim.gamma();     // gamma 2.2 สำหรับ LED (motor ไม่ต้องเรียก)
+    SynaptaAnalog& fade (uint32_t ms)    { setFadeMs(ms); return *this; }
+    SynaptaAnalog& gamma(float g = 2.2f) { setGamma(g);   return *this; }
 };
 
 

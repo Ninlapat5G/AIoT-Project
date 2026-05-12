@@ -41,11 +41,14 @@ The Web AI talks directly to the ESP32. No hub required for device control.
 ```cpp
 #include <Synapta.h>
 
-SynaptaDevice relay("bedroom-relay", "bedroom", NODE_DIGITAL);
+SynaptaDigital relay("bedroom/relay");
 
 void setup() {
-    Synapta.begin("MyWiFi", "MyPassword", "Mylab/smarthome");
-    relay.onCommand([](bool on) { digitalWrite(2, on); });
+    Serial.begin(115200);
+
+    Synapta.wifi("MyWiFi", "MyPassword");
+    Synapta.baseTopic("Mylab/smarthome");
+    Synapta.start();
 }
 
 void loop() {
@@ -53,9 +56,9 @@ void loop() {
 }
 ```
 
-Add the device in the Web App (Settings → Devices → Add):
-- **pubTopic**: `bedroom/bedroom-relay/set`
-- **subTopic**: `bedroom/bedroom-relay/state`
+Pin assignment: เปิด Web App → Edit device → ใส่ Pin → Save
+
+Web App ค้นพบ device อัตโนมัติผ่าน manifest topic — ไม่ต้องกรอก pubTopic/subTopic เอง
 
 ---
 
@@ -65,39 +68,44 @@ Add the device in the Web App (Settings → Devices → Add):
 
 | Method | Description |
 |--------|-------------|
-| `begin(ssid, pass, baseTopic)` | Connect with hardcoded credentials |
-| `begin()` | Connect using credentials saved to NVRAM via `configure()` |
-| `configure(ssid, pass, baseTopic)` | Save credentials to NVRAM and connect |
-| `loop()` | Must be called every `loop()` |
-| `isConnected()` | Returns `true` when MQTT is connected |
-| `onConnect(cb)` | Callback when MQTT connects / reconnects |
-| `onDisconnect(cb)` | Callback when connection is lost |
+| `wifi(ssid, pass)` | ตั้ง WiFi credentials |
+| `baseTopic(base)` | ตั้ง base topic (ต้องตรงกับ Web App) |
+| `broker(host, port, tls)` | เปลี่ยน broker (default: `broker.hivemq.com`, 8883, TLS) |
+| `mqttAuth(user, pass)` | ถ้า broker ต้องการ auth |
+| `nodeId(id)` | ตั้งชื่อ node เอง (default: derive จาก MAC) |
+| `start()` | เริ่มจริง — เชื่อม WiFi + MQTT |
+| `configure(ssid, pass, base)` | บันทึก credential ลง NVS + start ครั้งเดียว |
+| `begin()` | โหลด credential จาก NVS แล้ว start |
+| `loop()` | เรียกใน `loop()` ทุกครั้ง |
+| `isConnected()` | คืน `true` เมื่อ MQTT พร้อมใช้ |
+| `onConnect(cb)` | callback ตอน MQTT เชื่อมสำเร็จ |
+| `onDisconnect(cb)` | callback ตอนหลุดการเชื่อมต่อ |
 
 ---
 
-### `SynaptaDevice(id, room, type)`
+### Type-safe device wrappers
 
-| Parameter | Description |
-|-----------|-------------|
-| `id` | Unique device ID — must match the device configured in the Web App |
-| `room` | Room name, e.g. `"bedroom"` or `"living-room"` |
-| `type` | `NODE_DIGITAL`, `NODE_ANALOG`, or `NODE_SENSOR` |
+```cpp
+SynaptaDigital relay ("bedroom/relay");
+SynaptaAnalog  dimmer("bedroom/dimmer");
+SynaptaSensor  temp  ("bedroom/temp");
+```
 
-Topics are derived automatically:
-- **cmd** → `{baseTopic}/{room}/{id}/set` — Web App publishes here
-- **state** → `{baseTopic}/{room}/{id}/state` — ESP32 publishes here (retain=true)
+`topic` คือ path ใต้ baseTopic — ระบบ derive `/set`, `/state`, `/config` ให้อัตโนมัติ
 
-| Method | Description |
-|--------|-------------|
-| `onCommand(cb)` | `NODE_DIGITAL`: `cb(bool on)` |
-| `onValue(cb)` | `NODE_ANALOG`: `cb(int value)` |
-| `attachPin(pin)` | NODE_DIGITAL: auto GPIO control, no callback needed |
-| `attachPWM(pin)` | NODE_ANALOG: auto PWM via `ledcWrite`, no callback needed |
-| `attachButton(pin)` | Physical toggle button — toggles state + publishes to MQTT |
-| `every(ms, cb)` | NODE_SENSOR: call `cb()` every `ms` ms, publish returned `float` |
-| `set(bool)` | NODE_DIGITAL: set state from code + publish |
-| `set(int)` | NODE_ANALOG: set value from code + publish |
-| `value()` | Read current state as `float` |
+| Method | ใช้กับ | คำอธิบาย |
+|--------|--------|---------|
+| `onCommand(cb)` | Digital | `cb(bool on)` — fires ตอนรับ command |
+| `onValue(cb)` | Analog | `cb(int value)` — fires ตอนรับค่า 0–255 |
+| `attachPin(pin)` | Digital | auto GPIO control |
+| `attachPWM(pin)` | Analog | auto PWM (LEDC) |
+| `attachButton(pin)` | Digital | ปุ่มกดจริง active-low, debounce 50ms |
+| `every(ms, cb)` | Sensor | publish ค่าจาก `cb()` ทุก ms |
+| `turnOn()` / `turnOff()` / `toggle()` | Digital | สั่งจาก code |
+| `setLevel(0..255)` | Analog | สั่งจาก code |
+| `fade(ms)` | Analog | ค่อยๆ เปลี่ยนค่า (default 200ms) |
+| `gamma(g)` | Analog | gamma correction สำหรับ LED (default 2.2) |
+| `isOn()` / `level()` / `read()` | ตาม type | อ่านค่าปัจจุบัน |
 
 ---
 
@@ -122,26 +130,28 @@ Integer string `"0"` – `"255"`
 
 ## Web App Device Configuration
 
-For each `SynaptaDevice` in your sketch, add a matching device in the Web App:
+ตอน node เชื่อม MQTT สำเร็จ → publish manifest ไปที่ `{base}/nodes/{nodeId}/manifest` (retained)
+Web App subscribe topic นี้ → ค้นพบ devices อัตโนมัติ ไม่ต้องเพิ่มเอง
 
-| Sketch | Web App pubTopic | Web App subTopic |
-|--------|-----------------|-----------------|
-| `SynaptaDevice("bedroom-relay", "bedroom", NODE_DIGITAL)` | `bedroom/bedroom-relay/set` | `bedroom/bedroom-relay/state` |
-| `SynaptaDevice("living-dimmer", "living-room", NODE_ANALOG)` | `living-room/living-dimmer/set` | `living-room/living-dimmer/state` |
-| `SynaptaDevice("bedroom-temp", "bedroom", NODE_SENSOR)` | *(leave blank)* | `bedroom/bedroom-temp/state` |
-
-**Note:** Room names with spaces are normalised automatically: `"Living Room"` → `living-room`.
+Topic ที่ derive ให้:
+- **cmd**   → `{baseTopic}/{topic}/set` — Web App publish มาที่นี่
+- **state** → `{baseTopic}/{topic}/state` — ESP32 publish (retain=true)
 
 ---
 
 ## Examples
 
-| Sketch | What it shows |
-|--------|---------------|
-| `01_BasicDigital` | Single relay, minimal code |
-| `02_MultiDevice` | Relay + PWM dimmer, `attachPin` / `attachPWM` |
-| `03_Sensor` | DHT22 temperature reporting every 30 s |
-| `04_PhysicalButton` | Toggle button keeps Web App UI in sync |
+| Sketch | สอนอะไร |
+|--------|---------|
+| `01_BasicDigital` | relay เปิด/ปิด พื้นฐาน |
+| `02_MultiDevice` | หลาย device + callback 2 แบบ |
+| `03_Sensor` | DHT22 publish ตามช่วงเวลา |
+| `04_PhysicalButton` | ปุ่มกดจริง + sync ไป Web App |
+| `05_PwmDimmer` | LED dimmer + fade + gamma |
+| `06_Automation` | sensor → actuator rule บน node เอง |
+| `07_NvsCredentials` | บันทึก credential ลง NVS ครั้งเดียว |
+| `08_MqttAuth` | broker ที่ต้องการ user/pass |
+| `09_LocalBroker` | Mosquitto/EMQX ใน LAN (plain MQTT) |
 
 ---
 

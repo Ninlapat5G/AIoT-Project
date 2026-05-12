@@ -19,7 +19,8 @@ void setup() {
     Synapta.baseTopic("Mylab/smarthome");
     Synapta.start();
 
-    led.fade(500).gamma();   // fade 500ms + gamma 2.2 สำหรับสายตา
+    led.fade(500);   // ค่อยๆ เปลี่ยนค่าใน 500ms
+    led.gamma();     // gamma 2.2 สำหรับ LED ให้ตาเห็นเป็น linear
 }
 
 void loop() {
