@@ -19,13 +19,11 @@
 // ── Digital — เปิด/ปิด ────────────────────────────────────────────────────────
 class SynaptaDigital : public SynaptaDevice {
 public:
-    // topic = path ใต้ baseTopic เช่น "living-room/lamp"
-    // pin   = GPIO pin (ละได้ — ตั้งจาก web app ทีหลัง)
-    SynaptaDigital(const char* topic, uint8_t pin = NO_PIN)
-        : SynaptaDevice(topic, NODE_DIGITAL)
-    {
-        if (pin != NO_PIN) attachPin(pin);
-    }
+    // topic = path ใต้ baseTopic เช่น "bedroom/relay"
+    // pin assignment: ตั้งจาก Web App → Edit → Pin → Save
+    // (ถ้าต้องการผูก pin ใน code: เรียก attachPin(2) แยกต่างหาก)
+    explicit SynaptaDigital(const char* topic)
+        : SynaptaDevice(topic, NODE_DIGITAL) {}
 
     bool isOn()  const { return value() > 0.5f; }
     void turnOn()      { set(true); }
@@ -37,11 +35,8 @@ public:
 // ── Analog — ค่า 0–255 (PWM) ─────────────────────────────────────────────────
 class SynaptaAnalog : public SynaptaDevice {
 public:
-    SynaptaAnalog(const char* topic, uint8_t pin = NO_PIN)
-        : SynaptaDevice(topic, NODE_ANALOG)
-    {
-        if (pin != NO_PIN) attachPWM(pin);
-    }
+    explicit SynaptaAnalog(const char* topic)
+        : SynaptaDevice(topic, NODE_ANALOG) {}
 
     int  level()       const { return (int)value(); }
     void setLevel(int v)     { set(v); }
