@@ -12,6 +12,7 @@
 import { generateSearchQuery } from './agent.js'
 import { snapshotJson } from './kg.js'
 import { runSettingsAgent } from './settingsAgent.js'
+import { normalizeBase, buildCmdTopic, buildStateTopic } from './mqttTopic.js'
 
 // ── Knowledge Graph Tool ───────────────────────────────────────────────────────
 // Delegate ทั้งหมดไปที่ kg.js — single source of truth
@@ -36,18 +37,30 @@ async function queryKnowledgeGraph(args, ctx) {
 
 const SERPER_URL = 'https://google.serper.dev/search'
 
+// helper: หา device จาก topic ที่ AI ระบุมา (รองรับทั้ง full path และ suffix)
+function findDeviceByTopic(devices, topic, type = null) {
+  return devices.find(d => {
+    if (type && d.type !== type) return false
+    if (!d.topic) return false
+    return (
+      d.topic === topic ||
+      d.topic.endsWith('/' + topic) ||
+      topic === d.topic + '/set' ||
+      topic === d.topic + '/state'
+    )
+  })
+}
+
 async function mqttPublish(args, ctx) {
-  const { mqttClient, devicesRef, baseTopicRef, setDevices, normalizeBase, buildFullTopic } = ctx
+  const { mqttClient, devicesRef, baseTopicRef, setDevices } = ctx
 
   if (!mqttClient) return { success: false, error: 'MQTT not connected' }
 
   const { topic, payload } = args
+  const base = normalizeBase(baseTopicRef.current)
 
-  // hub devices have a dedicated tool — block direct publish.
-  const hubMatch = devicesRef.current.find(
-    d => d.type === 'hub' &&
-      (d.pubTopic === topic || d.pubTopic?.endsWith('/' + topic))
-  )
+  // hub devices มี tool เฉพาะ — ไม่ให้ publish ตรง
+  const hubMatch = findDeviceByTopic(devicesRef.current, topic, 'hub')
   if (hubMatch) {
     return {
       success: false,
@@ -55,22 +68,9 @@ async function mqttPublish(args, ctx) {
     }
   }
 
-  const device = devicesRef.current.find(
-    d => d.type !== 'hub' &&
-      (d.pubTopic === topic || d.pubTopic?.endsWith('/' + topic))
-  )
-
-  let finalTopic = topic;
-  let isRaw = false;
-
-  if (!device) {
-    isRaw = true;
-  } else {
-    finalTopic = device.pubTopic;
-  }
-
-  const base = normalizeBase(baseTopicRef.current)
-  const fullTopic = buildFullTopic(finalTopic, base)
+  const device = findDeviceByTopic(devicesRef.current, topic)
+  const fullTopic = device ? buildCmdTopic(device.topic, base) : topic
+  const isRaw = !device
 
   return new Promise(resolve => {
     mqttClient.publish(fullTopic, String(payload), { qos: 2 }, err => {
@@ -89,7 +89,7 @@ async function mqttPublish(args, ctx) {
         success: true,
         topic: fullTopic,
         payload,
-        message: isRaw ? 'Published to unlisted raw topic.' : 'Published.'
+        message: isRaw ? 'Published to unlisted raw topic.' : 'Published.',
       })
     })
   })
@@ -101,12 +101,10 @@ async function mqttRead(args, ctx) {
   const topic = typeof args === 'string' ? args.trim() : args?.topic
   if (!topic) return { success: false, error: 'No topic specified' }
 
-  // hub devices are not readable via mqtt_read
-  const device = devicesRef.current.find(
-    d => d.type !== 'hub' && (
-      d.pubTopic === topic || d.subTopic === topic ||
-      d.pubTopic?.endsWith('/' + topic) || d.subTopic?.endsWith('/' + topic)
-    )
+  // hub ไม่รองรับ mqtt_read
+  const device = findDeviceByTopic(
+    devicesRef.current.filter(d => d.type !== 'hub'),
+    topic
   )
 
   if (!device) return { success: false, error: `No device found for topic: ${topic}` }
@@ -116,34 +114,27 @@ async function mqttRead(args, ctx) {
 }
 
 async function hubCommand(args, ctx) {
-  const { mqttClient, devicesRef, baseTopicRef,
-    mqttWaitForStream, normalizeBase, buildFullTopic, signal } = ctx
+  const { mqttClient, devicesRef, baseTopicRef, mqttWaitForStream, signal } = ctx
 
-  // เปลี่ยนมารับ topic แทน
   const { task, topic } = args
   if (!mqttClient) return { success: false, error: 'MQTT not connected' }
   if (!task || !topic) return { success: false, error: 'Missing args: task, topic' }
 
-  const base = normalizeBase(baseTopicRef.current)
-  const fullTopic = buildFullTopic(topic, base)
-  const device = devicesRef.current.find(
-    d => d.type === 'hub' && (d.pubTopic === topic || buildFullTopic(d.pubTopic, base) === fullTopic)
-  )
-  if (!device) return { success: false, error: `Hub device with topic '${topic}' not found in device list` }
-  if (!device.pubTopic) return { success: false, error: `Hub device '${device.name}' has no pubTopic` }
+  const base   = normalizeBase(baseTopicRef.current)
+  const device = findDeviceByTopic(devicesRef.current, topic, 'hub')
+  if (!device)       return { success: false, error: `Hub device with topic '${topic}' not found` }
+  if (!device.topic) return { success: false, error: `Hub device '${device.name}' has no topic` }
 
-  const outputTopic = device.subTopic
-    ? buildFullTopic(device.subTopic, base)
-    : null
+  // hub ใช้ /cmd และ /output แทน /set และ /state
+  const fullTopic   = buildCmdTopic(device.topic, base).replace(/\/set$/, '/cmd')
+  const outputTopic = buildStateTopic(device.topic, base).replace(/\/state$/, '/output')
+  const cancelTopic = buildCmdTopic(device.topic, base).replace(/\/set$/, '/cancel')
 
-  const cancelTopic = buildFullTopic(device.pubTopic.replace(/\/cmd$/, '/cancel'), base)
   signal?.addEventListener('abort', () => {
     mqttClient.publish(cancelTopic, 'cancel', { qos: 1 })
   }, { once: true })
 
-  const streamPromise = outputTopic
-    ? mqttWaitForStream(outputTopic, 60000, { ackMsg: '(mqtt_start)', ackTimeoutMs: 5000 })
-    : null
+  const streamPromise = mqttWaitForStream(outputTopic, 60000, { ackMsg: '(mqtt_start)', ackTimeoutMs: 5000 })
 
   try {
     await new Promise((resolve, reject) =>
@@ -152,8 +143,6 @@ async function hubCommand(args, ctx) {
   } catch (err) {
     return { success: false, error: err.message }
   }
-
-  if (!streamPromise) return { success: true, summary: `Task sent to ${device.name}: ${task}` }
 
   const { chunks, timedOut, ackTimedOut } = await streamPromise
 
@@ -243,6 +232,8 @@ const toolHandlers = {
 // ── Factory ────────────────────────────────────────────────────────────────────
 
 export function createExecuteTool(ctx) {
+  // normalizeBase/buildFullTopic ที่ส่งมาจาก App.jsx ไม่จำเป็นแล้ว
+  // (agentSkills import มาเองจาก mqttTopic.js) — ยังรับมาเพื่อ backward compat
   return async function executeTool(name, args, signal) {
     const skill = (ctx.settings.skills || []).find(sk => sk.name === name)
     if (skill && !skill.enabled) return { success: false, error: `Tool "${name}" is disabled` }

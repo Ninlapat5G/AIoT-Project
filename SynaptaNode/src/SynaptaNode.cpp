@@ -4,7 +4,6 @@
 SynaptaNodeClass Synapta;
 
 // ── V1 Fluent / step-by-step config ──────────────────────────────────────────
-// เก็บค่าใส่ _cfg แล้ว return *this — ใช้ chain หรือทีละบรรทัดก็ได้
 
 SynaptaNodeClass& SynaptaNodeClass::wifi(const char* ssid, const char* pass) {
     _cfg.wifiSSID     = ssid;
@@ -43,7 +42,7 @@ void SynaptaNodeClass::start() {
     _init();
 }
 
-// ── Legacy API (ยังใช้ได้ตามเดิม) ─────────────────────────────────────────────
+// ── Legacy API ────────────────────────────────────────────────────────────────
 
 void SynaptaNodeClass::begin(const char* ssid, const char* pass, const char* base) {
     _cfg = NodeConfig(ssid, pass, base);
@@ -65,14 +64,16 @@ void SynaptaNodeClass::configure(const char* ssid, const char* pass, const char*
     _init();
 }
 
-// ── Init / runtime ───────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 
 void SynaptaNodeClass::_init() {
     Serial.println("[Synapta] Initialising...");
 
-    _devices.clear();   // prevent duplicate registration if called again
+    _devices.clear();
     for (auto* d : _SynaptaRegistry::devices()) {
         _devices.push_back(d);
+        // โหลด pin config ที่บันทึกไว้จาก NVS (ถ้ามี)
+        d->_loadPinConfig();
     }
 
     if (_cfg.mqttTLS) {
@@ -83,29 +84,28 @@ void SynaptaNodeClass::_init() {
     }
     _mqtt.setServer(_cfg.mqttBroker.c_str(), _cfg.mqttPort);
     _mqtt.setCallback(_mqttCallback);
-    _mqtt.setBufferSize(1024);  // headroom for manifest JSON + future rule payloads
+    _mqtt.setBufferSize(1024);
 
     _connectWiFi();
 }
 
+// ── Runtime loop ──────────────────────────────────────────────────────────────
+
 void SynaptaNodeClass::loop() {
-    // ── WiFi state ───────────────────────────────────────────────────────────
     if (WiFi.status() != WL_CONNECTED) {
         if (_wasConnected) {
             _wasConnected = false;
             if (_cbDisconnect) _cbDisconnect();
         }
-        // retry WiFi.begin every 5s — non-blocking, status check on next tick
         if (millis() - _lastReconnectMs > 5000) {
             _lastReconnectMs = millis();
             _wifiBeginCalled = false;
             _connectWiFi();
         }
-        for (auto* d : _devices) d->_loop();   // buttons + sensors ทำงานต่อแม้ offline
+        for (auto* d : _devices) d->_loop();
         return;
     }
 
-    // ── MQTT state ───────────────────────────────────────────────────────────
     if (!_mqtt.connected()) {
         if (_wasConnected) {
             _wasConnected = false;
@@ -136,20 +136,19 @@ bool SynaptaNodeClass::_publish(const char* topic, const char* payload, bool ret
     return _mqtt.publish(topic, (const uint8_t*)payload, strlen(payload), retain);
 }
 
-// ── WiFi (non-blocking) ──────────────────────────────────────────────────────
-// Trigger WiFi.begin แค่ครั้งเดียวต่อ retry cycle — ไม่ block loop ด้วย delay()
-// เดิม: while (..) delay(500); ค้าง 10 วินาที button ไม่ตอบ
-// ใหม่: WiFi.begin → return ทันที → loop() ตรวจ status รอบถัดไปเอง
+// ── WiFi (non-blocking) ───────────────────────────────────────────────────────
 
 void SynaptaNodeClass::_connectWiFi() {
     if (WiFi.status() == WL_CONNECTED) return;
-    if (_wifiBeginCalled) return;  // อย่า WiFi.begin ซ้ำตอนยัง connecting
+    if (_wifiBeginCalled) return;
 
     Serial.print("[Synapta] WiFi.begin → ");
     Serial.println(_cfg.wifiSSID);
     WiFi.begin(_cfg.wifiSSID.c_str(), _cfg.wifiPassword.c_str());
     _wifiBeginCalled = true;
 }
+
+// ── MQTT connect ──────────────────────────────────────────────────────────────
 
 bool SynaptaNodeClass::_connectMQTT() {
     String clientId    = "synapta-" + _macSuffix();
@@ -177,23 +176,24 @@ bool SynaptaNodeClass::_connectMQTT() {
     Serial.println(" OK");
     _publish(statusTopic.c_str(), "online", true);
 
+    // subscribe ทั้ง command (/set) และ config (/config) ของทุก device
     for (auto* d : _devices) {
-        String t = d->_cmdTopic(_cfg.baseTopic);
-        _mqtt.subscribe(t.c_str(), 1);
-        Serial.print("[Synapta] Subscribed: ");
-        Serial.println(t);
+        String cmdT = d->_cmdTopic(_cfg.baseTopic);
+        String cfgT = d->_configTopic(_cfg.baseTopic);
+        _mqtt.subscribe(cmdT.c_str(), 1);
+        _mqtt.subscribe(cfgT.c_str(), 1);
+        Serial.printf("[Synapta] Subscribed: %s | %s\n", cmdT.c_str(), cfgT.c_str());
     }
-    for (auto* d : _devices) d->_reportState();  // sync UI on reconnect
 
-    _publishManifest();   // V1: ให้ web app รู้ว่า node นี้มี device อะไร
+    for (auto* d : _devices) d->_reportState();
 
+    _publishManifest();
     return true;
 }
 
-// ── Manifest publishing (V1) ─────────────────────────────────────────────────
-// Topic: {base}/nodes/{nodeId}/manifest  (retained)
-// Payload: { "nodeId":..., "baseTopic":..., "devices":[...] }
-// Web app subscribe `{base}/nodes/+/manifest` → KG auto-populated
+// ── Manifest ──────────────────────────────────────────────────────────────────
+// publish ไปที่ {base}/nodes/{nodeId}/manifest (retained)
+// web app subscribe {base}/nodes/+/manifest เพื่อ discover devices อัตโนมัติ
 
 void SynaptaNodeClass::_publishManifest() {
     String json = "{\"nodeId\":\"";
@@ -209,10 +209,12 @@ void SynaptaNodeClass::_publishManifest() {
 
     String topic = _manifestTopic();
     bool ok = _publish(topic.c_str(), json.c_str(), true);
-    Serial.print("[Synapta] Manifest publish → ");
+    Serial.print("[Synapta] Manifest → ");
     Serial.print(topic);
     Serial.println(ok ? " OK" : " FAILED");
 }
+
+// ── MQTT message router ───────────────────────────────────────────────────────
 
 void SynaptaNodeClass::_mqttCallback(char* topic, uint8_t* payload, unsigned int len) {
     Synapta._onMessage(topic, payload, len);
@@ -227,8 +229,15 @@ void SynaptaNodeClass::_onMessage(char* topic, uint8_t* payload, unsigned int le
             d->_handleMessage(payloadStr.c_str());
             return;
         }
+        // config message: pin assignment จาก web app ตอนกด save
+        if (topicStr == d->_configTopic(_cfg.baseTopic)) {
+            d->_handleConfig(payloadStr.c_str());
+            return;
+        }
     }
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 String SynaptaNodeClass::_macSuffix() const {
     uint8_t mac[6];
@@ -238,12 +247,6 @@ String SynaptaNodeClass::_macSuffix() const {
     return String(buf);
 }
 
-String SynaptaNodeClass::_nodeId() const {
-    if (_cfg.nodeId.length() > 0) {
-        return _cfg.nodeId;
-    }
-    return "node-" + _macSuffix();
-}
-
+String SynaptaNodeClass::_nodeId()        const { return _cfg.nodeId.length() > 0 ? _cfg.nodeId : "node-" + _macSuffix(); }
 String SynaptaNodeClass::_statusTopic()   const { return _cfg.baseTopic + "/nodes/" + _nodeId() + "/status"; }
 String SynaptaNodeClass::_manifestTopic() const { return _cfg.baseTopic + "/nodes/" + _nodeId() + "/manifest"; }

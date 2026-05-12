@@ -1,41 +1,40 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { initialDevices } from '../data'
 import { saveDevices, loadDevices } from '../utils/storage'
-import { normalizeBase, buildFullTopic } from '../utils/mqttTopic'
+import { normalizeBase, buildCmdTopic, buildStateTopic } from '../utils/mqttTopic'
+
+// migration: device เก่าที่มี pubTopic/subTopic แต่ยังไม่มี topic
+// derive topic จาก pubTopic โดยตัด /set suffix ออก
+function migrateDevice(d) {
+  if (!d.topic && d.pubTopic) {
+    return { ...d, topic: d.pubTopic.replace(/\/set$/, ''), pin: d.pin ?? '' }
+  }
+  return d
+}
 
 /**
  * useDevices
- * Manages the device list with localStorage persistence.
- * Also owns the MQTT→state sync handler (handleMqttMessage) so that
- * incoming MQTT messages automatically update device state.
- *
- * Note: updateDevice (which writes state AND publishes to MQTT) lives in
- * App.jsx because it needs mqttPublish from useMQTT — two different hooks
- * shouldn't depend on each other directly.
+ * จัดการ device list + persist ลง localStorage
+ * handleMqttMessage sync state เมื่อมี MQTT message เข้า
  *
  * Params:
- *   baseTopicRef – ref from useSettings, used inside handleMqttMessage
+ *   baseTopicRef – ref จาก useSettings
  *
  * Returns:
- *   devices           – current device array
- *   setDevices        – state setter (passed to executeTool & updateDevice)
- *   devicesRef        – ref always tracking current devices (avoids stale closures)
- *   handleMqttMessage – callback to pass as useMQTT's onMessage
- *   removeDevice      – removes a device by id
+ *   devices, setDevices, devicesRef, handleMqttMessage, removeDevice
  */
 export function useDevices({ baseTopicRef }) {
-  const [devices, setDevices] = useState(() => loadDevices() ?? initialDevices)
+  const [devices, setDevices] = useState(() =>
+    (loadDevices() ?? initialDevices).map(migrateDevice)
+  )
 
-  // Ref keeps a live snapshot so closures in agent tools never see stale state
   const devicesRef = useRef(devices)
   useEffect(() => { devicesRef.current = devices }, [devices])
 
-  // Auto-persist on every change
   useEffect(() => { saveDevices(devices) }, [devices])
 
-  // Called by useMQTT whenever a message arrives on any subscribed topic.
-  // Matches the incoming topic against each device's pubTopic/subTopic and
-  // updates its state in-place (digital on/off, analog value clamp).
+  // รับ MQTT message แล้ว match กับ device ที่ตรงกัน
+  // match ทั้ง stateTopic (/state) และ cmdTopic (/set) เพราะ broker echo กลับ
   const handleMqttMessage = useCallback((topic, val) => {
     const base = normalizeBase(baseTopicRef.current)
     const incoming = topic.trim()
@@ -43,9 +42,10 @@ export function useDevices({ baseTopicRef }) {
     setDevices(prev => {
       let matched = false
       const next = prev.map(d => {
+        if (!d.topic) return d
         if (
-          incoming !== buildFullTopic(d.subTopic, base) &&
-          incoming !== buildFullTopic(d.pubTopic, base)
+          incoming !== buildStateTopic(d.topic, base) &&
+          incoming !== buildCmdTopic(d.topic, base)
         ) return d
 
         matched = true

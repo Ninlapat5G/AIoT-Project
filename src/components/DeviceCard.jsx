@@ -37,7 +37,14 @@ const TOPIC_RE = /[#+]/
 
 function topicError(t) {
   if (!t) return null
-  if (TOPIC_RE.test(t)) return 'ห้ามใช้ # หรือ + ใน publish topic'
+  if (TOPIC_RE.test(t)) return 'ห้ามใช้ # หรือ + ใน topic'
+  return null
+}
+
+function pinError(p) {
+  if (p === '' || p == null) return null
+  const n = Number(p)
+  if (!Number.isInteger(n) || n < 0 || n > 48) return 'pin ต้องเป็น 0–48'
   return null
 }
 
@@ -47,8 +54,9 @@ const EditCard = memo(function EditCard({ device, onUpdate, onRemove, areas, onC
   const [draft, setDraft] = useState(device)
   const set = patch => setDraft(d => ({ ...d, ...patch }))
 
-  const pubErr = topicError(draft.pubTopic)
-  const hasErr = !!pubErr
+  const topicErr = topicError(draft.topic)
+  const pErr     = pinError(draft.pin)
+  const hasErr   = !!(topicErr || pErr)
 
   return (
     <motion.div
@@ -110,36 +118,44 @@ const EditCard = memo(function EditCard({ device, onUpdate, onRemove, areas, onC
             </div>
           </label>
         )}
-        <div className="sh-field">
+        {/* MQTT topic — field เดียว, /set และ /state derive อัตโนมัติ */}
+        <label className="sh-field">
           <span className="mono flex justify-between">
-            MQTT TOPIC SUFFIX
+            MQTT TOPIC
             <span style={{ color: 'var(--ink-xdim)' }}>OPTIONAL</span>
           </span>
-          <div className="flex flex-col gap-1.5 mt-1">
-            <div className="flex items-center gap-2">
-              <span className="sh-topic-tag mono">PUB</span>
-              <input
-                value={draft.pubTopic || ''}
-                onChange={e => set({ pubTopic: e.target.value })}
-                placeholder={`${draft.room.toLowerCase().replace(/\s+/g, '-')}/${draft.id}/set`}
-                style={pubErr ? { borderColor: 'oklch(0.65 0.22 25)' } : {}}
-              />
-            </div>
-            {pubErr && (
-              <span className="mono" style={{ fontSize: 10, color: 'oklch(0.72 0.22 25)', paddingLeft: 40 }}>
-                ⚠ {pubErr}
-              </span>
-            )}
-            <div className="flex items-center gap-2">
-              <span className="sh-topic-tag sub mono">SUB</span>
-              <input
-                value={draft.subTopic || ''}
-                onChange={e => set({ subTopic: e.target.value })}
-                placeholder={`${draft.room.toLowerCase().replace(/\s+/g, '-')}/${draft.id}/state`}
-              />
-            </div>
-          </div>
-        </div>
+          <input
+            value={draft.topic || ''}
+            onChange={e => set({ topic: e.target.value })}
+            placeholder={`${draft.room.toLowerCase().replace(/\s+/g, '-')}/${draft.id}`}
+            style={topicErr ? { borderColor: 'oklch(0.65 0.22 25)' } : {}}
+          />
+          {topicErr && (
+            <span className="mono" style={{ fontSize: 10, color: 'oklch(0.72 0.22 25)' }}>
+              ⚠ {topicErr}
+            </span>
+          )}
+        </label>
+        {/* Pin — ส่ง config ไปบอร์ดผ่าน /config ตอน save */}
+        <label className="sh-field">
+          <span className="mono flex justify-between">
+            PIN
+            <span style={{ color: 'var(--ink-xdim)' }}>GPIO 0–48</span>
+          </span>
+          <input
+            type="number"
+            min="0" max="48"
+            value={draft.pin ?? ''}
+            onChange={e => set({ pin: e.target.value === '' ? '' : Number(e.target.value) })}
+            placeholder="ไม่ระบุ"
+            style={pErr ? { borderColor: 'oklch(0.65 0.22 25)' } : {}}
+          />
+          {pErr && (
+            <span className="mono" style={{ fontSize: 10, color: 'oklch(0.72 0.22 25)' }}>
+              ⚠ {pErr}
+            </span>
+          )}
+        </label>
       </div>
       <div className="sh-card-edit-foot">
         <button className="sh-card-remove" onClick={() => onRemove(device.id)}>Remove</button>
@@ -163,7 +179,7 @@ function EditTerminalCard({ device, onUpdate, onRemove, areas, onCancel }) {
   const [draft, setDraft] = useState(device)
   const set = patch => setDraft(d => ({ ...d, ...patch }))
 
-  const pubErr = topicError(draft.pubTopic)
+  const topicErr = topicError(draft.topic)
 
   return (
     <motion.div
@@ -205,24 +221,19 @@ function EditTerminalCard({ device, onUpdate, onRemove, areas, onCancel }) {
             ))}
           </div>
         </label>
-        <div className="sh-field">
-          <span className="mono">PUB TOPIC</span>
-          <div className="flex flex-col gap-1.5 mt-1">
-            <div className="flex items-center gap-2">
-              <span className="sh-topic-tag mono">PUB</span>
-              <input
-                value={draft.pubTopic || ''}
-                onChange={e => set({ pubTopic: e.target.value })}
-                style={pubErr ? { borderColor: 'oklch(0.65 0.22 25)' } : {}}
-              />
-            </div>
-            {pubErr && (
-              <span className="mono" style={{ fontSize: 10, color: 'oklch(0.72 0.22 25)', paddingLeft: 40 }}>
-                ⚠ {pubErr}
-              </span>
-            )}
-          </div>
-        </div>
+        <label className="sh-field">
+          <span className="mono">MQTT TOPIC</span>
+          <input
+            value={draft.topic || ''}
+            onChange={e => set({ topic: e.target.value })}
+            style={topicErr ? { borderColor: 'oklch(0.65 0.22 25)' } : {}}
+          />
+          {topicErr && (
+            <span className="mono" style={{ fontSize: 10, color: 'oklch(0.72 0.22 25)' }}>
+              ⚠ {topicErr}
+            </span>
+          )}
+        </label>
       </div>
       <div className="sh-card-edit-foot">
         <button className="sh-card-remove" onClick={() => onRemove(device.id)}>Remove</button>
@@ -230,8 +241,8 @@ function EditTerminalCard({ device, onUpdate, onRemove, areas, onCancel }) {
         <button className="sh-btn-ghost" onClick={onCancel}>Cancel</button>
         <button
           className="sh-btn-primary"
-          disabled={!!pubErr}
-          onClick={() => { if (!pubErr) { onUpdate(draft); onCancel() } }}
+          disabled={!!topicErr}
+          onClick={() => { if (!topicErr) { onUpdate(draft); onCancel() } }}
         >
           Save
         </button>
@@ -246,7 +257,7 @@ function EditHubCard({ device, onUpdate, onRemove, areas, onCancel }) {
   const [draft, setDraft] = useState(device)
   const set = patch => setDraft(d => ({ ...d, ...patch }))
 
-  const pubErr = topicError(draft.pubTopic)
+  const topicErr = topicError(draft.topic)
 
   return (
     <motion.div
@@ -274,6 +285,7 @@ function EditHubCard({ device, onUpdate, onRemove, areas, onCancel }) {
             ))}
           </select>
         </label>
+        {/* agentName auto-populate topic */}
         <label className="sh-field">
           <span className="mono">AGENT NAME</span>
           <input
@@ -282,41 +294,27 @@ function EditHubCard({ device, onUpdate, onRemove, areas, onCancel }) {
               const a = e.target.value
               set({
                 agentName: a,
-                pubTopic:  a.trim() ? `hub/${a.trim()}/cmd`    : draft.pubTopic,
-                subTopic:  a.trim() ? `hub/${a.trim()}/output` : draft.subTopic,
+                topic: a.trim() ? `hub/${a.trim()}` : draft.topic,
               })
             }}
             placeholder="office-pc"
             className="mono"
           />
         </label>
-        <div className="sh-field">
-          <span className="mono">MQTT TOPICS</span>
-          <div className="flex flex-col gap-1.5 mt-1">
-            <div className="flex items-center gap-2">
-              <span className="sh-topic-tag mono">PUB</span>
-              <input
-                value={draft.pubTopic || ''}
-                onChange={e => set({ pubTopic: e.target.value })}
-                placeholder="hub/office-pc/cmd"
-                style={pubErr ? { borderColor: 'oklch(0.65 0.22 25)' } : {}}
-              />
-            </div>
-            {pubErr && (
-              <span className="mono" style={{ fontSize: 10, color: 'oklch(0.72 0.22 25)', paddingLeft: 40 }}>
-                ⚠ {pubErr}
-              </span>
-            )}
-            <div className="flex items-center gap-2">
-              <span className="sh-topic-tag sub mono">SUB</span>
-              <input
-                value={draft.subTopic || ''}
-                onChange={e => set({ subTopic: e.target.value })}
-                placeholder="hub/office-pc/output"
-              />
-            </div>
-          </div>
-        </div>
+        <label className="sh-field">
+          <span className="mono">MQTT TOPIC</span>
+          <input
+            value={draft.topic || ''}
+            onChange={e => set({ topic: e.target.value })}
+            placeholder="hub/office-pc"
+            style={topicErr ? { borderColor: 'oklch(0.65 0.22 25)' } : {}}
+          />
+          {topicErr && (
+            <span className="mono" style={{ fontSize: 10, color: 'oklch(0.72 0.22 25)' }}>
+              ⚠ {topicErr}
+            </span>
+          )}
+        </label>
       </div>
       <div className="sh-card-edit-foot">
         <button className="sh-card-remove" onClick={() => onRemove(device.id)}>Remove</button>
@@ -324,8 +322,8 @@ function EditHubCard({ device, onUpdate, onRemove, areas, onCancel }) {
         <button className="sh-btn-ghost" onClick={onCancel}>Cancel</button>
         <button
           className="sh-btn-primary"
-          disabled={!!pubErr}
-          onClick={() => { if (!pubErr) { onUpdate(draft); onCancel() } }}
+          disabled={!!topicErr}
+          onClick={() => { if (!topicErr) { onUpdate(draft); onCancel() } }}
         >
           Save
         </button>
@@ -363,14 +361,14 @@ function HubCard({ device, onEdit }) {
         <span className="sh-card-topic-chip mono" style={{ color: 'var(--accent)' }}>
           <b>HUB</b>{device.agentName || device.name}
         </span>
-        {device.pubTopic && (
-          <span className="sh-card-topic-chip" title={device.pubTopic}>
-            <b>PUB</b>{device.pubTopic}
+        {device.topic && (
+          <span className="sh-card-topic-chip" title={device.topic + '/cmd'}>
+            <b>CMD</b>{device.topic}/cmd
           </span>
         )}
-        {device.subTopic && (
-          <span className="sh-card-topic-chip sub" title={device.subTopic}>
-            <b>SUB</b>{device.subTopic}
+        {device.topic && (
+          <span className="sh-card-topic-chip sub" title={device.topic + '/output'}>
+            <b>OUT</b>{device.topic}/output
           </span>
         )}
       </div>
@@ -388,7 +386,7 @@ function OsTerminalCard({ device, onRawPublish, onEdit, onRemove }) {
   const send = () => {
     const c = cmd.trim()
     if (!c) return
-    onRawPublish?.(device.pubTopic, c)
+    onRawPublish?.(device.topic, c)
     setLastCmd(c)
     setCmd('')
     inputRef.current?.focus()
@@ -451,10 +449,10 @@ function OsTerminalCard({ device, onRawPublish, onEdit, onRemove }) {
         </form>
       </div>
 
-      {device.pubTopic && (
+      {device.topic && (
         <div className="sh-card-topics">
-          <span className="sh-card-topic-chip" title={device.pubTopic}>
-            <b>PUB</b>{device.pubTopic}
+          <span className="sh-card-topic-chip" title={device.topic}>
+            <b>PUB</b>{device.topic}
           </span>
         </div>
       )}
@@ -539,18 +537,14 @@ const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas,
         </div>
       )}
 
-      {(device.pubTopic || device.subTopic) && (
+      {device.topic && (
         <div className="sh-card-topics">
-          {device.pubTopic && (
-            <span className="sh-card-topic-chip" title={device.pubTopic}>
-              <b>PUB</b>{device.pubTopic}
-            </span>
-          )}
-          {device.subTopic && (
-            <span className="sh-card-topic-chip sub" title={device.subTopic}>
-              <b>SUB</b>{device.subTopic}
-            </span>
-          )}
+          <span className="sh-card-topic-chip" title={device.topic + '/set'}>
+            <b>SET</b>{device.topic}/set
+          </span>
+          <span className="sh-card-topic-chip sub" title={device.topic + '/state'}>
+            <b>STATE</b>{device.topic}/state
+          </span>
         </div>
       )}
     </motion.div>
@@ -585,22 +579,21 @@ export function AddHubTile({ onCreate, defaultArea }) {
   const [forming, setForming] = useState(false)
   const [name, setName] = useState('')
   const [agentName, setAgentName] = useState('')
-  const [pubTopic, setPubTopic] = useState('')
-  const [subTopic, setSubTopic] = useState('')
+  const [topic, setTopic] = useState('')
 
+  // auto-fill topic จาก agentName
   useEffect(() => {
     const a = agentName.trim()
-    setPubTopic(a ? `hub/${a}/cmd` : '')
-    setSubTopic(a ? `hub/${a}/output` : '')
+    setTopic(a ? `hub/${a}` : '')
   }, [agentName])
 
-  const reset = () => { setForming(false); setName(''); setAgentName(''); setPubTopic(''); setSubTopic('') }
+  const reset = () => { setForming(false); setName(''); setAgentName(''); setTopic('') }
 
-  const pubErr = topicError(pubTopic)
+  const topicErr = topicError(topic)
 
   const save = () => {
     const trimName = name.trim()
-    if (!trimName || !agentName.trim() || !pubTopic.trim() || pubErr) return
+    if (!trimName || !agentName.trim() || !topic.trim() || topicErr) return
     onCreate({
       id:        'hub-' + Date.now().toString(36),
       name:      trimName,
@@ -608,8 +601,7 @@ export function AddHubTile({ onCreate, defaultArea }) {
       type:      'hub',
       agentName: agentName.trim(),
       icon:      'sparkle',
-      pubTopic:  pubTopic.trim(),
-      subTopic:  subTopic.trim(),
+      topic:     topic.trim(),  // /cmd และ /output derive อัตโนมัติในฝั่ง hub tool
     })
     reset()
   }
@@ -642,40 +634,27 @@ export function AddHubTile({ onCreate, defaultArea }) {
               className="mono"
             />
           </label>
-          <div className="sh-field">
-            <span className="mono">MQTT TOPICS</span>
-            <div className="flex flex-col gap-1.5 mt-1">
-              <div className="flex items-center gap-2">
-                <span className="sh-topic-tag mono">PUB</span>
-                <input
-                  value={pubTopic}
-                  onChange={e => setPubTopic(e.target.value)}
-                  placeholder="hub/office-pc/cmd"
-                  style={pubErr ? { borderColor: 'oklch(0.65 0.22 25)' } : {}}
-                />
-              </div>
-              {pubErr && (
-                <span className="mono" style={{ fontSize: 10, color: 'oklch(0.72 0.22 25)', paddingLeft: 40 }}>
-                  ⚠ {pubErr}
-                </span>
-              )}
-              <div className="flex items-center gap-2">
-                <span className="sh-topic-tag sub mono">SUB</span>
-                <input
-                  value={subTopic}
-                  onChange={e => setSubTopic(e.target.value)}
-                  placeholder="hub/office-pc/output"
-                />
-              </div>
-            </div>
-          </div>
+          <label className="sh-field">
+            <span className="mono">MQTT TOPIC</span>
+            <input
+              value={topic}
+              onChange={e => setTopic(e.target.value)}
+              placeholder="hub/office-pc"
+              style={topicErr ? { borderColor: 'oklch(0.65 0.22 25)' } : {}}
+            />
+            {topicErr && (
+              <span className="mono" style={{ fontSize: 10, color: 'oklch(0.72 0.22 25)' }}>
+                ⚠ {topicErr}
+              </span>
+            )}
+          </label>
         </div>
         <div className="sh-card-edit-foot">
           <div className="flex-1" />
           <button className="sh-btn-ghost" onClick={reset}>Cancel</button>
           <button
             className="sh-btn-primary"
-            disabled={!name.trim() || !agentName.trim() || !pubTopic.trim() || !!pubErr}
+            disabled={!name.trim() || !agentName.trim() || !topic.trim() || !!topicErr}
             onClick={save}
           >
             Add

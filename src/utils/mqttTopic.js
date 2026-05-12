@@ -11,3 +11,22 @@ export function buildFullTopic(topic, base) {
   if (base && t.startsWith(base + '/')) t = t.slice(base.length + 1)
   return base ? `${base}/${t}` : t
 }
+
+// ── Derived topic helpers ─────────────────────────────────────────────────────
+// รับ device.topic (เช่น "living-room/lamp") + baseTopic
+// คืน full path พร้อม suffix ที่ถูกต้อง
+
+// web → board: สั่งเปิด/ปิด หรือตั้งค่า
+export function buildCmdTopic(topic, base) {
+  return buildFullTopic(topic + '/set', base)
+}
+
+// board → web: รายงาน state ปัจจุบัน
+export function buildStateTopic(topic, base) {
+  return buildFullTopic(topic + '/state', base)
+}
+
+// web → board: ส่ง pin config ตอนกด save ใน web app
+export function buildConfigTopic(topic, base) {
+  return buildFullTopic(topic + '/config', base)
+}

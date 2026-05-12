@@ -6,8 +6,8 @@ export const initialDevices = [
     type: 'digital',
     on: true,
     icon: 'lamp',
-    pubTopic: 'living-room/liv-lamp/set',
-    subTopic: 'living-room/liv-lamp/state',
+    topic: 'living-room/liv-lamp',  // /set และ /state derive อัตโนมัติ
+    pin: '',                         // ว่าง = ตั้งจาก web app ทีหลัง
   },
   {
     id: 'liv-dim',
@@ -17,8 +17,8 @@ export const initialDevices = [
     value: 128,
     max: 255,
     icon: 'bulb',
-    pubTopic: 'living-room/liv-dim/set',
-    subTopic: 'living-room/liv-dim/state',
+    topic: 'living-room/liv-dim',
+    pin: '',
   },
 ]
 

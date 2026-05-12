@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 
 import { INITIAL_TWEAKS } from './data'
 import { clearAll, saveTweaks, loadTweaks } from './utils/storage'
-import { normalizeBase, buildFullTopic } from './utils/mqttTopic'
+import { normalizeBase, buildFullTopic, buildCmdTopic, buildConfigTopic } from './utils/mqttTopic'
 import { createExecuteTool } from './utils/agentSkills'
 
 import { useMQTT } from './hooks/useMQTT'
@@ -84,12 +84,32 @@ export default function App() {
 
   // ── Device update (needs both setDevices + mqttPublish → stays here) ──────────
   const updateDevice = useCallback((next, isFinal = true) => {
+    // capture ค่าเก่าก่อน setDevices เพื่อเช็ค pin change
+    const old = devicesRef.current.find(d => d.id === next.id)
+
     setDevices(prev => prev.map(d => d.id === next.id ? next : d))
-    if (isFinal && next.pubTopic) {
+
+    if (!isFinal) return
+
+    // publish state command ไปบอร์ด
+    if (next.topic) {
+      const base    = normalizeBase(baseTopicRef.current)
       const payload = next.type === 'digital' ? (next.on ? 'true' : 'false') : String(next.value)
-      mqttPublish(next.pubTopic, payload)
+      mqttPublish(buildCmdTopic(next.topic, base), payload)
     }
-  }, [mqttPublish, setDevices])
+
+    // ถ้า pin เปลี่ยน → ส่ง config ไปบอร์ดผ่าน /config เพื่อ save ลง NVS
+    const pinChanged = old && String(old.pin) !== String(next.pin)
+    if (next.topic && pinChanged && next.pin !== '' && next.pin != null) {
+      const base    = normalizeBase(baseTopicRef.current)
+      const cfgTopic = buildConfigTopic(next.topic, base)
+      const cfgPayload = JSON.stringify({
+        pin:  Number(next.pin),
+        type: next.type === 'analog' ? 'pwm' : 'digital',
+      })
+      mqttPublish(cfgTopic, cfgPayload)
+    }
+  }, [mqttPublish, setDevices, devicesRef, baseTopicRef])
 
   // ── Tool executor ─────────────────────────────────────────────────────────────
   const executeTool = useCallback(
@@ -103,12 +123,13 @@ export default function App() {
   )
 
   // ── Raw MQTT publish (used by DeviceCard terminal widget) ─────────────────────
+  // terminal ส่ง command ตรงๆ ไปที่ device.topic (ไม่ต่อ /set)
   const handleRawPublish = useCallback((topic, payload) => {
     if (!mqttClient || !topic) return
     const base = normalizeBase(baseTopicRef.current)
     const fullTopic = buildFullTopic(topic, base)
     mqttClient.publish(fullTopic, String(payload), { qos: 2 })
-  }, [mqttClient])
+  }, [mqttClient, baseTopicRef])
 
   // ── Device drag-to-reorder ────────────────────────────────────────────────────
   const dragIdRef = useRef(null)
@@ -312,8 +333,8 @@ export default function App() {
                         setDevices(prev => [...prev, {
                           id, name: 'New Device', room: areas[0] || 'Living Room',
                           type: 'digital', on: false, icon: 'bulb',
-                          pubTopic: `${id}/set`,
-                          subTopic: `${id}/state`,
+                          topic: id,  // user ตั้ง topic เองใน edit form
+                          pin: '',
                         }])
                       }}
                     />
