@@ -4,15 +4,16 @@
 // ── Type-safe device wrappers (V1 preferred API) ──────────────────────────────
 //
 // ใช้งาน:
-//   SynaptaDigital lamp("living-room/lamp");       // pin มาจาก web app
-//   SynaptaDigital fan ("living-room/fan", 4);      // หรือระบุ pin ใน code ก็ได้
-//   SynaptaAnalog  dim ("living-room/dimmer");
+//   SynaptaDigital relay("bedroom/relay");
+//   SynaptaAnalog  dimmer("bedroom/dimmer");
 //   SynaptaSensor  temp("sensors/temp");
 //
 //   void setup() {
 //     temp.every(5000, readTemp);
 //     Synapta.begin("MyWiFi", "pass", "Mylab/smarthome");
 //   }
+//
+// Pin assignment: Web App → Edit device → ใส่ Pin → Save
 // ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -42,7 +43,7 @@ public:
     void setLevel(int v)     { set(v); }
 
     // fade + gamma เป็น chainable — ใช้ตอนประกาศ global
-    // ตัวอย่าง: SynaptaAnalog dim("living-room/dimmer", 5); dim.fade(300).gamma();
+    // ตัวอย่าง: SynaptaAnalog dim("bedroom/dimmer"); dim.fade(300).gamma();
     SynaptaAnalog& fade (uint32_t ms)  { setFadeMs(ms); return *this; }
     SynaptaAnalog& gamma(float g = 2.2f) { setGamma(g); return *this; }
 };
