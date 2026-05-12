@@ -417,12 +417,15 @@ async function executorNode(state) {
 
 // ── 7. Graph Routing ─────────────────────────────────────────────────────────
 // agent → tools (ถ้ามี tool_calls) → guard → executor / END
-// agent → END (general / realtime_data / settings ที่ไม่เกี่ยวกับการสั่งอุปกรณ์)
+// agent → END (กรณีไม่เกี่ยวกับการสั่งอุปกรณ์)
 //
-// Guard ทริกเมื่อหนึ่งในสองเงื่อนไข:
+// Guard ทริกเมื่อหนึ่งในสามเงื่อนไข:
 //   (a) tool ล่าสุดเป็น home automation → ตรวจ device/payload ตรงคำสั่ง
-//   (b) router บอกว่า intent คือ home_control → จับกรณี agent หลอน (อ้างว่าปิดไฟ
-//       แต่ไม่ได้เรียก tool) — ใช้ intent แทน regex ที่เคย false-positive
+//   (b) intent ของ turn นี้คือ home_control → จับกรณี agent หลอน (อ้างว่าทำ
+//       แต่ไม่ได้เรียก tool)
+//   (c) intent คลุมเครือ (general/null) แต่มี lastCommandedDevice จาก turn ก่อน
+//       → follow-up command เช่น "ปิดๆ" หลังเคย "เปิดไฟ" — router อาจจัด general
+//       เพราะไม่เห็น context, guard ตรวจให้เป็นทางสำรอง
 //
 // หลัง executor รัน → postExecutor=true → ข้าม guard ป้องกัน loop
 
@@ -440,9 +443,16 @@ function shouldContinue(state) {
 
   if (state.postExecutor) return END;
 
-  const lastWasHome = HOME_AUTOMATION_TOOLS.has(state.lastToolCall?.name);
-  const intentWantsHome = state.intent?.includes('home_control') ?? false;
-  return (lastWasHome || intentWantsHome) ? "guard" : END;
+  if (HOME_AUTOMATION_TOOLS.has(state.lastToolCall?.name)) return "guard";
+
+  const intent = state.intent;
+  if (intent?.includes('home_control')) return "guard";
+
+  // intent คลุมเครือ + เคยสั่งอุปกรณ์มาก่อน → อาจเป็น follow-up command
+  const ambiguous = !intent || intent.includes('general');
+  if (ambiguous && state.lastCommandedDevice != null) return "guard";
+
+  return END;
 }
 
 const workflow = new StateGraph(AgentState)
@@ -487,7 +497,8 @@ export const runAgent = async (params) => {
     messages: previousMessages,
     toolRound: 0,
     lastToolCall: null,
-    lastCommandedDevice: null,
+    // lastCommandedDevice มาจาก params (useChat persist ผ่าน ref ข้าม turn)
+    // — guard ใช้บริบทนี้ตรวจ follow-up command เช่น "ปิดๆ" หลังเคย "เปิดไฟ"
   });
 
   const lastMsg = finalState.messages[finalState.messages.length - 1];
