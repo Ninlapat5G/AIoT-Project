@@ -416,10 +416,14 @@ async function executorNode(state) {
 }
 
 // ── 7. Graph Routing ─────────────────────────────────────────────────────────
-// agent → tools (ถ้ามี tool_calls) → guard (เฉพาะ home automation) → executor / END
-// agent → END (ทุกกรณีอื่น — agentNode stream คำตอบให้ user ตรงเลย)
+// agent → tools (ถ้ามี tool_calls) → guard → executor / END
+// agent → END (general / realtime_data / settings ที่ไม่เกี่ยวกับการสั่งอุปกรณ์)
 //
-// Guard ทริกเฉพาะ tool ล่าสุดเป็น home automation (mqtt_publish/hub)
+// Guard ทริกเมื่อหนึ่งในสองเงื่อนไข:
+//   (a) tool ล่าสุดเป็น home automation → ตรวจ device/payload ตรงคำสั่ง
+//   (b) router บอกว่า intent คือ home_control → จับกรณี agent หลอน (อ้างว่าปิดไฟ
+//       แต่ไม่ได้เรียก tool) — ใช้ intent แทน regex ที่เคย false-positive
+//
 // หลัง executor รัน → postExecutor=true → ข้าม guard ป้องกัน loop
 
 const HOME_AUTOMATION_TOOLS = new Set(['mqtt_publish', 'hub']);
@@ -435,7 +439,10 @@ function shouldContinue(state) {
   }
 
   if (state.postExecutor) return END;
-  return HOME_AUTOMATION_TOOLS.has(state.lastToolCall?.name) ? "guard" : END;
+
+  const lastWasHome = HOME_AUTOMATION_TOOLS.has(state.lastToolCall?.name);
+  const intentWantsHome = state.intent?.includes('home_control') ?? false;
+  return (lastWasHome || intentWantsHome) ? "guard" : END;
 }
 
 const workflow = new StateGraph(AgentState)
