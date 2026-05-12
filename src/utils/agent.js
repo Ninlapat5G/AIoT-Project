@@ -59,18 +59,29 @@ const KG_TOOL = {
   }
 };
 
-function buildLangChainTools(settings) {
-  const skillTools = (settings.skills || [])
+const INTENT_SKILLS = {
+  home_control:  new Set(['mqtt_publish', 'mqtt_read', 'hub']),
+  realtime_data: new Set(['web_search']),
+  settings:      new Set(['manage_settings']),
+  general:       new Set(),
+};
+
+function buildLangChainTools(settings, intents = null) {
+  const allEnabled = (settings.skills || [])
     .filter(sk => sk.enabled)
     .map(sk => ({
       type: "function",
       function: {
         name: sk.name,
         description: sk.description,
-        parameters: JSON.parse(sk.schema || "{}")
+        parameters: JSON.parse(sk.schema || "{}"),
       }
     }));
-  return [KG_TOOL, ...skillTools];
+
+  if (!intents) return [KG_TOOL, ...allEnabled];
+
+  const allowed = new Set(intents.flatMap(i => [...(INTENT_SKILLS[i] ?? new Set())]));
+  return [KG_TOOL, ...allEnabled.filter(sk => allowed.has(sk.function.name))];
 }
 
 // สร้าง message ก้อนสถานะ KG (ใช้ใน node ที่ต้องเห็นบ้าน + อุปกรณ์)
@@ -118,9 +129,58 @@ const AgentState = Annotation.Root({
     reducer: (_, next) => next,
     default: () => null,
   }),
+  // intent ที่ router จำแนกได้ — ใช้กรอง tools ใน agentNode
+  intent: Annotation({
+    reducer: (_, next) => next,
+    default: () => null,
+  }),
 });
 
-// ── 2. Agent Node ─────────────────────────────────────────────────────────────
+// ── 2. Router Node ───────────────────────────────────────────────────────────
+// จำแนก intent → agent ได้รับเฉพาะ tools ที่จำเป็น (web_search ไม่โผล่ถ้าไม่ต้องการ)
+
+const ROUTER_PROMPT = `วิเคราะห์ความต้องการของ user แล้วระบุว่าต้องใช้ความสามารถใดบ้าง (เลือกได้มากกว่า 1)
+
+home_control  — ควบคุม/ดูสถานะอุปกรณ์ในบ้าน
+realtime_data — ข้อมูลที่เปลี่ยนตามเวลาจริง: ข่าว พยากรณ์อากาศ ราคา เหตุการณ์ปัจจุบัน
+settings      — ดู/จัดการ settings, tools, skills ของระบบ
+general       — อื่นๆ ทั้งหมด: code, อธิบาย, คำนวณ, สนทนาทั่วไป (ตอบจากความรู้ตัวเองได้)
+
+ตอบ JSON: {"intents": [...]} — ถ้าตอบได้เองให้ใส่ ["general"]`;
+
+async function routerNode(state) {
+  const { messages, settings, signal } = state;
+  const lastHuman = [...messages].reverse().find(m => m instanceof HumanMessage);
+  const userText = lastHuman?.content || '';
+
+  const llm = makeLLM(settings, {
+    temperature: 0,
+    maxTokens: 60,
+    structured: {
+      type: 'object',
+      properties: {
+        intents: {
+          type: 'array',
+          items: { type: 'string', enum: ['home_control', 'realtime_data', 'settings', 'general'] },
+        },
+      },
+      required: ['intents'],
+    },
+  });
+
+  try {
+    const res = await llm.invoke(
+      [new SystemMessage(ROUTER_PROMPT), new HumanMessage(userText)],
+      { signal }
+    );
+    const intents = Array.isArray(res.intents) && res.intents.length ? res.intents : ['general'];
+    return { intent: intents };
+  } catch {
+    return { intent: null }; // fallback: agent เห็น tools ทั้งหมด
+  }
+}
+
+// ── 3. Agent Node ─────────────────────────────────────────────────────────────
 // คนคิดหลัก: เห็น KG + กฎ + ประวัติ → ตัดสินใจเรียก tool หรือตอบ
 
 async function agentNode(state) {
@@ -130,7 +190,7 @@ async function agentNode(state) {
   const rules = new SystemMessage(IRONCLAD_RULES);
   const kg    = kgMessage(state);
 
-  const tools = buildLangChainTools(state.settings);
+  const tools = buildLangChainTools(state.settings, state.intent);
   const llm   = makeLLM(state.settings);
   const agent = tools.length > 0 ? llm.bindTools(tools) : llm;
 
@@ -295,7 +355,7 @@ async function guardNode(state) {
 async function executorNode(state) {
   const { settings, messages, signal } = state;
 
-  const tools = buildLangChainTools(settings);
+  const tools = buildLangChainTools(settings, ['home_control']);
   if (tools.length === 0) return { postExecutor: true };
 
   // หา user text ล่าสุด + guard hint
@@ -396,12 +456,14 @@ function shouldContinue(state) {
 }
 
 const workflow = new StateGraph(AgentState)
+  .addNode("router", routerNode)
   .addNode("agent", agentNode)
   .addNode("tools", toolNode)
   .addNode("guard", guardNode)
   .addNode("executor", executorNode)
   .addNode("responder", responderNode)
-  .addEdge(START, "agent")
+  .addEdge(START, "router")
+  .addEdge("router", "agent")
   .addConditionalEdges("agent", shouldContinue)
   .addConditionalEdges("tools", state => state.postExecutor ? "responder" : "agent")
   .addConditionalEdges("guard", state => state.guardRetry ? "executor" : "responder")
