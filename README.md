@@ -109,9 +109,10 @@ hub/
 ผู้ใช้ พิมพ์/พูด
        │
        ▼
-    agent ──► tool_calls? ──► tools ──► บันทึก lastCommandedDevice ใน state
-       │                         │
-       │ (ไม่มี tool_calls)       └──► agent (loop)
+    agent ──► tool_calls? ──► tools ──► reflect ──► agent (loop)
+       │                         └──► บันทึก lastCommandedDevice ใน state
+       │
+       │ (ไม่มี tool_calls)
        │
        ├── lastCommandedDevice != null ──► guard (ตรวจหลอน)
        │                                     │
@@ -129,6 +130,11 @@ responder ──► stream คำตอบ ──► END
 - Guard อ่าน KG state ปัจจุบันของ device นั้น เทียบกับ draft response ของ agent
 - ถ้า agent อ้างว่าทำสำเร็จแต่ tool ไม่ได้ถูกเรียก → executor บังคับ tool call ใหม่
 - ครอบคลุมทุก device type (digital / analog / hub) ผ่าน KG
+
+**Reflect — กัน tool loop ใน turn เดียวกัน**
+- คั่นระหว่าง `tools → agent`: สรุปว่า turn นี้เรียก tool อะไรไปบ้าง ได้ผลอะไร ข้อมูลพอตอบ user หรือยัง
+- Inject เป็น SystemMessage ให้ agent เห็นก่อนตัดสินใจรอบใหม่ → กันเคส agent วนเรียก tool เดิมแบบเปลี่ยน keyword หนี dedupe
+- Scope เฉพาะ turn ปัจจุบัน, ถูก filter ออกใน responder จึงไม่ leak เข้าคำตอบสุดท้าย
 
 ```
 tools ──► MQTT ──► IoT Devices (digital / analog)

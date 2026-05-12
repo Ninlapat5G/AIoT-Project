@@ -268,6 +268,81 @@ async function toolNode(state) {
   return stateUpdate;
 }
 
+// ── 3.5 Reflect Node ─────────────────────────────────────────────────────────
+// คั่นระหว่าง tools → agent: ก่อนที่ agent จะวนรอบใหม่ ให้สรุปก่อนว่า
+//   - turn นี้เรียก tool อะไรไปบ้าง ได้ผลอะไร
+//   - ข้อมูลพอตอบ user หรือยัง / ยังขาดอะไร / ห้ามทำอะไรซ้ำ
+// แล้ว inject เป็น SystemMessage ก่อนเข้า agentNode → กัน loop "เรียก tool เดิมแบบเปลี่ยน arg"
+
+const REFLECT_PROMPT = `คุณคือ Reflection — สรุปสั้นๆ ให้ agent เห็นภาพรวมก่อนตัดสินใจรอบใหม่
+ตอบ JSON:
+- done: true ถ้าข้อมูลจาก tool ที่เรียกไปพอตอบ user แล้ว (agent ควรตอบทันที ไม่ต้องเรียก tool อีก)
+        false ถ้ายังขาดข้อมูล/ยังไม่ได้ทำตามคำสั่ง
+- thought: 1-2 ประโยค — บอกว่าทำอะไรไปแล้ว, ถ้า done=true สรุปคำตอบ, ถ้า done=false บอกว่าต้องทำอะไรต่อ (ห้ามทำซ้ำเรื่องเดิม)`;
+
+async function reflectNode(state) {
+  const { messages, settings, signal } = state;
+
+  // เก็บ tool calls + results ใน turn ปัจจุบัน
+  let start = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i] instanceof HumanMessage) { start = i; break; }
+  }
+  const userText = messages[start]?.content || '';
+
+  const idToCall = new Map();
+  const calls = []; // {name, args, result}
+  for (let i = start; i < messages.length; i++) {
+    const m = messages[i];
+    if (m instanceof AIMessage && m.tool_calls?.length) {
+      for (const tc of m.tool_calls) idToCall.set(tc.id, { name: tc.name, args: tc.args });
+    } else if (m instanceof ToolMessage) {
+      const meta = idToCall.get(m.tool_call_id);
+      if (meta) {
+        const content = typeof m.content === 'string' ? m.content : String(m.content);
+        calls.push({ ...meta, result: content.slice(0, 300) });
+      }
+    }
+  }
+
+  if (calls.length === 0) return {}; // ไม่มีอะไรให้สะท้อน
+
+  const callsText = calls.map((c, i) =>
+    `${i + 1}. ${c.name}(${JSON.stringify(c.args)}) → ${c.result}`
+  ).join('\n');
+
+  const input =
+    `[คำสั่ง user]\n"${userText}"\n\n` +
+    `[Tool ที่เรียกไปแล้วใน turn นี้]\n${callsText}`;
+
+  const llm = makeLLM(settings, {
+    temperature: 0,
+    maxTokens: 120,
+    structured: {
+      type: 'object',
+      properties: {
+        done: { type: 'boolean' },
+        thought: { type: 'string' },
+      },
+      required: ['done', 'thought'],
+    },
+  });
+
+  try {
+    const res = await llm.invoke(
+      [new SystemMessage(REFLECT_PROMPT), new HumanMessage(input)],
+      { signal }
+    );
+    const tag = res.done ? '[REFLECT done]' : '[REFLECT continue]';
+    return {
+      messages: [new SystemMessage(`${tag} ${res.thought || ''}`)],
+    };
+  } catch (err) {
+    console.warn('[Reflect] failed, skipping:', err?.message);
+    return {};
+  }
+}
+
 // ── 4. Guard Node ────────────────────────────────────────────────────────────
 // หน้าที่เดียว: ตรวจว่า "ที่ agent บอกว่าทำแล้ว ทำจริงและตรงกับที่ user สั่งไหม?"
 // ดู 4 อย่าง: คำสั่ง user (turn นี้) + tool ล่าสุด + device ใน KG + draft text
@@ -459,13 +534,15 @@ const workflow = new StateGraph(AgentState)
   .addNode("router", routerNode)
   .addNode("agent", agentNode)
   .addNode("tools", toolNode)
+  .addNode("reflect", reflectNode)
   .addNode("guard", guardNode)
   .addNode("executor", executorNode)
   .addNode("responder", responderNode)
   .addEdge(START, "router")
   .addEdge("router", "agent")
   .addConditionalEdges("agent", shouldContinue)
-  .addConditionalEdges("tools", state => state.postExecutor ? "responder" : "agent")
+  .addConditionalEdges("tools", state => state.postExecutor ? "responder" : "reflect")
+  .addEdge("reflect", "agent")
   .addConditionalEdges("guard", state => state.guardRetry ? "executor" : "responder")
   .addConditionalEdges("executor", state => {
     const last = state.messages[state.messages.length - 1];
