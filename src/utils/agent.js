@@ -181,31 +181,62 @@ async function routerNode(state) {
 }
 
 // ── 3. Agent Node ─────────────────────────────────────────────────────────────
-// คนคิดหลัก: เห็น KG + กฎ + ประวัติ → ตัดสินใจเรียก tool หรือตอบ
+// คนคิดหลัก + responder รวมกัน:
+//   toolRound=0 → ใช้ messages เต็ม, stream ทันที
+//   toolRound>0 → rebuild context สะอาด (ตัด draft + [GUARD] ทิ้ง), stream ผล
 
 async function agentNode(state) {
-  const persona = new SystemMessage(
-    state.settings.systemPrompt || "You are a helpful smart home assistant."
-  );
-  const rules = new SystemMessage(IRONCLAD_RULES);
-  const kg    = kgMessage(state);
+  const { messages, settings, signal, onStream, toolRound } = state;
+  const devices = visibleDevices(state.deviceList, settings);
 
-  const tools = buildLangChainTools(state.settings, state.intent);
-  const llm   = makeLLM(state.settings);
+  // หลัง tool rounds: ตัด [GUARD] SystemMessage + draft AI message ออกก่อน
+  let contextMessages;
+  if (toolRound > 0) {
+    let lastHumanIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
+    }
+    const turnMsgs = messages.slice(lastHumanIdx).filter(m =>
+      m instanceof HumanMessage ||
+      (m instanceof AIMessage && m.tool_calls?.length > 0) ||
+      m instanceof ToolMessage
+    );
+    const cleanHistory = messages
+      .slice(Math.max(0, lastHumanIdx - 6), lastHumanIdx)
+      .filter(m =>
+        m instanceof HumanMessage ||
+        (m instanceof AIMessage && !m.tool_calls?.length && String(m.content).length > 0)
+      );
+    contextMessages = [...cleanHistory, ...turnMsgs];
+  } else {
+    contextMessages = messages;
+  }
+
+  // รวม persona + rules + KG เป็น system message เดียว
+  const systemMsg = new SystemMessage([
+    settings.systemPrompt || 'You are a helpful smart home assistant.',
+    '',
+    IRONCLAD_RULES,
+    '',
+    buildContextMessage({ devices, settings, now: nowString() }),
+  ].join('\n'));
+
+  const tools = buildLangChainTools(settings, state.intent);
+  const temperature = toolRound > 0 ? 0.3 : 0.1;
+  const llm = makeLLM(settings, { temperature });
   const agent = tools.length > 0 ? llm.bindTools(tools) : llm;
 
-  const fullMessages = [persona, rules, kg, ...state.messages];
-
   let finalMessage;
-  const stream = await agent.stream(fullMessages, { signal: state.signal });
+  const stream = await agent.stream([systemMsg, ...contextMessages], { signal });
   for await (const chunk of stream) {
+    if (chunk.content) onStream?.(chunk.content);
     finalMessage = finalMessage ? finalMessage.concat(chunk) : chunk;
   }
 
-  return { messages: [finalMessage] };
+  return { messages: [finalMessage ?? new AIMessage('ขออภัยค่ะ เกิดข้อผิดพลาด')] };
 }
 
-// ── 3. Tool Node ──────────────────────────────────────────────────────────────
+// ── 4. Tool Node ──────────────────────────────────────────────────────────────
 // รัน tool calls แบบ parallel + บันทึก lastToolCall / lastCommandedDevice
 
 async function toolNode(state) {
@@ -268,7 +299,7 @@ async function toolNode(state) {
   return stateUpdate;
 }
 
-// ── 4. Guard Node ────────────────────────────────────────────────────────────
+// ── 5. Guard Node ────────────────────────────────────────────────────────────
 // หน้าที่เดียว: ตรวจว่า "ที่ agent บอกว่าทำแล้ว ทำจริงและตรงกับที่ user สั่งไหม?"
 // ดู 4 อย่าง: คำสั่ง user (turn นี้) + tool ล่าสุด + device ใน KG + draft text
 // ไม่ดู turn ก่อนๆ — agent เข้าใจ context history เองอยู่แล้ว
@@ -350,7 +381,7 @@ async function guardNode(state) {
   };
 }
 
-// ── 5. Executor Node — รัน tool ตาม guard hint ───────────────────────────────
+// ── 6. Executor Node — รัน tool ตาม guard hint ───────────────────────────────
 
 async function executorNode(state) {
   const { settings, messages, signal } = state;
@@ -372,71 +403,26 @@ async function executorNode(state) {
 
   const llm = makeLLM(settings, { temperature: 0 }).bindTools(tools);
 
+  const systemContent =
+    kgMessage(state).content +
+    '\n\nดำเนินการตามคำสั่งผู้ใช้ด้วยการเรียก tool ที่ถูกต้องทันที' + guardHint;
+
   const result = await llm.invoke([
-    kgMessage(state),
-    new SystemMessage('ดำเนินการตามคำสั่งผู้ใช้ด้วยการเรียก tool ที่ถูกต้องทันที' + guardHint),
+    new SystemMessage(systemContent),
     new HumanMessage(userText),
   ], { signal });
 
   return { messages: [result], postExecutor: true };
 }
 
-// ── 6. Responder Node — stream คำตอบสุดท้ายถึง user ──────────────────────────
-
-async function responderNode(state) {
-  const { messages, settings, signal, onStream } = state;
-
-  // หา turn ปัจจุบัน + ตัด draft/[GUARD]/empty AI msgs ทิ้ง
-  let lastHumanIdx = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
-  }
-  const turnMsgs = lastHumanIdx >= 0 ? messages.slice(lastHumanIdx) : messages;
-
-  const cleanTurnMsgs = turnMsgs.filter(m =>
-    m instanceof HumanMessage ||
-    (m instanceof AIMessage && m.tool_calls?.length > 0) ||
-    m instanceof ToolMessage
-  );
-
-  const cleanHistory = messages
-    .slice(Math.max(0, lastHumanIdx - 6), lastHumanIdx)
-    .filter(m =>
-      (m instanceof HumanMessage) ||
-      (m instanceof AIMessage && !m.tool_calls?.length && String(m.content).length > 0)
-    );
-
-  const llm = makeLLM(settings, { temperature: 0.3 });
-
-  const fullMessages = [
-    new SystemMessage(settings.systemPrompt || 'You are a helpful smart home assistant.'),
-    kgMessage(state),
-    ...cleanHistory,
-    ...cleanTurnMsgs,
-  ];
-
-  const stream = await llm.stream(fullMessages, { signal });
-  let finalMsg;
-  for await (const chunk of stream) {
-    if (chunk.content) onStream?.(chunk.content);
-    finalMsg = finalMsg ? finalMsg.concat(chunk) : chunk;
-  }
-
-  return { messages: [finalMsg ?? new AIMessage('ขออภัยค่ะ เกิดข้อผิดพลาด')] };
-}
-
 // ── 7. Graph Routing ─────────────────────────────────────────────────────────
-// agent → tools (ถ้ามี tool_calls) → guard / responder
+// agent → tools (ถ้ามี tool_calls) → guard (เฉพาะ home automation) → executor / END
+// agent → END (ทุกกรณีอื่น — agentNode stream คำตอบให้ user ตรงเลย)
 //
-// Guard ทำงานเฉพาะ home automation เท่านั้น (mqtt_publish, hub)
-// ไม่ทริกเมื่อ tool ที่เรียกเป็น web_search / query_kg / manage_settings ฯลฯ
-//
-// Trigger guard เมื่อหนึ่งในสองเงื่อนไขจริง:
-//   (a) tool ล่าสุดเป็น home automation → ตรวจว่าเรียกถูก device ตามที่ user สั่ง
-//   (b) draft อ้าง action สำเร็จ — จับกรณีหลอนที่ไม่เรียก tool เลย
+// Guard ทริกเฉพาะ tool ล่าสุดเป็น home automation (mqtt_publish/hub)
+// หลัง executor รัน → postExecutor=true → ข้าม guard ป้องกัน loop
 
 const HOME_AUTOMATION_TOOLS = new Set(['mqtt_publish', 'hub']);
-const ACTION_CLAIM_RE = /เปิด|ปิด|ตั้ง|ลด|เพิ่ม|ปรับ|เรียบร้อย|สำเร็จ|เสร็จ|แล้วค่ะ|แล้วครับ|ให้แล้ว|ดำเนินการ/;
 
 function shouldContinue(state) {
   const lastMessage = state.messages[state.messages.length - 1];
@@ -448,11 +434,8 @@ function shouldContinue(state) {
     return "tools";
   }
 
-  const lastToolWasHomeAutomation = HOME_AUTOMATION_TOOLS.has(state.lastToolCall?.name);
-  const draft = String(lastMessage.content || '');
-  const claimsAction = ACTION_CLAIM_RE.test(draft);
-
-  return (lastToolWasHomeAutomation || claimsAction) ? "guard" : "responder";
+  if (state.postExecutor) return END;
+  return HOME_AUTOMATION_TOOLS.has(state.lastToolCall?.name) ? "guard" : END;
 }
 
 const workflow = new StateGraph(AgentState)
@@ -461,17 +444,15 @@ const workflow = new StateGraph(AgentState)
   .addNode("tools", toolNode)
   .addNode("guard", guardNode)
   .addNode("executor", executorNode)
-  .addNode("responder", responderNode)
   .addEdge(START, "router")
   .addEdge("router", "agent")
   .addConditionalEdges("agent", shouldContinue)
-  .addConditionalEdges("tools", state => state.postExecutor ? "responder" : "agent")
-  .addConditionalEdges("guard", state => state.guardRetry ? "executor" : "responder")
+  .addEdge("tools", "agent")
+  .addConditionalEdges("guard", state => state.guardRetry ? "executor" : END)
   .addConditionalEdges("executor", state => {
     const last = state.messages[state.messages.length - 1];
-    return last?.tool_calls?.length > 0 ? "tools" : "responder";
-  })
-  .addEdge("responder", END);
+    return last?.tool_calls?.length > 0 ? "tools" : "agent";
+  });
 
 const compiledGraph = workflow.compile();
 
