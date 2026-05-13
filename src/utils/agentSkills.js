@@ -161,7 +161,7 @@ async function webSearch(args, ctx) {
   if (!query) return { success: false, error: 'No search query provided' }
 
   const apiKey = settings.serperApiKey
-  if (!apiKey) return { success: false, error: 'Serper API key ยังไม่ได้ตั้งค่า — ไปที่ Settings → Integrations' }
+  if (!apiKey) return { success: false, error: 'Serper API key ยังไม่ได้ตั้งค่า — แจ้ง user ทันที ห้ามเรียก web_search อีก' }
 
   let optimizedQuery = query
   try {
@@ -179,8 +179,8 @@ async function webSearch(args, ctx) {
     return { success: false, error: `Network error: ${err.message}` }
   }
 
-  if (res.status === 403) return { success: false, error: 'Serper API key ไม่ถูกต้อง หรือ quota หมดแล้ว — ตรวจสอบที่ serper.dev/dashboard' }
-  if (res.status === 429) return { success: false, error: 'Serper API rate limit exceeded — ลองใหม่อีกสักครู่' }
+  if (res.status === 401 || res.status === 403) return { success: false, error: 'Serper API key ไม่ถูกต้องหรือ quota หมด — แจ้ง user ทันที ห้ามลองซ้ำ' }
+  if (res.status === 429) return { success: false, error: 'Serper rate limit — แจ้ง user ทันที ห้ามลองซ้ำ' }
   if (!res.ok) return { success: false, error: `Serper API error: HTTP ${res.status}` }
 
   const data = await res.json()
@@ -208,14 +208,18 @@ async function manageSettings(args, ctx) {
   const { query } = args
   if (!query) return { success: false, error: 'No query provided' }
 
-  const response = await runSettingsAgent({
-    query,
-    settings,
-    devicesRef,
-    onSettingsChange: handleSaveSettings,
-    signal,
-  })
-  return { success: true, response }
+  try {
+    const response = await runSettingsAgent({
+      query,
+      settings,
+      devicesRef,
+      onSettingsChange: handleSaveSettings,
+      signal,
+    })
+    return { success: true, response }
+  } catch (err) {
+    return { success: false, error: `Settings agent error: ${err.message}` }
+  }
 }
 
 // ── Registry ───────────────────────────────────────────────────────────────────

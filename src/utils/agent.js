@@ -283,6 +283,19 @@ async function toolNode(state) {
     if (summary) onRoundSummary(summary, currentRound);
   }
 
+  // ดัก error ที่ลองซ้ำไม่มีประโยชน์ → ข้าม reflect ไปบอก user ทันที
+  const STOP_HINTS = ['ห้ามเรียก', 'ห้ามลองซ้ำ', 'แจ้ง user ทันที'];
+  const hasStopError = collected.some(c =>
+    c.result?.error && STOP_HINTS.some(k => c.result.error.includes(k))
+  );
+  if (hasStopError) {
+    stateUpdate.messages = [
+      ...stateUpdate.messages,
+      new SystemMessage('[STOP — tool error ที่ลองซ้ำไม่ได้ ให้รายงาน user ทันที]'),
+    ];
+    stateUpdate.reflectDone = true;
+  }
+
   return stateUpdate;
 }
 
@@ -622,7 +635,7 @@ const workflow = new StateGraph(AgentState)
   .addEdge(START, "router")
   .addEdge("router", "agent")
   .addConditionalEdges("agent", shouldContinue)
-  .addConditionalEdges("tools", state => state.postExecutor ? "responder" : "reflect")
+  .addConditionalEdges("tools", state => (state.postExecutor || state.reflectDone) ? "responder" : "reflect")
   .addConditionalEdges("reflect", state => state.reflectDone ? "responder" : "agent")
   .addConditionalEdges("guard", state => state.guardRetry ? "executor" : "responder")
   .addConditionalEdges("executor", state => {
