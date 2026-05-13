@@ -305,15 +305,20 @@ async function toolNode(state) {
 //   - ข้อมูลพอตอบ user หรือยัง / ยังขาดอะไร / ห้ามทำอะไรซ้ำ
 // แล้ว inject เป็น SystemMessage ก่อนเข้า agentNode → กัน loop "เรียก tool เดิมแบบเปลี่ยน arg"
 
-const REFLECT_PROMPT = `คุณคือ Reflection — ตรวจว่าคำสั่ง user ถูกทำครบหรือยัง โดยพิจารณาทั้งคำสั่งใน turn ปัจจุบันและบริบทจากประวัติ chat
+const REFLECT_PROMPT = `คุณคือ Reflection — ตรวจว่าคำสั่ง user ถูกทำครบหรือยัง
+
+[กฎสำคัญ]
+- ตรวจเฉพาะ device ที่มีอยู่ใน [KNOWLEDGE GRAPH] เท่านั้น — ห้ามคาดเดาว่าควรมี device อื่นนอกจากนี้
+- คำว่า "ทุกห้อง" / "ทุกอุปกรณ์" หมายถึง device ทุกตัวที่อยู่ใน KG เท่านั้น ไม่ใช่ทุกห้องในโลก
+- เทียบ pubTopic ใน tool calls กับ device ใน KG เพื่อดูว่า device ไหนถูกจัดการไปแล้ว
 
 ตอบ JSON 3 field:
 
 - done:
-  • true  = tool ที่เรียกไปครอบคลุมคำสั่ง user แล้ว (รวมกรณีคำสั่งเป็นคำถาม + tool ให้คำตอบแล้ว)
-  • false = ยังมีส่วนที่ยังไม่ได้ทำ, tool ผิด, หรือ tool ล้มเหลว
+  • true  = tool ที่เรียกไปครอบคลุมคำสั่ง user แล้ว สำหรับ device ที่มีใน KG (รวมกรณีคำสั่งเป็นคำถาม + tool ให้คำตอบแล้ว)
+  • false = ยังมี device ใน KG ที่ยังไม่ได้ทำ, tool ผิด, หรือ tool ล้มเหลว
 
-- remaining: ประโยคเดียวบอกว่ายังเหลืออะไรที่ยังไม่ได้ทำ
+- remaining: ประโยคเดียวบอกว่ายังเหลืออะไรที่ยังไม่ได้ทำ (เฉพาะ device ที่มีใน KG)
   • done=true → ""
   • done=false → บอกสั้นๆ เช่น "ยังไม่ได้ปิดแอร์ห้องนอน" หรือ "ขาดข้อมูลว่าห้องไหน"
   • ห้ามระบุชื่อ tool — บอกแค่ goal ให้ agent เลือก tool เอง
@@ -324,7 +329,7 @@ const REFLECT_PROMPT = `คุณคือ Reflection — ตรวจว่า�
   • done=false → คำอธิบาย context สั้นๆ ว่าทำไมยังไม่จบ`;
 
 async function reflectNode(state) {
-  const { messages, settings, signal } = state;
+  const { messages, settings, signal, deviceList } = state;
 
   // หา turn ปัจจุบัน
   let start = 0;
@@ -369,6 +374,13 @@ async function reflectNode(state) {
     `${i + 1}. ${c.name}(${JSON.stringify(c.args)}) → ${c.result}`
   ).join('\n');
 
+  // KG snapshot — ให้ Reflect รู้ว่ามี device อะไรบ้างในบ้านจริงๆ
+  const kg = buildContextMessage({
+    devices: visibleDevices(deviceList, settings),
+    settings,
+    now: nowString(),
+  });
+
   const input =
     (recentHistory.length ? `[ประวัติ chat ล่าสุด]\n${recentHistory.join('\n')}\n\n` : '') +
     `[คำสั่ง user (turn นี้)]\n"${userText}"\n\n` +
@@ -390,7 +402,7 @@ async function reflectNode(state) {
 
   try {
     const res = await llm.invoke(
-      [new SystemMessage(REFLECT_PROMPT), new HumanMessage(input)],
+      [new SystemMessage(REFLECT_PROMPT), kg, new HumanMessage(input)],
       { signal }
     );
 
