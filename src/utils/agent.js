@@ -584,14 +584,10 @@ async function responderNode(state) {
 // ── 7. Graph Routing ─────────────────────────────────────────────────────────
 // agent → tools (ถ้ามี tool_calls) → guard / responder
 //
-// Guard ทำงานเฉพาะ home automation เท่านั้น (mqtt_publish, hub)
-// ไม่ทริกเมื่อ tool ที่เรียกเป็น web_search / query_kg / manage_settings ฯลฯ
-//
-// Trigger guard เมื่อหนึ่งในสองเงื่อนไขจริง:
-//   (a) tool ล่าสุดเป็น home automation → ตรวจว่าเรียกถูก device ตามที่ user สั่ง
-//   (b) draft อ้าง action สำเร็จ — จับกรณีหลอนที่ไม่เรียก tool เลย
-
-const HOME_AUTOMATION_TOOLS = new Set(['mqtt_publish', 'hub']);
+// Guard ทำงานเมื่อครบ 3 เงื่อนไข (AND):
+//   1. lastCommandedDevice != null — มีประวัติสั่งอุปกรณ์ (เก็บตลอด session)
+//   2. agent รอบนี้ไม่เรียก tool — implied จาก code path นี้
+//   3. intent มี home_control — บริบท user เป็นการสั่งอุปกรณ์
 
 function shouldContinue(state) {
   const lastMessage = state.messages[state.messages.length - 1];
