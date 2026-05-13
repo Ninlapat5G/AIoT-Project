@@ -145,7 +145,7 @@ const AgentState = Annotation.Root({
   // งานที่เหลือต้องทำ — reflect เขียน, agent อ่านในรอบถัดไปผ่าน SystemMessage
   pendingTasks: Annotation({
     reducer: (_, next) => next,
-    default: () => [],
+    default: () => '',
   }),
   // reflect ตัดสินว่า done=true → ใช้ route ตรงไป responder ไม่ให้ agent วน
   reflectDone: Annotation({
@@ -300,12 +300,10 @@ const REFLECT_PROMPT = `คุณคือ Reflection — ตรวจว่า�
   • true  = tool ที่เรียกไปครอบคลุมคำสั่ง user แล้ว (รวมกรณีคำสั่งเป็นคำถาม + tool ให้คำตอบแล้ว)
   • false = ยังมีส่วนที่ยังไม่ได้ทำ, tool ผิด, หรือ tool ล้มเหลว
 
-- pendingTasks: array ของงานที่ยังเหลือ เป็น string ภาษาธรรมชาติสั้นๆ (สำหรับให้ agent ทำต่อในรอบถัดไป)
-  • done=true → []
-  • done=false → list งานที่เหลือเรียงตามลำดับ เช่น ["เปิดไฟห้องครัว", "ปิดแอร์ห้องนอน"]
-  • คำสั่งกำกวม → ใส่เป็น "ขาดข้อมูล: <อะไร>" เช่น ["ขาดข้อมูล: ห้องไหน"]
-  • tool เดิมล้มเหลว → ใส่เป็น "ลอง approach อื่น: <แนวทาง>"
-  • ห้ามระบุชื่อ tool ใน task — บอกแค่ goal ให้ agent เลือก tool เอง
+- remaining: ประโยคเดียวบอกว่ายังเหลืออะไรที่ยังไม่ได้ทำ
+  • done=true → ""
+  • done=false → บอกสั้นๆ เช่น "ยังไม่ได้ปิดแอร์ห้องนอน" หรือ "ขาดข้อมูลว่าห้องไหน"
+  • ห้ามระบุชื่อ tool — บอกแค่ goal ให้ agent เลือก tool เอง
   • ห้ามใส่ task ที่ทำสำเร็จไปแล้วใน history
 
 - thought: 1 ประโยคสรุปสำหรับ agent
@@ -370,10 +368,10 @@ async function reflectNode(state) {
       type: 'object',
       properties: {
         done: { type: 'boolean' },
-        pendingTasks: { type: 'array', items: { type: 'string' } },
+        remaining: { type: 'string' },
         thought: { type: 'string' },
       },
-      required: ['done', 'pendingTasks', 'thought'],
+      required: ['done', 'remaining', 'thought'],
     },
   });
 
@@ -383,18 +381,16 @@ async function reflectNode(state) {
       { signal }
     );
 
-    const pending = Array.isArray(res.pendingTasks) ? res.pendingTasks : [];
+    const remaining = res.remaining?.trim() || '';
     const tag = res.done
       ? '[STOP — ตอบ user ทันที ห้ามเรียก tool อีก]'
       : '[REMAINING — ทำต่อ ห้ามทำซ้ำ action ที่อยู่ใน history]';
 
-    const pendingText = pending.length
-      ? `\nงานที่ยังต้องทำ (ตามลำดับ):\n${pending.map((t, i) => `  ${i + 1}. ${t}`).join('\n')}`
-      : '';
+    const pendingText = remaining ? `\nยังเหลือ: ${remaining}` : '';
 
     return {
       messages: [new SystemMessage(`${tag} ${res.thought || ''}${pendingText}`)],
-      pendingTasks: pending,
+      pendingTasks: remaining,
       reflectDone: res.done === true,
     };
   } catch (err) {
@@ -662,7 +658,7 @@ export const runAgent = async (params) => {
     toolRound: 0,
     lastToolCall: null,
     lastCommandedDevice: null,
-    pendingTasks: [],
+    pendingTasks: '',
     reflectDone: false,
   });
 
