@@ -592,7 +592,6 @@ async function responderNode(state) {
 //   (b) draft อ้าง action สำเร็จ — จับกรณีหลอนที่ไม่เรียก tool เลย
 
 const HOME_AUTOMATION_TOOLS = new Set(['mqtt_publish', 'hub']);
-const ACTION_CLAIM_RE = /เปิด|ปิด|ตั้ง|ลด|เพิ่ม|ปรับ|เรียบร้อย|สำเร็จ|เสร็จ|แล้วค่ะ|แล้วครับ|ให้แล้ว|ดำเนินการ/;
 
 function shouldContinue(state) {
   const lastMessage = state.messages[state.messages.length - 1];
@@ -629,11 +628,10 @@ function shouldContinue(state) {
     return "tools";
   }
 
-  const lastToolWasHomeAutomation = HOME_AUTOMATION_TOOLS.has(state.lastToolCall?.name);
-  const draft = String(lastMessage.content || '');
-  const claimsAction = ACTION_CLAIM_RE.test(draft);
+  const deviceHasHistory = state.lastCommandedDevice != null;
+  const intentIsHomeControl = (state.intent || []).includes('home_control');
 
-  return (lastToolWasHomeAutomation || claimsAction) ? "guard" : "responder";
+  return (deviceHasHistory && intentIsHomeControl) ? "guard" : "responder";
 }
 
 const workflow = new StateGraph(AgentState)
