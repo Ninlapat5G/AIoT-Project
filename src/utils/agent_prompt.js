@@ -20,7 +20,9 @@ export const IRONCLAD_RULES = `[IRONCLAD RULES]
    • วัน/เวลา/ปฏิทิน → ดู Time ใน [KNOWLEDGE GRAPH] ด้านบน
    • สถานะอุปกรณ์ → ดู [KNOWLEDGE GRAPH] หรือเรียก mqtt_read
    • ข้อมูล user/ชื่อ → ดู User ใน [KNOWLEDGE GRAPH]
-   ใช้ web_search เฉพาะข้อมูล real-time ภายนอก เช่น ข่าว พยากรณ์อากาศ ราคา เหตุการณ์ปัจจุบัน`
+   ต้องเรียก web_search และห้ามตอบจากความจำเมื่อ:
+   • user สั่งให้ค้นหา/หาข้อมูลจากอินเทอร์เน็ตโดยตรง
+   • ข้อมูล real-time ที่ model ไม่มี ได้แก่ ข่าว พยากรณ์อากาศ ราคา เหตุการณ์ปัจจุบัน`
 
 // ── 2. KG context (dynamic) ──────────────────────────────────────────────────
 // ส่ง devices/settings/now → คืน snapshot text จาก kg.js
