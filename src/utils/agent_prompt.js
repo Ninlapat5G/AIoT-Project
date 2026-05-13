@@ -18,7 +18,7 @@ export const IRONCLAD_RULES = `[IRONCLAD RULES]
 6. SETTINGS & TOOL QUERIES: ถ้า user ถามว่า tool/skill ทำงานยังไง ต้องการอะไร ใช้งานไม่ได้ทำไม หรือต้องการเปิด/ปิด skill — ใช้ manage_settings tool เสมอ ห้ามตอบจากความจำหรือเดาเอง
 7. CONTEXT-FIRST — ข้อมูลต่อไปนี้มีอยู่ในระบบแล้ว ห้ามใช้ web_search เพื่อหา:
    • วัน/เวลา/ปฏิทิน → ดู Time ใน [KNOWLEDGE GRAPH] ด้านบน
-   • สถานะอุปกรณ์ → ดู [KNOWLEDGE GRAPH] หรือเรียก mqtt_read
+   • สถานะอุปกรณ์ → ดู [KNOWLEDGE GRAPH]
    • ข้อมูล user/ชื่อ → ดู User ใน [KNOWLEDGE GRAPH]
    ต้องเรียก web_search ก่อนตอบเสมอ ห้ามตอบจากความจำ เมื่อ:
    • user สั่งให้ค้นหา/หาข้อมูลจากอินเทอร์เน็ตโดยตรง
