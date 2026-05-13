@@ -251,6 +251,32 @@ export async function runSin({ userMessage, apiHistory, userName, stage, setting
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
+export async function extractNameFromText(text, settings) {
+  const apiKey = settings.apiKey || DEFAULT_API_KEY
+  const empty = { name: '', initials: '' }
+  try {
+    const llm = new ChatOpenAI({
+      apiKey,
+      configuration: { apiKey, baseURL: settings.endpoint, dangerouslyAllowBrowser: true },
+      modelName: settings.model,
+      temperature: 0,
+      maxTokens: 20,
+    })
+    const res = await llm.invoke([
+      new SystemMessage('ดึงชื่อที่ผู้ใช้ต้องการให้เรียก และตัวย่อสำหรับแสดงในกล่อง ตอบในรูปแบบ ชื่อ|ตัวย่อ เช่น บิน|บ หรือ Sarah Chen|SC ถ้าไม่มีชื่อชัดเจนตอบว่า NONE'),
+      new HumanMessage(text),
+    ])
+    const raw = typeof res.content === 'string' ? res.content.trim() : ''
+    if (!raw || raw === 'NONE') return empty
+    const [namePart, initPart] = raw.split('|')
+    const name     = namePart?.trim() || ''
+    const initials = (initPart?.trim() || name[0]?.toUpperCase() || '').slice(0, 2)
+    return name ? { name, initials } : empty
+  } catch {
+    return empty
+  }
+}
+
 export async function testApiKey(apiKey, endpoint, model) {
   try {
     const llm = new ChatOpenAI({
