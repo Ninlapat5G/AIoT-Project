@@ -17,6 +17,14 @@ import { DEFAULT_API_KEY } from "../config/default_key";
 
 // ── 0. Helpers ────────────────────────────────────────────────────────────────
 
+// stable stringify: sort keys ก่อน → กัน {a,b} vs {b,a} เทียบกันไม่เจอ
+function stableArgs(v) {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v);
+  if (Array.isArray(v)) return '[' + v.map(stableArgs).join(',') + ']';
+  const keys = Object.keys(v).sort();
+  return '{' + keys.map(k => JSON.stringify(k) + ':' + stableArgs(v[k])).join(',') + '}';
+}
+
 function nowString() {
   // th-TH-u-ca-gregory: ใช้ label ไทย แต่ปียัง ค.ศ. (LLM ไม่งงกับ พ.ศ.)
   // timeZone: 'Asia/Bangkok' บังคับให้คงเส้นคงวาแม้ user อยู่ TZ อื่น
@@ -138,6 +146,11 @@ const AgentState = Annotation.Root({
   pendingTasks: Annotation({
     reducer: (_, next) => next,
     default: () => [],
+  }),
+  // reflect ตัดสินว่า done=true → ใช้ route ตรงไป responder ไม่ให้ agent วน
+  reflectDone: Annotation({
+    reducer: (_, next) => next,
+    default: () => false,
   }),
 });
 
@@ -382,6 +395,7 @@ async function reflectNode(state) {
     return {
       messages: [new SystemMessage(`${tag} ${res.thought || ''}${pendingText}`)],
       pendingTasks: pending,
+      reflectDone: res.done === true,
     };
   } catch (err) {
     console.warn('[Reflect] failed, skipping:', err?.message);
@@ -566,6 +580,31 @@ function shouldContinue(state) {
       console.warn("[Agent] Reached max tool rounds. Forcing exit.");
       return END;
     }
+
+    // Safety net: ถ้า tool_calls ทุกตัวเหมือนเป๊ะกับที่เคยเรียกใน turn นี้ → บังคับ responder
+    // กันเคสที่ reflect บอก continue แต่ agent ดื้อเรียก tool เดิม args เดิม
+    const messages = state.messages;
+    let turnStart = 0;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i] instanceof HumanMessage) { turnStart = i; break; }
+    }
+    const priorKeys = new Set();
+    for (let i = turnStart; i < messages.length - 1; i++) {
+      const m = messages[i];
+      if (m instanceof AIMessage && m.tool_calls?.length) {
+        for (const tc of m.tool_calls) {
+          priorKeys.add(`${tc.name}|${stableArgs(tc.args || {})}`);
+        }
+      }
+    }
+    const allDuplicate = priorKeys.size > 0 && lastMessage.tool_calls.every(tc =>
+      priorKeys.has(`${tc.name}|${stableArgs(tc.args || {})}`)
+    );
+    if (allDuplicate) {
+      console.warn('[Agent] R2 tool_calls identical to prior — forcing responder');
+      return "responder";
+    }
+
     return "tools";
   }
 
@@ -588,7 +627,7 @@ const workflow = new StateGraph(AgentState)
   .addEdge("router", "agent")
   .addConditionalEdges("agent", shouldContinue)
   .addConditionalEdges("tools", state => state.postExecutor ? "responder" : "reflect")
-  .addEdge("reflect", "agent")
+  .addConditionalEdges("reflect", state => state.reflectDone ? "responder" : "agent")
   .addConditionalEdges("guard", state => state.guardRetry ? "executor" : "responder")
   .addConditionalEdges("executor", state => {
     const last = state.messages[state.messages.length - 1];
@@ -624,6 +663,7 @@ export const runAgent = async (params) => {
     lastToolCall: null,
     lastCommandedDevice: null,
     pendingTasks: [],
+    reflectDone: false,
   });
 
   const lastMsg = finalState.messages[finalState.messages.length - 1];
