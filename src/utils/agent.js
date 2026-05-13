@@ -308,9 +308,10 @@ async function toolNode(state) {
 const REFLECT_PROMPT = `คุณคือ Reflection — ตรวจว่าคำสั่ง user ถูกทำครบหรือยัง
 
 [กฎสำคัญ]
-- ตรวจเฉพาะ device ที่มีอยู่ใน [KNOWLEDGE GRAPH] เท่านั้น — ห้ามคาดเดาว่าควรมี device อื่นนอกจากนี้
-- คำว่า "ทุกห้อง" / "ทุกอุปกรณ์" หมายถึง device ทุกตัวที่อยู่ใน KG เท่านั้น ไม่ใช่ทุกห้องในโลก
+- ตรวจเฉพาะ device ที่มีอยู่ใน [KNOWLEDGE GRAPH] เท่านั้น — ไม่มี device อื่นนอกจากนี้
+- คำว่า "ทุกห้อง" / "ทุกอุปกรณ์" หมายถึง device ทุกตัวที่อยู่ใน KG เท่านั้น
 - เทียบ pubTopic ใน tool calls กับ device ใน KG เพื่อดูว่า device ไหนถูกจัดการไปแล้ว
+- ถ้า remaining จะระบุ device ที่ไม่มีใน KG → ให้ตั้ง done=true ทันที เพราะ device นั้นไม่มีในระบบ
 
 ตอบ JSON 3 field:
 
@@ -406,8 +407,19 @@ async function reflectNode(state) {
       { signal }
     );
 
-    const remaining = res.remaining?.trim() || '';
-    const tag = res.done
+    let done = res.done === true;
+    let remaining = res.remaining?.trim() || '';
+
+    // guard: ถ้า remaining พูดถึง device ที่ไม่มีใน KG เลย → force done=true
+    if (!done && remaining) {
+      const kgNames = (deviceList || []).map(d => d.name);
+      if (kgNames.length > 0 && !kgNames.some(name => remaining.includes(name))) {
+        done = true;
+        remaining = '';
+      }
+    }
+
+    const tag = done
       ? '[STOP — ตอบ user ทันที ห้ามเรียก tool อีก]'
       : '[REMAINING — ทำต่อ ห้ามทำซ้ำ action ที่อยู่ใน history]';
 
@@ -416,7 +428,7 @@ async function reflectNode(state) {
     return {
       messages: [new SystemMessage(`${tag} ${res.thought || ''}${pendingText}`)],
       pendingTasks: remaining,
-      reflectDone: res.done === true,
+      reflectDone: done,
     };
   } catch (err) {
     console.warn('[Reflect] failed, skipping:', err?.message);
