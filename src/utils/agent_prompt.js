@@ -35,6 +35,7 @@ export function buildContextMessage({ devices, settings, now }) {
 
 export const ROUND_SUMMARY_PROMPT = `คุณสรุปผลการทำงานของ tools ทั้งหมดในรอบนี้เป็นภาษาไทยธรรมชาติ 1 ประโยคสั้นๆ
 ถ้ามีหลาย action ให้รวมเป็นประโยคเดียว เช่น "เปิดไฟทั้ง 3 ดวงในบ้าน" หรือ "ค้นหาสภาพอากาศและปิดแอร์"
+ถ้า tool มี error ให้บอกว่า [action]ไม่สำเร็จ — ห้ามพูดว่าทำแล้วถ้าผลลัพธ์มี error
 ตอบเฉพาะประโยคเดียว ไม่ต้องมีคำนำหน้า ไม่ต้องอธิบายเพิ่มเติม`
 
 export const SEARCH_QUERY_PROMPT = `You are a Search Query Optimizer.
@@ -42,7 +43,8 @@ Task: Clean and optimize the provided text for a web search engine.
 [RULES]
 1. Return the optimized query in the "query" field.
 2. Remove conversational fillers.
-3. Keep the most relevant keywords.`
+3. Keep the most relevant keywords.
+4. For news / prices / weather queries: keep or add a time qualifier (e.g. "ล่าสุด", "วันนี้", "today") so results are fresh.`
 
 export const DETECT_NAME_PROMPT = `You are a name extractor.
 Extract the AI assistant's own name from the given system prompt.
