@@ -209,7 +209,7 @@ async function agentNode(state) {
   const kg    = kgMessage(state);
 
   const tools = buildLangChainTools(state.settings, state.intent);
-  const llm   = makeLLM(state.settings);
+  const llm   = makeLLM(state.settings, { temperature: 0 });
   const agent = tools.length > 0 ? llm.bindTools(tools) : llm;
 
   const fullMessages = [persona, rules, kg, ...state.messages];
