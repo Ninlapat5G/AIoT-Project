@@ -134,6 +134,11 @@ const AgentState = Annotation.Root({
     reducer: (_, next) => next,
     default: () => null,
   }),
+  // งานที่เหลือต้องทำ — reflect เขียน, agent อ่านในรอบถัดไปผ่าน SystemMessage
+  pendingTasks: Annotation({
+    reducer: (_, next) => next,
+    default: () => [],
+  }),
 });
 
 // ── 2. Router Node ───────────────────────────────────────────────────────────
@@ -274,24 +279,53 @@ async function toolNode(state) {
 //   - ข้อมูลพอตอบ user หรือยัง / ยังขาดอะไร / ห้ามทำอะไรซ้ำ
 // แล้ว inject เป็น SystemMessage ก่อนเข้า agentNode → กัน loop "เรียก tool เดิมแบบเปลี่ยน arg"
 
-const REFLECT_PROMPT = `คุณคือ Reflection — สรุปสั้นๆ ให้ agent เห็นภาพรวมก่อนตัดสินใจรอบใหม่
-ตอบ JSON:
-- done: true ถ้าข้อมูลจาก tool ที่เรียกไปพอตอบ user แล้ว (agent ควรตอบทันที ไม่ต้องเรียก tool อีก)
-        false ถ้ายังขาดข้อมูล/ยังไม่ได้ทำตามคำสั่ง
-- thought: 1-2 ประโยค — บอกว่าทำอะไรไปแล้ว, ถ้า done=true สรุปคำตอบ, ถ้า done=false บอกว่าต้องทำอะไรต่อ (ห้ามทำซ้ำเรื่องเดิม)`;
+const REFLECT_PROMPT = `คุณคือ Reflection — ตรวจว่าคำสั่ง user ถูกทำครบหรือยัง โดยพิจารณาทั้งคำสั่งใน turn ปัจจุบันและบริบทจากประวัติ chat
+
+ตอบ JSON 3 field:
+
+- done:
+  • true  = tool ที่เรียกไปครอบคลุมคำสั่ง user แล้ว (รวมกรณีคำสั่งเป็นคำถาม + tool ให้คำตอบแล้ว)
+  • false = ยังมีส่วนที่ยังไม่ได้ทำ, tool ผิด, หรือ tool ล้มเหลว
+
+- pendingTasks: array ของงานที่ยังเหลือ เป็น string ภาษาธรรมชาติสั้นๆ (สำหรับให้ agent ทำต่อในรอบถัดไป)
+  • done=true → []
+  • done=false → list งานที่เหลือเรียงตามลำดับ เช่น ["เปิดไฟห้องครัว", "ปิดแอร์ห้องนอน"]
+  • คำสั่งกำกวม → ใส่เป็น "ขาดข้อมูล: <อะไร>" เช่น ["ขาดข้อมูล: ห้องไหน"]
+  • tool เดิมล้มเหลว → ใส่เป็น "ลอง approach อื่น: <แนวทาง>"
+  • ห้ามระบุชื่อ tool ใน task — บอกแค่ goal ให้ agent เลือก tool เอง
+  • ห้ามใส่ task ที่ทำสำเร็จไปแล้วใน history
+
+- thought: 1 ประโยคสรุปสำหรับ agent
+  • done=true → ข้อความที่ agent เอาไปตอบ user ได้เลย เช่น "เปิดไฟห้องครัวให้แล้ว"
+  • done=false → คำอธิบาย context สั้นๆ ว่าทำไมยังไม่จบ`;
 
 async function reflectNode(state) {
   const { messages, settings, signal } = state;
 
-  // เก็บ tool calls + results ใน turn ปัจจุบัน
+  // หา turn ปัจจุบัน
   let start = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i] instanceof HumanMessage) { start = i; break; }
   }
   const userText = messages[start]?.content || '';
 
+  // ประวัติก่อน turn นี้: เอาเฉพาะ user + AI text (ตัด tool internals ออก ประหยัด token)
+  // เก็บ 6 entries ล่าสุด (~3 turn pair) — พอให้ resolve คำเช่น "ด้วย", "อันนั้น"
+  const historyBefore = [];
+  for (let i = 0; i < start; i++) {
+    const m = messages[i];
+    if (m instanceof HumanMessage) {
+      historyBefore.push(`user: ${m.content}`);
+    } else if (m instanceof AIMessage && !m.tool_calls?.length) {
+      const content = typeof m.content === 'string' ? m.content : '';
+      if (content) historyBefore.push(`assistant: ${content}`);
+    }
+  }
+  const recentHistory = historyBefore.slice(-6);
+
+  // tool calls + results ใน turn ปัจจุบัน
   const idToCall = new Map();
-  const calls = []; // {name, args, result}
+  const calls = [];
   for (let i = start; i < messages.length; i++) {
     const m = messages[i];
     if (m instanceof AIMessage && m.tool_calls?.length) {
@@ -305,26 +339,28 @@ async function reflectNode(state) {
     }
   }
 
-  if (calls.length === 0) return {}; // ไม่มีอะไรให้สะท้อน
+  if (calls.length === 0) return {};
 
   const callsText = calls.map((c, i) =>
     `${i + 1}. ${c.name}(${JSON.stringify(c.args)}) → ${c.result}`
   ).join('\n');
 
   const input =
-    `[คำสั่ง user]\n"${userText}"\n\n` +
+    (recentHistory.length ? `[ประวัติ chat ล่าสุด]\n${recentHistory.join('\n')}\n\n` : '') +
+    `[คำสั่ง user (turn นี้)]\n"${userText}"\n\n` +
     `[Tool ที่เรียกไปแล้วใน turn นี้]\n${callsText}`;
 
   const llm = makeLLM(settings, {
     temperature: 0,
-    maxTokens: 120,
+    maxTokens: 250,
     structured: {
       type: 'object',
       properties: {
         done: { type: 'boolean' },
+        pendingTasks: { type: 'array', items: { type: 'string' } },
         thought: { type: 'string' },
       },
-      required: ['done', 'thought'],
+      required: ['done', 'pendingTasks', 'thought'],
     },
   });
 
@@ -333,9 +369,19 @@ async function reflectNode(state) {
       [new SystemMessage(REFLECT_PROMPT), new HumanMessage(input)],
       { signal }
     );
-    const tag = res.done ? '[REFLECT done]' : '[REFLECT continue]';
+
+    const pending = Array.isArray(res.pendingTasks) ? res.pendingTasks : [];
+    const tag = res.done
+      ? '[STOP — ตอบ user ทันที ห้ามเรียก tool อีก]'
+      : '[REMAINING — ทำต่อ ห้ามทำซ้ำ action ที่อยู่ใน history]';
+
+    const pendingText = pending.length
+      ? `\nงานที่ยังต้องทำ (ตามลำดับ):\n${pending.map((t, i) => `  ${i + 1}. ${t}`).join('\n')}`
+      : '';
+
     return {
-      messages: [new SystemMessage(`${tag} ${res.thought || ''}`)],
+      messages: [new SystemMessage(`${tag} ${res.thought || ''}${pendingText}`)],
+      pendingTasks: pending,
     };
   } catch (err) {
     console.warn('[Reflect] failed, skipping:', err?.message);
@@ -577,6 +623,7 @@ export const runAgent = async (params) => {
     toolRound: 0,
     lastToolCall: null,
     lastCommandedDevice: null,
+    pendingTasks: [],
   });
 
   const lastMsg = finalState.messages[finalState.messages.length - 1];
