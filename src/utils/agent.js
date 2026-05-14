@@ -11,7 +11,6 @@ import {
 import {
   visibleDevices,
   findDeviceByTopic,
-  describeDeviceState,
 } from "./kg.js";
 import { DEFAULT_API_KEY } from "../config/default_key";
 
@@ -368,12 +367,13 @@ async function reflectNode(state) {
     `${i + 1}. ${c.name}(${JSON.stringify(c.args)}) → ${c.result}`
   ).join('\n');
 
-  // KG snapshot — ให้ Reflect รู้ว่ามี device อะไรบ้างในบ้านจริงๆ
-  const kg = new SystemMessage(buildContextMessage({
-    devices: visibleDevices(deviceList, settings),
-    settings,
-    now: nowString(),
-  }));
+  // ส่งแค่รายชื่อ device + pubTopic ให้ reflect รู้ว่ามีอะไรในบ้าน
+  // ไม่ส่ง state (ON/OFF) เพราะ MQTT async — ack อาจยังไม่กลับตอน reflect รัน
+  // reflect ตัดสิน done/remaining จาก tool result ไม่ใช่จาก KG state
+  const deviceLines = visibleDevices(deviceList, settings)
+    .map(d => `  - ${d.name} (${d.room}) | pubTopic: ${d.pubTopic}`)
+    .join('\n');
+  const kg = new SystemMessage(`[DEVICES ในระบบ]\n${deviceLines || '(ไม่มี)'}`);
 
   const input =
     `[คำสั่ง user (turn นี้)]\n"${userText}"\n\n` +
@@ -460,13 +460,11 @@ async function guardNode(state) {
   );
   const draftText = draftMsg?.content || '';
 
-  // 3. สถานะ device ที่เพิ่งสั่ง (เทียบกับ KG ปัจจุบัน)
-  const lcdSection = (() => {
-    if (!lastCommandedDevice) return 'ไม่มี device ที่ถูกสั่งใน turn นี้';
-    const current = getDevices(state).find(d => d.pubTopic === lastCommandedDevice.pubTopic);
-    const kgState = current ? describeDeviceState(current) : 'ไม่พบใน KG';
-    return `${lastCommandedDevice.name} (${lastCommandedDevice.room}) | payload ที่ส่ง: ${lastCommandedDevice.payload} | KG ตอนนี้: ${kgState}`;
-  })();
+  // 3. device ที่เพิ่งสั่ง — ไม่แสดง KG state เพราะ MQTT async (ack อาจยังไม่กลับ)
+  //    guard ดู success/error จาก tool result ใน toolSection แทน
+  const lcdSection = lastCommandedDevice
+    ? `${lastCommandedDevice.name} (${lastCommandedDevice.room}) | payload ที่ส่ง: ${lastCommandedDevice.payload}`
+    : 'ไม่มี device ที่ถูกสั่งใน turn นี้';
 
   // 4. tool call ล่าสุด
   const toolSection = lastToolCall
