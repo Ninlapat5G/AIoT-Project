@@ -376,11 +376,11 @@ async function reflectNode(state) {
   ).join('\n');
 
   // KG snapshot — ให้ Reflect รู้ว่ามี device อะไรบ้างในบ้านจริงๆ
-  const kg = buildContextMessage({
+  const kg = new SystemMessage(buildContextMessage({
     devices: visibleDevices(deviceList, settings),
     settings,
     now: nowString(),
-  });
+  }));
 
   const input =
     (recentHistory.length ? `[ประวัติ chat ล่าสุด]\n${recentHistory.join('\n')}\n\n` : '') +
