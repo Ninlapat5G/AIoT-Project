@@ -8,7 +8,6 @@ export function useChat({ settings, devicesRef, executeTool }) {
   const [executing, setExecuting]   = useState([])  // array — parallel tools run simultaneously
 
   const abortControllerRef = useRef(null)
-  const prevToolResultsRef = useRef(null)
   const lastCommandedDeviceRef = useRef(null)
 
   const stopChat = useCallback(() => {
@@ -35,7 +34,6 @@ export function useChat({ settings, devicesRef, executeTool }) {
         deviceList: devicesRef.current,
         apiHistory,
         executeTool,
-        prevToolResults: prevToolResultsRef.current,
         lastCommandedDevice: lastCommandedDeviceRef.current,
         signal: abortControllerRef.current.signal,
 
@@ -90,9 +88,6 @@ export function useChat({ settings, devicesRef, executeTool }) {
         return prev
       })
 
-      prevToolResultsRef.current = toolsThisTurn.length > 0
-        ? toolsThisTurn.map(t => `${t.name}→${JSON.stringify(t.result).slice(0, 150)}`).join('; ')
-        : null
       lastCommandedDeviceRef.current = lastCommandedDevice ?? lastCommandedDeviceRef.current
 
       setApiHistory(prev => [
@@ -130,7 +125,6 @@ export function useChat({ settings, devicesRef, executeTool }) {
     stopChat()
     setMessages([])
     setApiHistory([])
-    prevToolResultsRef.current = null
     lastCommandedDeviceRef.current = null
   }, [stopChat])
 
