@@ -77,12 +77,16 @@ async function mqttPublish(args, ctx) {
       if (err) { resolve({ success: false, error: err.message }); return }
 
       if (device) {
-        setDevices(prev => prev.map(d => {
+        const applyUpdate = d => {
           if (d.id !== device.id) return d
           if (d.type === 'digital') return { ...d, on: payload === 'true' || payload === 'ON' || payload === '1' }
           if (d.type === 'analog') return { ...d, value: parseInt(payload, 10) || 0 }
           return d
-        }))
+        }
+        // อัปเดต ref ทันที — graph nodes ที่รันต่อจากนี้ (reflect/guard) จะเห็น state ใหม่
+        devicesRef.current = devicesRef.current.map(applyUpdate)
+        // อัปเดต React state ด้วย — เพื่อ sync UI
+        setDevices(prev => prev.map(applyUpdate))
       }
 
       resolve({
