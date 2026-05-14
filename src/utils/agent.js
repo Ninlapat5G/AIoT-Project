@@ -138,7 +138,8 @@ const AgentState = Annotation.Root({
     reducer: (_, next) => next,
     default: () => null,
   }),
-  // device ที่เพิ่งสั่งใน turn นี้ — เซ็ตโดย toolNode หลัง mqtt_publish/hub
+  // device ล่าสุดที่ถูกสั่งใน session — เซ็ตโดย toolNode หลัง mqtt_publish/hub
+  // ส่งกลับเข้า runAgent ทุก turn ผ่าน useChat ref → guard ใช้เทียบกับ KG ปัจจุบัน
   lastCommandedDevice: Annotation({
     reducer: (_, next) => next,
     default: () => null,
@@ -229,7 +230,7 @@ async function agentNode(state) {
   return { messages: [finalMessage] };
 }
 
-// ── 3. Tool Node ──────────────────────────────────────────────────────────────
+// ── 4. Tool Node ──────────────────────────────────────────────────────────────
 // รัน tool calls แบบ parallel + บันทึก lastToolCall / lastCommandedDevice
 
 async function toolNode(state) {
@@ -305,7 +306,7 @@ async function toolNode(state) {
   return stateUpdate;
 }
 
-// ── 3.5 Reflect Node ─────────────────────────────────────────────────────────
+// ── 5. Reflect Node ──────────────────────────────────────────────────────────
 // คั่นระหว่าง tools → agent: ก่อนที่ agent จะวนรอบใหม่ ให้สรุปก่อนว่า
 //   - turn นี้เรียก tool อะไรไปบ้าง ได้ผลอะไร
 //   - ข้อมูลพอตอบ user หรือยัง / ยังขาดอะไร / ห้ามทำอะไรซ้ำ
@@ -427,7 +428,7 @@ async function reflectNode(state) {
   }
 }
 
-// ── 4. Guard Node ────────────────────────────────────────────────────────────
+// ── 6. Guard Node ────────────────────────────────────────────────────────────
 // หน้าที่เดียว: ตรวจว่า "ที่ agent บอกว่าทำแล้ว ทำจริงและตรงกับที่ user สั่งไหม?"
 // ดู 4 อย่าง: คำสั่ง user (turn นี้) + tool ล่าสุด + device ใน KG + draft text
 // ไม่ดู turn ก่อนๆ — agent เข้าใจ context history เองอยู่แล้ว
@@ -520,7 +521,7 @@ async function guardNode(state) {
   };
 }
 
-// ── 5. Executor Node — รัน tool ตาม guard hint ───────────────────────────────
+// ── 7. Executor Node — รัน tool ตาม guard hint ───────────────────────────────
 
 async function executorNode(state) {
   const { settings, messages, signal } = state;
@@ -551,7 +552,7 @@ async function executorNode(state) {
   return { messages: [result], postExecutor: true };
 }
 
-// ── 6. Responder Node — stream คำตอบสุดท้ายถึง user ──────────────────────────
+// ── 8. Responder Node — stream คำตอบสุดท้ายถึง user ──────────────────────────
 
 async function responderNode(state) {
   const { messages, settings, signal, onStream } = state;
@@ -595,7 +596,7 @@ async function responderNode(state) {
   return { messages: [finalMsg ?? new AIMessage('ขออภัยค่ะ เกิดข้อผิดพลาด')] };
 }
 
-// ── 7. Graph Routing ─────────────────────────────────────────────────────────
+// ── 9. Graph Routing ─────────────────────────────────────────────────────────
 // agent → tools (ถ้ามี tool_calls) → guard / responder
 //
 // Guard ทำงานเมื่อครบ 3 เงื่อนไข (AND):
@@ -666,7 +667,7 @@ const workflow = new StateGraph(AgentState)
 
 const compiledGraph = workflow.compile();
 
-// ── 8. Public API ────────────────────────────────────────────────────────────
+// ── 10. Public API ───────────────────────────────────────────────────────────
 
 export const runAgent = async (params) => {
   const rawMessages = (params.apiHistory || []).map(m =>
@@ -705,7 +706,7 @@ export const runAgent = async (params) => {
   return { reply: finalReply, lastCommandedDevice: finalState.lastCommandedDevice ?? null };
 };
 
-// ── 9. Sub-Agents ────────────────────────────────────────────────────────────
+// ── 11. Sub-Agents ───────────────────────────────────────────────────────────
 
 export async function generateSearchQuery({ settings, query, signal }) {
   const llm = makeLLM(settings, {
