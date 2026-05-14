@@ -44,9 +44,12 @@ function findDeviceByTopic(devices, topic, type = null) {
     if (!d.topic) return false
     return (
       d.topic === topic ||
-      d.topic.endsWith('/' + topic) ||
+      d.topic.endsWith('/' + topic) ||          // d.topic ยาวกว่า (มี prefix)
       topic === d.topic + '/set' ||
-      topic === d.topic + '/state'
+      topic === d.topic + '/state' ||
+      topic.endsWith('/' + d.topic) ||          // topic ยาวกว่า (มี base prefix)
+      topic.endsWith('/' + d.topic + '/set') ||
+      topic.endsWith('/' + d.topic + '/state')
     )
   })
 }
@@ -91,9 +94,9 @@ async function mqttPublish(args, ctx) {
 
       resolve({
         success: true,
-        topic: fullTopic,
+        ...(device ? { device: device.name } : { topic: fullTopic }),
         payload,
-        message: isRaw ? 'Published to unlisted raw topic.' : 'Published.',
+        message: 'Published.',
       })
     })
   })
