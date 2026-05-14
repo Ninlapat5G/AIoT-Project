@@ -35,6 +35,12 @@ function nowString() {
   });
 }
 
+// อ่าน deviceList แบบ live — รับได้ทั้ง React ref ({current: [...]}) และ plain array
+function getDevices(state) {
+  const dl = state.deviceList;
+  return (dl?.current ?? dl) || [];
+}
+
 function makeLLM(settings, { temperature = 0.1, maxTokens, structured } = {}) {
   const apiKey = settings.apiKey || DEFAULT_API_KEY;
   let llm = new ChatOpenAI({
@@ -94,7 +100,7 @@ function buildLangChainTools(settings, intents = null) {
 
 // สร้าง message ก้อนสถานะ KG (ใช้ใน node ที่ต้องเห็นบ้าน + อุปกรณ์)
 function kgMessage(state) {
-  const devices = visibleDevices(state.deviceList, state.settings);
+  const devices = visibleDevices(getDevices(state), state.settings);
   return new SystemMessage(
     buildContextMessage({ devices, settings: state.settings, now: nowString() })
   );
@@ -262,10 +268,10 @@ async function toolNode(state) {
   for (const call of collected) {
     let device = null, payload = null;
     if (call.name === 'mqtt_publish') {
-      device  = findDeviceByTopic(state.deviceList, call.args?.topic);
+      device  = findDeviceByTopic(getDevices(state), call.args?.topic);
       payload = call.args?.payload;
     } else if (call.name === 'hub') {
-      device  = (state.deviceList || []).find(d => d.type === 'hub');
+      device  = getDevices(state).find(d => d.type === 'hub');
       payload = call.args?.task;
     }
     if (device) {
@@ -330,7 +336,8 @@ const REFLECT_PROMPT = `คุณคือ Reflection — ตรวจว่า�
   • done=false → คำอธิบาย context สั้นๆ ว่าทำไมยังไม่จบ`;
 
 async function reflectNode(state) {
-  const { messages, settings, signal, deviceList } = state;
+  const { messages, settings, signal } = state;
+  const deviceList = getDevices(state);
 
   // หา turn ปัจจุบัน
   let start = 0;
@@ -371,24 +378,9 @@ async function reflectNode(state) {
 
   if (calls.length === 0) return {};
 
-  const callsText = calls.map((c, i) => {
-    if (c.name === 'mqtt_publish' && c.args?.topic) {
-      const d = findDeviceByTopic(deviceList, c.args.topic);
-      const deviceLabel = d ? `${d.name} (${d.room})` : c.args.topic;
-      const payload = c.args?.payload ?? '-';
-      let statusStr;
-      try {
-        const parsed = JSON.parse(c.result);
-        statusStr = parsed.success
-          ? 'success'
-          : `failed: ${parsed.error || parsed.message || c.result}`;
-      } catch {
-        statusStr = c.result;
-      }
-      return `${i + 1}. [mqtt_publish] ${deviceLabel} — payload: ${payload} — ${statusStr}`;
-    }
-    return `${i + 1}. ${c.name}(${JSON.stringify(c.args)}) → ${c.result}`;
-  }).join('\n');
+  const callsText = calls.map((c, i) =>
+    `${i + 1}. ${c.name}(${JSON.stringify(c.args)}) → ${c.result}`
+  ).join('\n');
 
   // KG snapshot — ให้ Reflect รู้ว่ามี device อะไรบ้างในบ้านจริงๆ
   const kg = new SystemMessage(buildContextMessage({
@@ -486,7 +478,7 @@ async function guardNode(state) {
   // 3. สถานะ device ที่เพิ่งสั่ง (เทียบกับ KG ปัจจุบัน)
   const lcdSection = (() => {
     if (!lastCommandedDevice) return 'ไม่มี device ที่ถูกสั่งใน turn นี้';
-    const current = (state.deviceList || []).find(d => d.pubTopic === lastCommandedDevice.pubTopic);
+    const current = getDevices(state).find(d => d.pubTopic === lastCommandedDevice.pubTopic);
     const kgState = current ? describeDeviceState(current) : 'ไม่พบใน KG';
     return `${lastCommandedDevice.name} (${lastCommandedDevice.room}) | payload ที่ส่ง: ${lastCommandedDevice.payload} | KG ตอนนี้: ${kgState}`;
   })();

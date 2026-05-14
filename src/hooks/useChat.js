@@ -31,7 +31,7 @@ export function useChat({ settings, devicesRef, executeTool }) {
       const { reply, lastCommandedDevice } = await runAgent({
         text,
         settings,
-        deviceList: devicesRef.current,
+        deviceList: devicesRef,
         apiHistory,
         executeTool,
         lastCommandedDevice: lastCommandedDeviceRef.current,
