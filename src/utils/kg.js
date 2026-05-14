@@ -9,8 +9,8 @@
 
 // Mapping: device.type → skills ที่ต้องเปิดอย่างน้อย 1 ตัวจึงควบคุมได้
 const DEVICE_TYPE_TO_SKILLS = {
-  digital: ['mqtt_publish', 'mqtt_read'],
-  analog:  ['mqtt_publish', 'mqtt_read'],
+  digital: ['mqtt_publish'],
+  analog:  ['mqtt_publish'],
   hub:     ['hub'],
 }
 
@@ -46,7 +46,7 @@ export function describeDeviceState(device) {
 }
 
 function toolForDevice(device) {
-  return device.type === 'hub' ? 'hub' : 'mqtt_publish / mqtt_read'
+  return device.type === 'hub' ? 'hub' : 'mqtt_publish'
 }
 
 // ── Snapshot (text) — ใส่ใน system prompt ของ agent ──────────────────────────

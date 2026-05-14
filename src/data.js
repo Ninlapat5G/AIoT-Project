@@ -33,13 +33,6 @@ export const DEFAULT_SETTINGS = {
   showToolDetails: true,
   skills: [
     {
-      id: 'sensor_read',
-      name: 'mqtt_read',
-      description: 'อ่านสถานะปัจจุบันของ widget อุปกรณ์ผ่าน MQTT topic ส่งคืนค่าที่แสดงผลอยู่ใน UI',
-      enabled: true,
-      schema: '{"type":"object","properties":{"topic":{"type":"string","description":"pubTopic or subTopic of the device"}},"required":["topic"]}',
-    },
-    {
       id: 'mqtt_pub',
       name: 'mqtt_publish',
       description: 'ส่ง payload ไปยัง MQTT topic เพื่อควบคุมอุปกรณ์',
@@ -50,7 +43,7 @@ export const DEFAULT_SETTINGS = {
     {
       id: 'web_search',
       name: 'web_search',
-      description: 'ค้นหาข้อมูล real-time จากอินเตอร์เน็ต ใช้เฉพาะเมื่อข้อมูลนั้นไม่มีในระบบ เช่น ข่าว พยากรณ์อากาศ ราคา เหตุการณ์ปัจจุบัน ห้ามใช้สำหรับ: วัน/เวลา (มีใน SYSTEM ENVIRONMENT), สถานะอุปกรณ์ (ใช้ mqtt_read), ข้อมูล user, การทักทาย หรือสนทนาทั่วไป',
+      description: 'ค้นหาข้อมูล real-time จากอินเตอร์เน็ต ใช้เฉพาะเมื่อข้อมูลนั้นไม่มีในระบบ เช่น ข่าว พยากรณ์อากาศ ราคา เหตุการณ์ปัจจุบัน ห้ามใช้สำหรับ: วัน/เวลา (มีใน SYSTEM ENVIRONMENT), สถานะอุปกรณ์ (มีใน KG แล้ว), ข้อมูล user, การทักทาย หรือสนทนาทั่วไป',
       enabled: true,
       schema:
         '{"type":"object","properties":{"query":{"type":"string","description":"Concise and specific search query"}},"required":["query"]}',

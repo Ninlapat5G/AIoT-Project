@@ -26,7 +26,6 @@ const SKILL_REQUIREMENTS = {
   web_search:   { needs: 'Serper API key', settingKey: 'serperApiKey', link: 'https://serper.dev/api-keys' },
   hub:          { needs: 'hub device ในรายการอุปกรณ์ + MQTT connection' },
   mqtt_publish: { needs: 'MQTT connection' },
-  mqtt_read:    { needs: 'MQTT connection' },
 }
 
 // ── Dynamic System Prompt ─────────────────────────────────────────────────────
