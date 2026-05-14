@@ -74,7 +74,7 @@ const KG_TOOL = {
 };
 
 const INTENT_SKILLS = {
-  home_control:  new Set(['mqtt_publish', 'mqtt_read', 'hub']),
+  home_control:  new Set(['mqtt_publish', 'hub']),
   realtime_data: new Set(['web_search']),
   settings:      new Set(['manage_settings']),
   general:       new Set(),
@@ -432,16 +432,26 @@ async function reflectNode(state) {
 // ดู 4 อย่าง: คำสั่ง user (turn นี้) + tool ล่าสุด + device ใน KG + draft text
 // ไม่ดู turn ก่อนๆ — agent เข้าใจ context history เองอยู่แล้ว
 
-const GUARD_PROMPT = `คุณคือ Guard — ตรวจสอบว่า agent ทำตามคำสั่ง user หรือเปล่า
+const GUARD_PROMPT = `คุณคือ Guard — ตรวจว่า draft response ของ agent สอดคล้องกับสิ่งที่เกิดขึ้นจริงไหม
 
-ตอบ JSON:
-- retry=true เมื่อ:
-  • agent อ้างว่าทำ action สำเร็จ แต่ไม่มี tool ถูกเรียก (หลอน)
-  • tool ที่เรียก/device ที่ถูกสั่ง ไม่ตรงกับสิ่งที่ user ขอ
-  • tool ถูกเรียกแต่ผลลัพธ์มี error และ agent อ้างว่าสำเร็จ (แทนที่จะรายงาน error)
-- retry=false เมื่อ: tool ถูกเรียกถูก device ตรงคำสั่ง และ agent รายงานตามผลจริง หรือเป็นแค่คำถาม/สนทนา
+[ข้อมูลที่คุณได้รับ]
+1. คำสั่ง user — สิ่งที่ user ต้องการใน turn นี้
+2. Tool ที่เรียกล่าสุด — tool และผลลัพธ์จริงที่ได้กลับมา
+3. Device ที่ถูกสั่ง — device ที่ถูก control และ state ปัจจุบันใน KG
+4. Draft response — สิ่งที่ agent กำลังจะตอบ user
 
-reason (เฉพาะตอน retry=true): บอกว่าควรเรียก tool อะไร กับ device ไหน — สั้นๆ`;
+[retry=true เมื่อ]
+- agent บอกว่าทำสำเร็จ แต่ไม่มี tool ถูกเรียกเลย
+- tool ที่เรียกหรือ device ที่สั่ง ไม่ตรงกับที่ user ขอ
+- tool ถูกเรียกแต่ได้ error กลับมา แต่ agent บอกว่าสำเร็จ
+
+[retry=false เมื่อ]
+- tool ถูกเรียก, device ตรงคำสั่ง, และ agent รายงานตามผลจริง
+- user แค่ถามหรือสนทนา ไม่ได้สั่งให้ทำอะไร
+
+[output]
+- retry: true/false
+- reason: (เฉพาะ retry=true) บอกสั้นๆ ว่าควรเรียก tool อะไร กับ device ไหน`;
 
 async function guardNode(state) {
   const { messages, settings, lastToolCall, lastCommandedDevice, signal } = state;

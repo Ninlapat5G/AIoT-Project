@@ -1,8 +1,7 @@
 // ── Skill Tool Handlers ────────────────────────────────────────────────────────
 // Each handler: async (args, ctx) => result
 // ctx = { mqttClient, settings, mqttWaitForStream,
-//          devicesRef, baseTopicRef, setDevices,
-//          normalizeBase, buildFullTopic }
+//          devicesRef, baseTopicRef, setDevices, handleSaveSettings }
 //
 // To add a new skill:
 //   1. Add a handler function below
@@ -73,7 +72,6 @@ async function mqttPublish(args, ctx) {
 
   const device = findDeviceByTopic(devicesRef.current, topic)
   const fullTopic = device ? buildCmdTopic(device.topic, base) : topic
-  const isRaw = !device
 
   return new Promise(resolve => {
     mqttClient.publish(fullTopic, String(payload), { qos: 2 }, err => {
@@ -100,24 +98,6 @@ async function mqttPublish(args, ctx) {
       })
     })
   })
-}
-
-async function mqttRead(args, ctx) {
-  const { devicesRef } = ctx
-
-  const topic = typeof args === 'string' ? args.trim() : args?.topic
-  if (!topic) return { success: false, error: 'No topic specified' }
-
-  // hub ไม่รองรับ mqtt_read
-  const device = findDeviceByTopic(
-    devicesRef.current.filter(d => d.type !== 'hub'),
-    topic
-  )
-
-  if (!device) return { success: false, error: `No device found for topic: ${topic}` }
-
-  const value = device.type === 'digital' ? (device.on ? 'ON' : 'OFF') : String(device.value)
-  return { success: true, device: device.name, room: device.room, value }
 }
 
 async function hubCommand(args, ctx) {
@@ -234,7 +214,6 @@ async function manageSettings(args, ctx) {
 const toolHandlers = {
   query_knowledge_graph: queryKnowledgeGraph,
   mqtt_publish:          mqttPublish,
-  mqtt_read:             mqttRead,
   hub:                   hubCommand,
   web_search:            webSearch,
   manage_settings:       manageSettings,
@@ -243,8 +222,6 @@ const toolHandlers = {
 // ── Factory ────────────────────────────────────────────────────────────────────
 
 export function createExecuteTool(ctx) {
-  // normalizeBase/buildFullTopic ที่ส่งมาจาก App.jsx ไม่จำเป็นแล้ว
-  // (agentSkills import มาเองจาก mqttTopic.js) — ยังรับมาเพื่อ backward compat
   return async function executeTool(name, args, signal) {
     const skill = (ctx.settings.skills || []).find(sk => sk.name === name)
     if (skill && !skill.enabled) return { success: false, error: `Tool "${name}" is disabled` }
