@@ -472,7 +472,7 @@ async function guardNode(state) {
 
   // 3. สถานะ device ที่เพิ่งสั่ง (เทียบกับ KG ปัจจุบัน)
   const lcdSection = (() => {
-    if (!lastCommandedDevice) return 'ไม่มี device ที่ถูกสั่งใน turn นี้';
+    if (!lastCommandedDevice) return 'ยังไม่เคยมี device ถูกสั่งใน session นี้';
     const current = getDevices(state).find(d => d.topic === lastCommandedDevice.topic);
     const kgState = current ? describeDeviceState(current) : 'ไม่พบใน KG';
     return `${lastCommandedDevice.name} (${lastCommandedDevice.room}) | payload ที่ส่ง: ${lastCommandedDevice.payload} | KG ตอนนี้: ${kgState}`;
