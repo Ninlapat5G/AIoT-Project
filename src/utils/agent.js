@@ -277,7 +277,7 @@ async function toolNode(state) {
     if (device) {
       stateUpdate.lastCommandedDevice = {
         name: device.name, room: device.room, type: device.type,
-        pubTopic: device.pubTopic, payload,
+        topic: device.topic, payload,
       };
       break;
     }
@@ -316,7 +316,7 @@ const REFLECT_PROMPT = `คุณคือ Reflection — ตรวจว่า�
 [กฎสำคัญ]
 - ตรวจเฉพาะ device ที่มีอยู่ใน [KNOWLEDGE GRAPH] เท่านั้น — ไม่มี device อื่นนอกจากนี้
 - คำว่า "ทุกห้อง" / "ทุกอุปกรณ์" หมายถึง device ทุกตัวที่อยู่ใน KG เท่านั้น
-- เทียบ pubTopic ใน tool calls กับ device ใน KG เพื่อดูว่า device ไหนถูกจัดการไปแล้ว
+- เทียบ topic ใน tool calls กับ device ใน KG เพื่อดูว่า device ไหนถูกจัดการไปแล้ว
 - ถ้า remaining จะระบุ device ที่ไม่มีใน KG → ให้ตั้ง done=true ทันที เพราะ device นั้นไม่มีในระบบ
 
 ตอบ JSON 3 field:
@@ -462,7 +462,7 @@ async function guardNode(state) {
   // 3. สถานะ device ที่เพิ่งสั่ง (เทียบกับ KG ปัจจุบัน)
   const lcdSection = (() => {
     if (!lastCommandedDevice) return 'ไม่มี device ที่ถูกสั่งใน turn นี้';
-    const current = getDevices(state).find(d => d.pubTopic === lastCommandedDevice.pubTopic);
+    const current = getDevices(state).find(d => d.topic === lastCommandedDevice.topic);
     const kgState = current ? describeDeviceState(current) : 'ไม่พบใน KG';
     return `${lastCommandedDevice.name} (${lastCommandedDevice.room}) | payload ที่ส่ง: ${lastCommandedDevice.payload} | KG ตอนนี้: ${kgState}`;
   })();

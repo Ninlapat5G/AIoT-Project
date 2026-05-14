@@ -31,10 +31,12 @@ export function visibleDevices(devices, settings) {
 
 export function findDeviceByTopic(devices, topic) {
   return (devices || []).find(d =>
-    d.pubTopic === topic ||
-    d.subTopic === topic ||
-    d.pubTopic?.endsWith('/' + topic) ||
-    d.subTopic?.endsWith('/' + topic)
+    d.topic && (
+      d.topic === topic ||
+      d.topic.endsWith('/' + topic) ||
+      topic === d.topic + '/set' ||
+      topic === d.topic + '/state'
+    )
   ) || null
 }
 
@@ -88,7 +90,7 @@ export function snapshotText({ devices, settings, now }) {
         const tool  = toolForDevice(d)
         lines.push(`    ${branch} ${d.name}  [${d.type} | ${state}]  → tool: ${tool}`)
         const indent = last ? '       ' : '    │  '
-        lines.push(`${indent} pubTopic: ${d.pubTopic}${d.subTopic ? `  | subTopic: ${d.subTopic}` : ''}`)
+        lines.push(`${indent} topic: ${d.topic}`)
       })
     }
   }
@@ -101,7 +103,7 @@ export function snapshotText({ devices, settings, now }) {
       const branch = last ? '└─' : '├─'
       lines.push(`  ${branch} ${h.name} (${h.room})  → tool: hub`)
       const indent = last ? '     ' : '  │  '
-      lines.push(`${indent} pubTopic: ${h.pubTopic}${h.subTopic ? `  | subTopic: ${h.subTopic}` : ''}`)
+      lines.push(`${indent} topic: ${h.topic}`)
     })
   }
 
@@ -129,8 +131,7 @@ export function snapshotJson({ devices, settings, now }) {
         room:     d.room,
         type:     d.type,
         state:    describeDeviceState(d),
-        pubTopic: d.pubTopic,
-        subTopic: d.subTopic ?? null,
+        topic:    d.topic,
         tool:     toolForDevice(d),
       })),
     enabled_skills: enabledSkills,
