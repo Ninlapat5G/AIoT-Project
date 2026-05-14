@@ -688,7 +688,7 @@ export const runAgent = async (params) => {
     messages: previousMessages,
     toolRound: 0,
     lastToolCall: null,
-    lastCommandedDevice: null,
+    lastCommandedDevice: params.lastCommandedDevice ?? null,
     pendingTasks: '',
     reflectDone: false,
   });
