@@ -371,9 +371,24 @@ async function reflectNode(state) {
 
   if (calls.length === 0) return {};
 
-  const callsText = calls.map((c, i) =>
-    `${i + 1}. ${c.name}(${JSON.stringify(c.args)}) → ${c.result}`
-  ).join('\n');
+  const callsText = calls.map((c, i) => {
+    if (c.name === 'mqtt_publish' && c.args?.topic) {
+      const d = findDeviceByTopic(deviceList, c.args.topic);
+      const deviceLabel = d ? `${d.name} (${d.room})` : c.args.topic;
+      const payload = c.args?.payload ?? '-';
+      let statusStr;
+      try {
+        const parsed = JSON.parse(c.result);
+        statusStr = parsed.success
+          ? 'success'
+          : `failed: ${parsed.error || parsed.message || c.result}`;
+      } catch {
+        statusStr = c.result;
+      }
+      return `${i + 1}. [mqtt_publish] ${deviceLabel} — payload: ${payload} — ${statusStr}`;
+    }
+    return `${i + 1}. ${c.name}(${JSON.stringify(c.args)}) → ${c.result}`;
+  }).join('\n');
 
   // KG snapshot — ให้ Reflect รู้ว่ามี device อะไรบ้างในบ้านจริงๆ
   const kg = new SystemMessage(buildContextMessage({
