@@ -80,8 +80,7 @@ hub/
 
 | Skill | หน้าที่ |
 |---|---|
-| `mqtt_publish` | ส่ง payload ไปยัง device |
-| `mqtt_read` | อ่านสถานะจาก device |
+| `mqtt_publish` | ส่ง payload ไปยัง device (สถานะ device อ่านจาก KG ที่ sync กับ MQTT state topic อยู่แล้ว) |
 | `hub` | สั่งงาน Hub Agent (ReAct loop, streams output) |
 | `web_search` | ค้นหาผ่าน Serper API |
 | `manage_settings` | อ่าน/แก้ไข settings ผ่านภาษาธรรมชาติ |
@@ -109,21 +108,30 @@ hub/
 ผู้ใช้ พิมพ์/พูด
        │
        ▼
+    router ──► จำแนก intent (home_control / realtime_data / settings / general)
+       │       └── filter tools ที่ agent จะเห็นในรอบนี้
+       ▼
     agent ──► tool_calls? ──► tools ──► reflect ──► agent (loop)
        │                         └──► บันทึก lastCommandedDevice ใน state
        │
        │ (ไม่มี tool_calls)
        │
-       ├── lastCommandedDevice != null ──► guard (ตรวจหลอน)
-       │                                     │
-       │                               retry? ──► executor ──► tools ──► responder
-       │                                     │
-       │                               ไม่ retry ──► responder
+       ├── เข้า guard เมื่อครบ 3 เงื่อนไข AND:
+       │     1. lastCommandedDevice != null (มีประวัติสั่งอุปกรณ์ใน session)
+       │     2. intent มี home_control
+       │     3. agent รอบนี้ไม่เรียก tool
        │
-       └── lastCommandedDevice == null ──► responder (AI ถาม user ก่อน)
+       │   guard ──► retry?  ──► executor ──► tools ──► responder
+       │             └─ ไม่ retry ──► responder
+       │
+       └── ไม่เข้าเงื่อนไข ──► responder
 
 responder ──► stream คำตอบ ──► END
 ```
+
+**Router — intent-based tool filtering**
+- จำแนกเจตนาผู้ใช้ก่อน agent ตัดสินใจ → agent มองเห็นเฉพาะ tool ที่เกี่ยวข้องกับเจตนานั้น (เช่น web_search ไม่โผล่เมื่อ user แค่สั่งเปิดไฟ)
+- ลด surface area ของการตัดสินใจ ทำให้ tool selection ของ small models แม่นขึ้น
 
 **Guard System — ป้องกัน hallucination**
 - `lastCommandedDevice` เก็บ device ล่าสุดที่ถูกสั่งใน session state (reset เมื่อล้างแชท)
@@ -134,6 +142,7 @@ responder ──► stream คำตอบ ──► END
 **Reflect — กัน tool loop ใน turn เดียวกัน**
 - คั่นระหว่าง `tools → agent`: สรุปว่า turn นี้เรียก tool อะไรไปบ้าง ได้ผลอะไร ข้อมูลพอตอบ user หรือยัง
 - Inject เป็น SystemMessage ให้ agent เห็นก่อนตัดสินใจรอบใหม่ → กันเคส agent วนเรียก tool เดิมแบบเปลี่ยน keyword หนี dedupe
+- กรอง remaining ที่พูดถึง device นอก KG ทิ้ง → กัน reflect หลอน device ที่ไม่มีจริง
 - Scope เฉพาะ turn ปัจจุบัน, ถูก filter ออกใน responder จึงไม่ leak เข้าคำตอบสุดท้าย
 
 ```
