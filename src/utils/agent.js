@@ -346,20 +346,6 @@ async function reflectNode(state) {
   }
   const userText = messages[start]?.content || '';
 
-  // ประวัติก่อน turn นี้: เอาเฉพาะ user + AI text (ตัด tool internals ออก ประหยัด token)
-  // เก็บ 6 entries ล่าสุด (~3 turn pair) — พอให้ resolve คำเช่น "ด้วย", "อันนั้น"
-  const historyBefore = [];
-  for (let i = 0; i < start; i++) {
-    const m = messages[i];
-    if (m instanceof HumanMessage) {
-      historyBefore.push(`user: ${m.content}`);
-    } else if (m instanceof AIMessage && !m.tool_calls?.length) {
-      const content = typeof m.content === 'string' ? m.content : '';
-      if (content) historyBefore.push(`assistant: ${content}`);
-    }
-  }
-  const recentHistory = historyBefore.slice(-6);
-
   // tool calls + results ใน turn ปัจจุบัน
   const idToCall = new Map();
   const calls = [];
@@ -390,7 +376,6 @@ async function reflectNode(state) {
   }));
 
   const input =
-    (recentHistory.length ? `[ประวัติ chat ล่าสุด]\n${recentHistory.join('\n')}\n\n` : '') +
     `[คำสั่ง user (turn นี้)]\n"${userText}"\n\n` +
     `[Tool ที่เรียกไปแล้วใน turn นี้]\n${callsText}`;
 
