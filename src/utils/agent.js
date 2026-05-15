@@ -124,9 +124,16 @@ const AgentState = Annotation.Root({
     reducer: (curr, next) => next,
     default: () => 0,
   }),
-  guardRetry: Annotation({
+  // guard verdict: pass | retry_tool | null (null = ยังไม่เคยตรวจ)
+  // ใช้เป็น flag ด้วย: ถ้า set แล้ว → ผ่าน guard มาแล้ว → responder ครั้งถัดไป stream ตรง
+  guardVerdict: Annotation({
     reducer: (_, next) => next,
-    default: () => false,
+    default: () => null,
+  }),
+  // buffer ของ responder ที่ยังไม่ stream ออก — guard ตรวจก่อน
+  responderBuffer: Annotation({
+    reducer: (_, next) => next,
+    default: () => null,
   }),
   postExecutor: Annotation({
     reducer: (_, next) => next,
@@ -429,96 +436,119 @@ async function reflectNode(state) {
 }
 
 // ── 6. Guard Node ────────────────────────────────────────────────────────────
-// หน้าที่เดียว: ตรวจว่า "ที่ agent บอกว่าทำแล้ว ทำจริงและตรงกับที่ user สั่งไหม?"
-// ดู 4 อย่าง: คำสั่ง user (turn นี้) + tool ล่าสุด + device ใน KG + draft text
-// ไม่ดู turn ก่อนๆ — agent เข้าใจ context history เองอยู่แล้ว
+// ย้ายมาหลัง responder — ตรวจข้อความที่ user จะเห็นจริง ๆ ไม่ใช่ draft ของ agent
+// Verdict 2 ทาง: pass | retry_tool
 
-const GUARD_PROMPT = `คุณคือ Guard — ตรวจว่า draft response ของ agent สอดคล้องกับสิ่งที่เกิดขึ้นจริงไหม
+const GUARD_PROMPT = `คุณคือ Guard — ตรวจว่า "ข้อความที่ responder จะส่งให้ user" สอดคล้องกับ "สิ่งที่ระบบทำจริง" หรือไม่
 
 [ข้อมูลที่คุณได้รับ]
-1. คำสั่ง user — สิ่งที่ user ต้องการใน turn นี้
-2. Tool ที่เรียกล่าสุด — tool และผลลัพธ์จริงที่ได้กลับมา
-3. Device ที่ถูกสั่ง — device ที่ถูก control และ state ปัจจุบันใน KG
-4. Draft response — สิ่งที่ agent กำลังจะตอบ user
+1. คำสั่ง user
+2. Tool calls ที่เรียกไปแล้วใน turn นี้
+3. Device ล่าสุดที่ถูกสั่ง + state ใน KG ปัจจุบัน
+4. Responder text — ข้อความที่ user จะเห็น
 
-[retry=true เมื่อ]
-- agent บอกว่าทำสำเร็จ แต่ไม่มี tool ถูกเรียกเลย
-- tool ที่เรียกหรือ device ที่สั่ง ไม่ตรงกับที่ user ขอ
-- tool ถูกเรียกแต่ได้ error กลับมา แต่ agent บอกว่าสำเร็จ
+[วิธีตรวจ — เลือก 1 ใน 2 ตามลักษณะ responder text]
 
-[retry=false เมื่อ]
-- tool ถูกเรียก, device ตรงคำสั่ง, และ agent รายงานตามผลจริง
-- user แค่ถามหรือสนทนา ไม่ได้สั่งให้ทำอะไร
+(A) Responder ระบุ device ชัดเจน เช่น "เปิดไฟห้องนั่งเล่นแล้ว", "ตั้งแอร์ที่ 23 องศา"
+    → เทียบกับ "Tool calls ใน turn นี้":
+      - tool ที่เรียก + args ตรงกับที่ responder อ้างไหม?
+      - ตรง → pass
+      - ไม่ตรง / ไม่มี tool ถูกเรียกเลย → retry_tool
 
-[output]
-- retry: true/false
-- reason: (เฉพาะ retry=true) บอกสั้นๆ ว่าควรเรียก tool อะไร กับ device ไหน`;
+(B) Responder กว้าง ๆ ไม่บอก device เช่น "จัดให้แล้วค่ะ", "เรียบร้อยแล้ว"
+    → เทียบกับ "lastCommandedDevice + KG state":
+      - lastCommandedDevice มี? KG state ตรงกับ payload ที่สั่งล่าสุดไหม?
+      - ตรง → pass
+      - lastCommandedDevice = null หรือ KG state ไม่ตรง → retry_tool
+
+[ตอบ JSON 2 field]
+- verdict: "pass" หรือ "retry_tool"
+- reason: ถ้า retry_tool → บอกสั้น ๆ ว่าควรเรียก tool อะไร กับ device ไหน (เพื่อให้ executor ใช้)
+          ถ้า pass → ""
+
+[หลักสำคัญ]
+- ถ้า user แค่ถาม/สนทนา ไม่ได้สั่ง action → pass (ไม่ต้องเช็ค)
+- ห้าม retry ถ้า responder รายงานตามผลจริง — แม้ผลจะเป็น error ก็ตาม`;
 
 async function guardNode(state) {
-  const { messages, settings, lastToolCall, lastCommandedDevice, signal } = state;
+  const { messages, settings, lastCommandedDevice, responderBuffer, signal } = state;
 
-  // 1. หา user message ล่าสุด (เฉพาะ turn นี้)
+  // 1. user message ล่าสุด
   let lastHumanIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
   }
   const userText = messages[lastHumanIdx]?.content || '';
 
-  // 2. หา draft message (AIMessage ตัวล่าสุดที่ไม่มี tool_calls)
-  const draftMsg = [...messages].reverse().find(
-    m => m instanceof AIMessage && !m.tool_calls?.length
-  );
-  const draftText = draftMsg?.content || '';
+  // 2. responder text ที่จะส่งให้ user (ของจริง)
+  const responderText = responderBuffer?.text || '';
 
-  // 3. สถานะ device ที่เพิ่งสั่ง (เทียบกับ KG ปัจจุบัน)
+  // 3. tool calls ทั้งหมดใน turn นี้ + ผลลัพธ์
+  const idToCall = new Map();
+  const calls = [];
+  for (let i = lastHumanIdx; i < messages.length; i++) {
+    const m = messages[i];
+    if (m instanceof AIMessage && m.tool_calls?.length) {
+      for (const tc of m.tool_calls) idToCall.set(tc.id, { name: tc.name, args: tc.args });
+    } else if (m instanceof ToolMessage) {
+      const meta = idToCall.get(m.tool_call_id);
+      if (meta) {
+        const content = typeof m.content === 'string' ? m.content : String(m.content);
+        calls.push({ ...meta, result: content.slice(0, 200) });
+      }
+    }
+  }
+  const toolSection = calls.length
+    ? calls.map((c, i) => `${i + 1}. ${c.name}(${JSON.stringify(c.args)}) → ${c.result}`).join('\n')
+    : 'ไม่มี tool ถูกเรียกใน turn นี้';
+
+  // 4. lastCommandedDevice + state ใน KG ปัจจุบัน
   const lcdSection = (() => {
     if (!lastCommandedDevice) return 'ยังไม่เคยมี device ถูกสั่งใน session นี้';
     const current = getDevices(state).find(d => d.topic === lastCommandedDevice.topic);
     const kgState = current ? describeDeviceState(current) : 'ไม่พบใน KG';
-    return `${lastCommandedDevice.name} (${lastCommandedDevice.room}) | payload ที่ส่ง: ${lastCommandedDevice.payload} | KG ตอนนี้: ${kgState}`;
+    return `${lastCommandedDevice.name} (${lastCommandedDevice.room}) | payload: ${lastCommandedDevice.payload} | KG ตอนนี้: ${kgState}`;
   })();
-
-  // 4. tool call ล่าสุด
-  const toolSection = lastToolCall
-    ? `${lastToolCall.name}(${JSON.stringify(lastToolCall.args)}) → ${JSON.stringify(lastToolCall.result).slice(0, 200)}`
-    : 'ไม่มี';
 
   const input =
     `[คำสั่ง user (turn นี้)]\n"${userText}"\n\n` +
-    `[Tool ที่เรียกล่าสุด]\n${toolSection}\n\n` +
-    `[Device ที่ถูกสั่ง]\n${lcdSection}\n\n` +
-    `[Draft response ของ agent]\n"${draftText}"`;
+    `[Tool calls ใน turn นี้]\n${toolSection}\n\n` +
+    `[Device ที่ถูกสั่งล่าสุด + state ปัจจุบัน]\n${lcdSection}\n\n` +
+    `[Responder text ที่จะส่งให้ user]\n"${responderText}"`;
 
   const llm = makeLLM(settings, {
     temperature: 0,
-    maxTokens: 80,
+    maxTokens: 100,
     structured: {
       type: 'object',
       properties: {
-        retry:  { type: 'boolean' },
-        reason: { type: 'string' },
+        verdict: { type: 'string', enum: ['pass', 'retry_tool'] },
+        reason:  { type: 'string' },
       },
-      required: ['retry', 'reason'],
+      required: ['verdict', 'reason'],
     },
   });
 
-  let retry = false, reason = '';
+  let verdict = 'pass', reason = '';
   try {
     const res = await llm.invoke(
       [new SystemMessage(GUARD_PROMPT), new HumanMessage(input)],
       { signal }
     );
-    retry  = res.retry  ?? false;
-    reason = res.reason ?? '';
+    verdict = res.verdict ?? 'pass';
+    reason  = res.reason  ?? '';
+    if (!['pass', 'retry_tool'].includes(verdict)) verdict = 'pass';
   } catch (err) {
-    // ถ้า guard พัง → ปล่อยผ่าน (ดีกว่า block user) แต่ log ไว้
     console.warn('[Guard] failed, passing through:', err?.message);
   }
 
-  return {
-    messages: retry ? [new SystemMessage(`[GUARD] ${reason} — กรุณาเรียก tool ให้ถูกต้อง`)] : [],
-    guardRetry: retry,
-  };
+  const update = { guardVerdict: verdict };
+
+  if (verdict === 'retry_tool') {
+    update.messages = [new SystemMessage(`[GUARD] ${reason} — กรุณาเรียก tool ให้ถูกต้อง`)];
+  }
+
+  return update;
 }
 
 // ── 7. Executor Node — รัน tool ตาม guard hint ───────────────────────────────
@@ -555,9 +585,9 @@ async function executorNode(state) {
 // ── 8. Responder Node — stream คำตอบสุดท้ายถึง user ──────────────────────────
 
 async function responderNode(state) {
-  const { messages, settings, signal, onStream } = state;
+  const { messages, settings, signal } = state;
 
-  // หา turn ปัจจุบัน + ตัด draft/[GUARD]/empty AI msgs ทิ้ง
+  // หา turn ปัจจุบัน + ตัด draft/empty AI msgs ทิ้ง
   let lastHumanIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i] instanceof HumanMessage) { lastHumanIdx = i; break; }
@@ -586,34 +616,50 @@ async function responderNode(state) {
     ...cleanTurnMsgs,
   ];
 
+  // เก็บลง buffer — ยังไม่ส่ง onStream (รอ guard ตรวจ)
   const stream = await llm.stream(fullMessages, { signal });
+  const chunks = [];
   let finalMsg;
   for await (const chunk of stream) {
-    if (chunk.content) onStream?.(chunk.content);
+    if (chunk.content) chunks.push(chunk.content);
     finalMsg = finalMsg ? finalMsg.concat(chunk) : chunk;
   }
 
-  return { messages: [finalMsg ?? new AIMessage('ขออภัยค่ะ เกิดข้อผิดพลาด')] };
+  return {
+    messages: [finalMsg ?? new AIMessage('ขออภัยค่ะ เกิดข้อผิดพลาด')],
+    responderBuffer: { chunks, text: chunks.join('') },
+  };
+}
+
+// ── 8.5 Stream Node — replay buffer ให้ user หลัง guard pass ─────────────────
+
+async function streamNode(state) {
+  const { responderBuffer, onStream, signal } = state;
+  if (!onStream || !responderBuffer?.chunks?.length) return {};
+
+  for (const chunk of responderBuffer.chunks) {
+    if (signal?.aborted) return {};
+    onStream(chunk);
+    // delay เล็กน้อยให้รู้สึกเหมือน stream ปกติ
+    await new Promise(r => setTimeout(r, 15));
+  }
+  return {};
 }
 
 // ── 9. Graph Routing ─────────────────────────────────────────────────────────
-// agent → tools (ถ้ามี tool_calls) → guard / responder
-//
-// Guard ทำงานเมื่อครบ 3 เงื่อนไข (AND):
-//   1. lastCommandedDevice != null — มีประวัติสั่งอุปกรณ์ (เก็บตลอด session)
-//   2. agent รอบนี้ไม่เรียก tool — implied จาก code path นี้
-//   3. intent มี home_control — บริบท user เป็นการสั่งอุปกรณ์
+// router → agent → tools/reflect (loop, max 3) → responder (buffered) → guard → stream/retry
+// guard ตรวจ "ข้อความที่ user จะเห็น" ตรง ๆ — ทำงานทุก turn ไม่มีเงื่อนไข
+// retry path bounded ด้วย guardRetryCount (max 2) กัน infinite loop
 
 function shouldContinue(state) {
   const lastMessage = state.messages[state.messages.length - 1];
   if (lastMessage.tool_calls?.length > 0) {
     if (state.toolRound >= 3) {
       console.warn("[Agent] Reached max tool rounds. Forcing exit.");
-      return END;
+      return "responder";
     }
 
     // Safety net: ถ้า tool_calls ทุกตัวเหมือนเป๊ะกับที่เคยเรียกใน turn นี้ → บังคับ responder
-    // กันเคสที่ reflect บอก continue แต่ agent ดื้อเรียก tool เดิม args เดิม
     const messages = state.messages;
     let turnStart = 0;
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -639,10 +685,12 @@ function shouldContinue(state) {
     return "tools";
   }
 
-  const deviceHasHistory = state.lastCommandedDevice != null;
-  const intentIsHomeControl = (state.intent || []).includes('home_control');
+  // ไม่มี tool_calls → ไป responder (guard ย้ายมาหลัง responder)
+  return "responder";
+}
 
-  return (deviceHasHistory && intentIsHomeControl) ? "guard" : "responder";
+function routeAfterGuard(state) {
+  return state.guardVerdict === "retry_tool" ? "executor" : "stream";
 }
 
 const workflow = new StateGraph(AgentState)
@@ -650,20 +698,24 @@ const workflow = new StateGraph(AgentState)
   .addNode("agent", agentNode)
   .addNode("tools", toolNode)
   .addNode("reflect", reflectNode)
+  .addNode("responder", responderNode)
   .addNode("guard", guardNode)
   .addNode("executor", executorNode)
-  .addNode("responder", responderNode)
+  .addNode("stream", streamNode)
   .addEdge(START, "router")
   .addEdge("router", "agent")
   .addConditionalEdges("agent", shouldContinue)
   .addConditionalEdges("tools", state => (state.postExecutor || state.reflectDone) ? "responder" : "reflect")
   .addConditionalEdges("reflect", state => state.reflectDone ? "responder" : "agent")
-  .addConditionalEdges("guard", state => state.guardRetry ? "executor" : "responder")
+  // responder → guard ครั้งแรกเท่านั้น (guardVerdict===null)
+  // ถ้าเคยผ่าน guard แล้ว (regen หลัง retry_tool ผ่าน executor) → stream ตรง ไม่เช็คซ้ำ
+  .addConditionalEdges("responder", state => state.guardVerdict ? "stream" : "guard")
+  .addConditionalEdges("guard", routeAfterGuard)
   .addConditionalEdges("executor", state => {
     const last = state.messages[state.messages.length - 1];
     return last?.tool_calls?.length > 0 ? "tools" : "responder";
   })
-  .addEdge("responder", END);
+  .addEdge("stream", END);
 
 const compiledGraph = workflow.compile();
 
@@ -694,6 +746,8 @@ export const runAgent = async (params) => {
     lastCommandedDevice: params.lastCommandedDevice ?? null,
     pendingTasks: '',
     reflectDone: false,
+    guardVerdict: null,
+    responderBuffer: null,
   });
 
   const lastMsg = finalState.messages[finalState.messages.length - 1];
