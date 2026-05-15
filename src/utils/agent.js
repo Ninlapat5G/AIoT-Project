@@ -124,7 +124,8 @@ const AgentState = Annotation.Root({
     reducer: (curr, next) => next,
     default: () => 0,
   }),
-  // guard verdict: pass | retry_tool | retry_text | null
+  // guard verdict: pass | retry_tool | retry_text | null (null = ยังไม่เคยตรวจ)
+  // ใช้เป็น flag ด้วย: ถ้า set แล้ว → ผ่าน guard มาแล้ว → responder ครั้งถัดไป stream ตรง
   guardVerdict: Annotation({
     reducer: (_, next) => next,
     default: () => null,
@@ -133,11 +134,6 @@ const AgentState = Annotation.Root({
   guardHintForResponder: Annotation({
     reducer: (_, next) => next,
     default: () => null,
-  }),
-  // นับรอบ retry รวม (ทั้ง retry_tool และ retry_text) — cap ที่ 2 กัน infinite loop
-  guardRetryCount: Annotation({
-    reducer: (_, next) => next,
-    default: () => 0,
   }),
   // buffer ของ responder ที่ยังไม่ stream ออก — guard ตรวจก่อน
   responderBuffer: Annotation({
@@ -548,10 +544,8 @@ async function guardNode(state) {
 
   if (verdict === 'retry_tool') {
     update.messages = [new SystemMessage(`[GUARD] ${reason} — กรุณาเรียก tool ให้ถูกต้อง`)];
-    update.guardRetryCount = (state.guardRetryCount || 0) + 1;
   } else if (verdict === 'retry_text') {
     update.guardHintForResponder = reason;
-    update.guardRetryCount = (state.guardRetryCount || 0) + 1;
     update.responderBuffer = null; // ล้าง buffer เก่า กัน stream ออก
   }
 
@@ -704,11 +698,6 @@ function shouldContinue(state) {
 }
 
 function routeAfterGuard(state) {
-  // hard cap: ถ้า retry ครบ 2 รอบแล้ว → stream ของ best-effort ออก ไม่วนต่อ
-  if ((state.guardRetryCount || 0) >= 2) {
-    console.warn('[Guard] retry budget exhausted — streaming best-effort');
-    return "stream";
-  }
   const v = state.guardVerdict;
   if (v === "retry_tool") return "executor";
   if (v === "retry_text") return "responder";
@@ -729,8 +718,9 @@ const workflow = new StateGraph(AgentState)
   .addConditionalEdges("agent", shouldContinue)
   .addConditionalEdges("tools", state => (state.postExecutor || state.reflectDone) ? "responder" : "reflect")
   .addConditionalEdges("reflect", state => state.reflectDone ? "responder" : "agent")
-  // responder → guard เสมอ (ตรวจทุก turn รวมเคสที่ agent ไม่เรียก tool แต่ responder หลอน)
-  .addEdge("responder", "guard")
+  // responder → guard ครั้งแรกเท่านั้น (guardVerdict===null)
+  // ถ้าเคยผ่าน guard แล้ว (regen หลัง retry_text/retry_tool) → stream ตรง ไม่เช็คซ้ำ
+  .addConditionalEdges("responder", state => state.guardVerdict ? "stream" : "guard")
   .addConditionalEdges("guard", routeAfterGuard)
   .addConditionalEdges("executor", state => {
     const last = state.messages[state.messages.length - 1];
@@ -769,7 +759,6 @@ export const runAgent = async (params) => {
     reflectDone: false,
     guardVerdict: null,
     guardHintForResponder: null,
-    guardRetryCount: 0,
     responderBuffer: null,
   });
 
