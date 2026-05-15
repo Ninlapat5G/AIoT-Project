@@ -124,14 +124,9 @@ const AgentState = Annotation.Root({
     reducer: (curr, next) => next,
     default: () => 0,
   }),
-  // guard verdict: pass | retry_tool | retry_text | null (null = ยังไม่เคยตรวจ)
+  // guard verdict: pass | retry_tool | null (null = ยังไม่เคยตรวจ)
   // ใช้เป็น flag ด้วย: ถ้า set แล้ว → ผ่าน guard มาแล้ว → responder ครั้งถัดไป stream ตรง
   guardVerdict: Annotation({
-    reducer: (_, next) => next,
-    default: () => null,
-  }),
-  // hint จาก guard ส่งเข้า responder ตอน regen (กรณี retry_text)
-  guardHintForResponder: Annotation({
     reducer: (_, next) => next,
     default: () => null,
   }),
@@ -442,31 +437,38 @@ async function reflectNode(state) {
 
 // ── 6. Guard Node ────────────────────────────────────────────────────────────
 // ย้ายมาหลัง responder — ตรวจข้อความที่ user จะเห็นจริง ๆ ไม่ใช่ draft ของ agent
-// Verdict 3 ทาง: pass | retry_tool | retry_text
+// Verdict 2 ทาง: pass | retry_tool
 
 const GUARD_PROMPT = `คุณคือ Guard — ตรวจว่า "ข้อความที่ responder จะส่งให้ user" สอดคล้องกับ "สิ่งที่ระบบทำจริง" หรือไม่
 
 [ข้อมูลที่คุณได้รับ]
 1. คำสั่ง user
-2. Tool calls ที่เรียกไปแล้ว + ผลลัพธ์จริง
-3. Device states ใน KG ปัจจุบัน
+2. Tool calls ที่เรียกไปแล้วใน turn นี้
+3. Device ล่าสุดที่ถูกสั่ง + state ใน KG ปัจจุบัน
 4. Responder text — ข้อความที่ user จะเห็น
 
-[ตอบ JSON 2 field]
-- verdict:
-  • "pass"        = responder text ตรงกับสิ่งที่เกิดขึ้นจริง (หรือเป็นแค่สนทนา ไม่ได้อ้างทำอะไร)
-  • "retry_tool"  = responder อ้างทำ action แต่ tool ไม่ได้เรียก หรือเรียกผิด device → ต้องสั่ง tool ใหม่
-  • "retry_text"  = tool ทำงานถูกต้องแล้ว แต่ responder รายงานผิด (เช่น tool success แต่ responder บอก "ไม่สำเร็จ", หรือ tool คืนข้อมูล แต่ responder ปฏิเสธว่าไม่รู้) → แค่ regen ข้อความ ไม่ต้องเรียก tool
+[วิธีตรวจ — เลือก 1 ใน 2 ตามลักษณะ responder text]
 
-- reason: 1 ประโยคสั้น
-  • retry_tool → บอกว่าควรเรียก tool อะไร กับ device ไหน
-  • retry_text → บอกว่า responder ผิดตรงไหน
-  • pass → ""
+(A) Responder ระบุ device ชัดเจน เช่น "เปิดไฟห้องนั่งเล่นแล้ว", "ตั้งแอร์ที่ 23 องศา"
+    → เทียบกับ "Tool calls ใน turn นี้":
+      - tool ที่เรียก + args ตรงกับที่ responder อ้างไหม?
+      - ตรง → pass
+      - ไม่ตรง / ไม่มี tool ถูกเรียกเลย → retry_tool
+
+(B) Responder กว้าง ๆ ไม่บอก device เช่น "จัดให้แล้วค่ะ", "เรียบร้อยแล้ว"
+    → เทียบกับ "lastCommandedDevice + KG state":
+      - lastCommandedDevice มี? KG state ตรงกับ payload ที่สั่งล่าสุดไหม?
+      - ตรง → pass
+      - lastCommandedDevice = null หรือ KG state ไม่ตรง → retry_tool
+
+[ตอบ JSON 2 field]
+- verdict: "pass" หรือ "retry_tool"
+- reason: ถ้า retry_tool → บอกสั้น ๆ ว่าควรเรียก tool อะไร กับ device ไหน (เพื่อให้ executor ใช้)
+          ถ้า pass → ""
 
 [หลักสำคัญ]
-- ถ้า user แค่ถาม/สนทนาและ responder ตอบตามข้อมูลที่มี → pass
-- ถ้า tool result มี success=true ครอบคลุมคำสั่ง user แล้ว แต่ responder บอกไม่สำเร็จ → retry_text
-- ถ้า user สั่งให้ทำ action แต่ไม่มี tool ถูกเรียกเลย → retry_tool`;
+- ถ้า user แค่ถาม/สนทนา ไม่ได้สั่ง action → pass (ไม่ต้องเช็ค)
+- ห้าม retry ถ้า responder รายงานตามผลจริง — แม้ผลจะเป็น error ก็ตาม`;
 
 async function guardNode(state) {
   const { messages, settings, lastCommandedDevice, responderBuffer, signal } = state;
@@ -516,11 +518,11 @@ async function guardNode(state) {
 
   const llm = makeLLM(settings, {
     temperature: 0,
-    maxTokens: 120,
+    maxTokens: 100,
     structured: {
       type: 'object',
       properties: {
-        verdict: { type: 'string', enum: ['pass', 'retry_tool', 'retry_text'] },
+        verdict: { type: 'string', enum: ['pass', 'retry_tool'] },
         reason:  { type: 'string' },
       },
       required: ['verdict', 'reason'],
@@ -535,7 +537,7 @@ async function guardNode(state) {
     );
     verdict = res.verdict ?? 'pass';
     reason  = res.reason  ?? '';
-    if (!['pass', 'retry_tool', 'retry_text'].includes(verdict)) verdict = 'pass';
+    if (!['pass', 'retry_tool'].includes(verdict)) verdict = 'pass';
   } catch (err) {
     console.warn('[Guard] failed, passing through:', err?.message);
   }
@@ -544,9 +546,6 @@ async function guardNode(state) {
 
   if (verdict === 'retry_tool') {
     update.messages = [new SystemMessage(`[GUARD] ${reason} — กรุณาเรียก tool ให้ถูกต้อง`)];
-  } else if (verdict === 'retry_text') {
-    update.guardHintForResponder = reason;
-    update.responderBuffer = null; // ล้าง buffer เก่า กัน stream ออก
   }
 
   return update;
@@ -586,7 +585,7 @@ async function executorNode(state) {
 // ── 8. Responder Node — stream คำตอบสุดท้ายถึง user ──────────────────────────
 
 async function responderNode(state) {
-  const { messages, settings, signal, guardHintForResponder } = state;
+  const { messages, settings, signal } = state;
 
   // หา turn ปัจจุบัน + ตัด draft/empty AI msgs ทิ้ง
   let lastHumanIdx = -1;
@@ -608,16 +607,10 @@ async function responderNode(state) {
       (m instanceof AIMessage && !m.tool_calls?.length && String(m.content).length > 0)
     );
 
-  // ตอน regen (guard บอก retry_text) — inject hint ให้ responder รู้ว่าตอบผิดตรงไหน
-  const personaBase = settings.systemPrompt || 'You are a helpful smart home assistant.';
-  const personaText = guardHintForResponder
-    ? `${personaBase}\n\n[คำเตือนจาก guard] ครั้งก่อนคุณตอบไม่ตรงกับสิ่งที่ระบบทำจริง: ${guardHintForResponder}\nกรุณาตอบใหม่ให้ตรงกับ tool results ที่ได้รับ ห้ามปฏิเสธว่าไม่รู้ถ้า tool คืนข้อมูลมาแล้ว`
-    : personaBase;
-
   const llm = makeLLM(settings, { temperature: 0.3 });
 
   const fullMessages = [
-    new SystemMessage(personaText),
+    new SystemMessage(settings.systemPrompt || 'You are a helpful smart home assistant.'),
     kgMessage(state),
     ...cleanHistory,
     ...cleanTurnMsgs,
@@ -635,7 +628,6 @@ async function responderNode(state) {
   return {
     messages: [finalMsg ?? new AIMessage('ขออภัยค่ะ เกิดข้อผิดพลาด')],
     responderBuffer: { chunks, text: chunks.join('') },
-    guardHintForResponder: null, // ล้าง hint หลังใช้แล้ว
   };
 }
 
@@ -698,10 +690,7 @@ function shouldContinue(state) {
 }
 
 function routeAfterGuard(state) {
-  const v = state.guardVerdict;
-  if (v === "retry_tool") return "executor";
-  if (v === "retry_text") return "responder";
-  return "stream"; // pass หรือ unknown
+  return state.guardVerdict === "retry_tool" ? "executor" : "stream";
 }
 
 const workflow = new StateGraph(AgentState)
@@ -719,7 +708,7 @@ const workflow = new StateGraph(AgentState)
   .addConditionalEdges("tools", state => (state.postExecutor || state.reflectDone) ? "responder" : "reflect")
   .addConditionalEdges("reflect", state => state.reflectDone ? "responder" : "agent")
   // responder → guard ครั้งแรกเท่านั้น (guardVerdict===null)
-  // ถ้าเคยผ่าน guard แล้ว (regen หลัง retry_text/retry_tool) → stream ตรง ไม่เช็คซ้ำ
+  // ถ้าเคยผ่าน guard แล้ว (regen หลัง retry_tool ผ่าน executor) → stream ตรง ไม่เช็คซ้ำ
   .addConditionalEdges("responder", state => state.guardVerdict ? "stream" : "guard")
   .addConditionalEdges("guard", routeAfterGuard)
   .addConditionalEdges("executor", state => {
@@ -758,7 +747,6 @@ export const runAgent = async (params) => {
     pendingTasks: '',
     reflectDone: false,
     guardVerdict: null,
-    guardHintForResponder: null,
     responderBuffer: null,
   });
 
