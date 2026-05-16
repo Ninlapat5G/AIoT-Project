@@ -65,7 +65,7 @@ export default function ChatPage({
 
   const hasLivePlan = livePlan?.steps?.length > 0
 
-  // 🛑 1. สร้าง Stable Keys ให้ข้อความ เพื่อป้องกัน React รีเมาท์ Component แล้วแอนิเมชันเล่นซ้ำ
+  // 🛑 1. สร้าง Stable Keys ให้ทุกข้อความ เพื่อให้ React จำตำแหน่งได้แม่นยำ
   let uCount = 0, pCount = 0, aCount = 0;
   const stableMessages = messages.map(m => {
     let key = '';
@@ -75,7 +75,9 @@ export default function ChatPage({
     return { ...m, _key: key };
   });
 
-  const isStreaming = stableMessages.some(m => m.streaming);
+  // 🛑 2. แยกก้อนข้อความตามสถานะ
+  const completedMsgs = stableMessages.filter(m => !m.streaming)
+  const streamingMsg = stableMessages.find(m => m.streaming)
 
   return (
     <div className="sh-chatpage">
@@ -113,56 +115,65 @@ export default function ChatPage({
             <>
               <div className="sh-side-timestamp mono">— บทสนทนา —</div>
               
-              {stableMessages.map((m) => (
-                <div key={m._key + '-wrap'} style={{ display: 'contents' }}>
-                  {/* 🛑 2. แทรก Tool Pill สด (Live Plan) ไว้ก่อนข้อความ AI ที่กำลังพ่น */}
-                  {m.streaming && hasLivePlan && (
-                    <div style={{ marginBottom: '8px' }}>
-                      {showToolDetails ? (
-                        <PlanCard plan={livePlan} statuses={liveStatuses} labelOf={labelOfStep} />
-                      ) : (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {livePlan.steps.map((step, i) => {
-                            const s = liveStatuses[i]
-                            if (!s || s.status === 'pending') return null
-                            return <StepChip key={i} label={labelOfStep(step)} status={s.status} />
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <ChatBubble
-                    key={m._key}
-                    msg={m}
-                    assistantName={assistantName}
-                    showToolDetails={showToolDetails}
-                    labelOfStep={labelOfStep}
-                  />
-                </div>
+              {/* 🛑 เลเยอร์ที่ 1: วาดข้อความที่เสร็จสมบูรณ์แล้ว */}
+              {completedMsgs.map((m) => (
+                <ChatBubble
+                  key={m._key}
+                  msg={m}
+                  assistantName={assistantName}
+                  showToolDetails={showToolDetails}
+                  labelOfStep={labelOfStep}
+                />
               ))}
             </>
           )}
 
-          {/* 🛑 3. กรณีมี Live Plan วิ่งอยู่ แต่ AI ยังไม่เริ่มสตรีมข้อความตอบกลับ */}
-          {!isStreaming && hasLivePlan && (
-            <div style={{ marginBottom: '8px' }}>
-              {showToolDetails ? (
-                <PlanCard plan={livePlan} statuses={liveStatuses} labelOf={labelOfStep} />
-              ) : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {livePlan.steps.map((step, i) => {
-                    const s = liveStatuses[i]
-                    if (!s || s.status === 'pending') return null
-                    return <StepChip key={i} label={labelOfStep(step)} status={s.status} />
-                  })}
-                </div>
-              )}
-            </div>
+          {/* 🛑 เลเยอร์ที่ 2: วาด Tool Pill ยึดตำแหน่งนี้ไว้จุดเดียวตายตัว! จะได้ไม่กระตุกเวลามีข้อความใหม่มาต่อท้าย */}
+          <AnimatePresence>
+            {hasLivePlan && showToolDetails && (
+              <PlanCard
+                key="live-plan"
+                plan={livePlan}
+                statuses={liveStatuses}
+                labelOf={labelOfStep}
+              />
+            )}
+            {hasLivePlan && !showToolDetails && (
+              <motion.div 
+                key="live-chips" 
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}
+              >
+                {livePlan.steps.map((step, i) => {
+                  const s = liveStatuses[i]
+                  if (!s || s.status === 'pending') return null
+                  return (
+                    <StepChip
+                      key={i}
+                      label={labelOfStep(step)}
+                      status={s.status}
+                    />
+                  )
+                })}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* 🛑 เลเยอร์ที่ 3: ข้อความที่กำลังพิมพ์ จะโผล่มาดัน Tool Pill ขึ้นไปเนียนๆ */}
+          {streamingMsg && (
+            <ChatBubble
+              key={streamingMsg._key}
+              msg={streamingMsg}
+              assistantName={assistantName}
+              showToolDetails={showToolDetails}
+              labelOfStep={labelOfStep}
+            />
           )}
 
           <AnimatePresence>
-            {thinking && !hasLivePlan && !isStreaming && <TypingBubble key="typing" assistantName={assistantName} />}
+            {thinking && !hasLivePlan && !streamingMsg && <TypingBubble key="typing" assistantName={assistantName} />}
           </AnimatePresence>
         </div>
 
