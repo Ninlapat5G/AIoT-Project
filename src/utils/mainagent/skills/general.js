@@ -1,4 +1,4 @@
-// general — คุยเล่น/ทักทาย/ถาม clarify
+// general — สนทนาทั่วไป/ทักทาย/ถาม clarify
 // step ที่ออกมาในรอบนี้ทั้งหมดเป็น general → graph จะไป chat node แทน
 // ไม่ได้เป็น "tool" ที่ execute จริง — handler แค่ส่ง response string คืน
 
@@ -6,7 +6,7 @@ export const general = {
   type: 'general',
   requiresSkill: null,  // ไม่ต้องเปิด skill ใน settings
 
-  planPrompt: `general — สำหรับคุยเล่น ทักทาย หรือถามเพื่อขอข้อมูลเพิ่ม
+  planPrompt: `general — สำหรับสนทนาทั่วไป ทักทาย หรือถามเพื่อขอข้อมูลเพิ่ม
 **สำคัญมาก:** ถ้าข้อมูลยังไม่ครบที่จะทำงาน (เช่น สั่ง "เปิดแอร์" แต่ไม่บอกอุณหภูมิ) ให้ใช้ general เพื่อถามว่า "จะให้ตั้งกี่องศาดีคะ?" อย่าเพิ่งเรียก home_control จนกว่าข้อมูลจะครบพร้อมทำ`,
 
   example: `{"type": "general", "response": "คำตอบหรือคำถาม clarify สั้นๆ"}`,
@@ -16,11 +16,11 @@ export const general = {
   async execute(step) {
     return {
       ok: true,
-      summary: `ข้อมูลทั่วไป/คุยเล่น: ${step.response || ''}`,
+      summary: `สนทนาทั่วไป: ${step.response || ''}`,
     }
   },
 
-  label(step) {
-    return step.response ? `คุยเล่น: ${step.response.slice(0, 40)}` : 'คุยเล่น'
+  label() {
+    return 'สนทนาทั่วไป'
   },
 }
