@@ -63,21 +63,82 @@ export default function ChatPage({
     }
   };
 
-  const hasLivePlan = livePlan?.steps?.length > 0
+  const hasLivePlan = livePlan?.steps?.length > 0;
 
-  // 🛑 1. สร้าง Stable Keys ให้ทุกข้อความ เพื่อให้ React จำตำแหน่งได้แม่นยำ
-  let uCount = 0, pCount = 0, aCount = 0;
-  const stableMessages = messages.map(m => {
-    let key = '';
-    if (m.role === 'user') key = `u-${++uCount}`;
-    else if (m.role === 'plan') key = `p-${++pCount}`;
-    else if (m.role === 'ai') key = `a-${++aCount}`;
-    return { ...m, _key: key };
+  // 🛑 The Holy Grail Fix: สร้าง Array เส้นตรงเส้นเดียว ไม่ให้ React สับสน!
+  const chatElements = [];
+
+  messages.forEach((m, i) => {
+    const isLastMessage = i === messages.length - 1;
+    const isAiMessage = m.role !== 'user';
+
+    // 1. ถ้าถึงคิวข้อความ AI ล่าสุด แล้วมี Tool ทำงานอยู่ ให้เอา Tool Pill มา "แทรกดักหน้า" ไว้
+    if (isLastMessage && isAiMessage && hasLivePlan) {
+      chatElements.push(
+        <AnimatePresence key="live-plan-presence">
+          <motion.div
+            key="live-plan"
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            style={{ marginBottom: 8 }}
+          >
+            {showToolDetails ? (
+              <PlanCard plan={livePlan} statuses={liveStatuses} labelOf={labelOfStep} />
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {livePlan.steps.map((step, idx) => {
+                  const s = liveStatuses[idx]
+                  if (!s || s.status === 'pending') return null
+                  return <StepChip key={idx} label={labelOfStep(step)} status={s.status} />
+                })}
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      );
+    }
+
+    // 2. วาดกล่องข้อความตามปกติ (Key ไม่เปลี่ยน ข้อความจะไม่กระตุก 100%)
+    chatElements.push(
+      <ChatBubble
+        key={`msg-${i}`}
+        msg={m}
+        assistantName={assistantName}
+        showToolDetails={showToolDetails}
+        labelOfStep={labelOfStep}
+      />
+    );
   });
 
-  // 🛑 2. แยกก้อนข้อความตามสถานะ
-  const completedMsgs = stableMessages.filter(m => !m.streaming)
-  const streamingMsg = stableMessages.find(m => m.streaming)
+  // 3. กรณีมี Tool ทำงาน แต่ AI ยังไม่เริ่มตอบ (เช่น Tool รันนาน) ให้เอา Tool Pill ไปห้อยไว้ล่างสุดชั่วคราว
+  const noAiMessageYet = messages.length === 0 || messages[messages.length - 1].role === 'user';
+  
+  if (hasLivePlan && noAiMessageYet) {
+    chatElements.push(
+      <AnimatePresence key="live-plan-presence-bottom">
+        <motion.div
+          key="live-plan"
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          style={{ marginBottom: 8 }}
+        >
+          {showToolDetails ? (
+            <PlanCard plan={livePlan} statuses={liveStatuses} labelOf={labelOfStep} />
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {livePlan.steps.map((step, idx) => {
+                const s = liveStatuses[idx]
+                if (!s || s.status === 'pending') return null
+                return <StepChip key={idx} label={labelOfStep(step)} status={s.status} />
+              })}
+            </div>
+          )}
+        </motion.div>
+      </AnimatePresence>
+    );
+  }
 
   return (
     <div className="sh-chatpage">
@@ -105,7 +166,7 @@ export default function ChatPage({
 
         {/* Message list */}
         <div className="sh-side-scroll" ref={scrollRef}>
-          {stableMessages.length === 0 ? (
+          {messages.length === 0 ? (
             <div className="sh-chat-empty">
               <Icon name="sparkle" size={28} />
               <p>เริ่มต้นบทสนทนาใหม่</p>
@@ -115,65 +176,13 @@ export default function ChatPage({
             <>
               <div className="sh-side-timestamp mono">— บทสนทนา —</div>
               
-              {/* 🛑 เลเยอร์ที่ 1: วาดข้อความที่เสร็จสมบูรณ์แล้ว */}
-              {completedMsgs.map((m) => (
-                <ChatBubble
-                  key={m._key}
-                  msg={m}
-                  assistantName={assistantName}
-                  showToolDetails={showToolDetails}
-                  labelOfStep={labelOfStep}
-                />
-              ))}
+              {/* 🛑 ดึง Array ที่จัดเรียงเสร็จแล้วมาใช้ตรงๆ ไม่มีแบ่งแยก! */}
+              {chatElements}
             </>
           )}
 
-          {/* 🛑 เลเยอร์ที่ 2: วาด Tool Pill ยึดตำแหน่งนี้ไว้จุดเดียวตายตัว! จะได้ไม่กระตุกเวลามีข้อความใหม่มาต่อท้าย */}
           <AnimatePresence>
-            {hasLivePlan && showToolDetails && (
-              <PlanCard
-                key="live-plan"
-                plan={livePlan}
-                statuses={liveStatuses}
-                labelOf={labelOfStep}
-              />
-            )}
-            {hasLivePlan && !showToolDetails && (
-              <motion.div 
-                key="live-chips" 
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}
-              >
-                {livePlan.steps.map((step, i) => {
-                  const s = liveStatuses[i]
-                  if (!s || s.status === 'pending') return null
-                  return (
-                    <StepChip
-                      key={i}
-                      label={labelOfStep(step)}
-                      status={s.status}
-                    />
-                  )
-                })}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* 🛑 เลเยอร์ที่ 3: ข้อความที่กำลังพิมพ์ จะโผล่มาดัน Tool Pill ขึ้นไปเนียนๆ */}
-          {streamingMsg && (
-            <ChatBubble
-              key={streamingMsg._key}
-              msg={streamingMsg}
-              assistantName={assistantName}
-              showToolDetails={showToolDetails}
-              labelOfStep={labelOfStep}
-            />
-          )}
-
-          <AnimatePresence>
-            {thinking && !hasLivePlan && !streamingMsg && <TypingBubble key="typing" assistantName={assistantName} />}
+            {thinking && !hasLivePlan && noAiMessageYet && <TypingBubble key="typing" assistantName={assistantName} />}
           </AnimatePresence>
         </div>
 
