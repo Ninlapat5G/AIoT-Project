@@ -1,7 +1,11 @@
 import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
 import { makeLLM } from './llmFactory'
 
-const SUMMARIZER_PROMPT = `สรุปสิ่งที่ทำสำเร็จแล้วเป็น bullet สั้นๆ เน้นแค่ข้อมูลเนื้อๆ ไม่ต้องแต่งประโยคสวยงาม ไม่ต้องมีอารมณ์ความรู้สึก เช่น '- ปิดไฟห้องนั่งเล่นแล้ว' (ข้ามคำสั่งสุดท้ายที่ user เพิ่งพิมพ์มา ไม่ต้องเอามาสรุป)`
+const SUMMARIZER_PROMPT = `ย่อบทสนทนาด้านล่างเป็น bullet สั้นๆ เนื้อล้วน — ครอบคลุมทั้งสิ่งที่ทำสำเร็จ คำถามที่ถามค้างไว้ และคำตอบของ user เช่น
+- user สั่งเปิดแอร์ → ระบบถามว่าให้ตั้งกี่องศา
+- user บอก 25 องศา → ระบบตั้งแอร์ 25 องศาแล้ว
+- user ถาม "พรุ่งนี้ฝนตกมั้ย" → ระบบหาข้อมูลพยากรณ์ให้แล้ว
+ไม่ต้องแต่งประโยค ไม่ต้องมีอารมณ์ — เอาแค่เนื้อหาสำคัญที่ต้องจำ (ข้ามข้อความสุดท้ายของ user ออก ไม่ต้องเอามาสรุป)`
 
 // บีบ history ทั้งหมดยกเว้น user message ล่าสุด เป็น bullet summary
 // คืน [HumanMessage(summary), lastUserMsg]
@@ -25,7 +29,7 @@ export async function summarizeHistory(messages, settings, signal) {
     const summary = String(res.content || '').trim()
     console.log(`  [Summarizer] compressed ${messages.length - 1} msgs → ${summary.length} chars`)
     return [
-      new HumanMessage(`[ประวัติการสนทนา — action เหล่านี้ทำเสร็จแล้ว อย่านำมาสร้างใน plan ใหม่]\n${summary}`),
+      new HumanMessage(`[ประวัติการสนทนาก่อนหน้า]\n${summary}`),
       messages[messages.length - 1],
     ]
   } catch (err) {
