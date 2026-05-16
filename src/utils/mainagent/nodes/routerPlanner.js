@@ -44,7 +44,9 @@ export async function routerPlannerNode(state) {
   const systemPrompt = buildSystemPrompt(settings, devices)
   const llm = makeLLM(settings, { temperature: 0, maxTokens: 600 })
 
-  const msgsToUse = messages.length > 1
+  // บีบ history เฉพาะตอน convo ยาวจริงๆ (>10 msgs) — สั้นกว่านั้นใช้ full history
+  // เพื่อให้ planner เห็น clarify question + user reply ครบ
+  const msgsToUse = messages.length > 10
     ? await summarizeHistory(messages, settings, signal)
     : messages
 

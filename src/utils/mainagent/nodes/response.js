@@ -45,7 +45,7 @@ export async function responseNode(state) {
   const ctxText = buildContext(state)
 
   const llm = makeLLM(settings, { temperature: 0.3 })
-  const msgsCtx = messages.length > 1
+  const msgsCtx = messages.length > 10
     ? await summarizeHistory(messages, settings, signal)
     : messages
 
