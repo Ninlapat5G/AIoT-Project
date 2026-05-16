@@ -52,7 +52,12 @@ function routeAfterRouter(state) {
 async function announcePlan(state) {
   const { plan, needs_clarify, onPlanReady } = state
   if (!needs_clarify && plan?.steps?.length) {
-    onPlanReady?.(plan)
+    // 🛑 เช็คว่าถ้ามีแค่ tool 'general' อย่างเดียว (คุยเล่น) ไม่ต้องส่งไปวาด Tool Pill
+    const isOnlyGeneral = plan.steps.every(s => s.type === 'general')
+    
+    if (!isOnlyGeneral) {
+      onPlanReady?.(plan)
+    }
   }
   return {}
 }

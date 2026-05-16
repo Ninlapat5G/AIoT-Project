@@ -65,7 +65,7 @@ export default function ChatPage({
 
   const hasLivePlan = livePlan?.steps?.length > 0
 
-  // 🛑 แยกข้อความที่เสร็จแล้ว กับ ข้อความที่กำลังพิมพ์ (Streaming) ออกจากกัน
+  // 🛑 FILTER LOGIC: แยกข้อความที่เสร็จแล้ว กับ ข้อความที่กำลังพ่น (Streaming) ออกจากกัน
   const completedMsgs = messages.filter(m => !m.streaming)
   const streamingMsg = messages.find(m => m.streaming)
 
@@ -104,10 +104,11 @@ export default function ChatPage({
           ) : (
             <>
               <div className="sh-side-timestamp mono">— บทสนทนา —</div>
-              {/* 🛑 แสดงเฉพาะข้อความที่เสร็จสมบูรณ์แล้วไว้ด้านบนสุด */}
+              
+              {/* 1. วาดเฉพาะข้อความที่เสร็จสมบูรณ์แล้วไว้ด้านบนสุด */}
               {completedMsgs.map((m, i) => (
                 <ChatBubble
-                  key={i}
+                  key={`completed-${i}`}
                   msg={m}
                   assistantName={assistantName}
                   showToolDetails={showToolDetails}
@@ -117,7 +118,7 @@ export default function ChatPage({
             </>
           )}
 
-          {/* 🛑 แสดง Tool Pill ไว้ตรงกลาง (หลังข้อความเก่า แต่ก่อนข้อความที่กำลังสตรีม) */}
+          {/* 2. แทรก Tool Pill ไว้ตรงกลาง (ให้เริ่มแสดงทันทีที่ Graph วาง Plan เสร็จ) */}
           <AnimatePresence>
             {hasLivePlan && showToolDetails && (
               <PlanCard
@@ -144,9 +145,10 @@ export default function ChatPage({
             )}
           </AnimatePresence>
 
-          {/* 🛑 แสดงข้อความที่กำลังพิมพ์ (Streaming) ไว้ล่างสุดเสมอ */}
+          {/* 3. ข้อความที่กำลังสตรีมอยู่ จะถูกวาดไว้ล่างสุดเสมอ (ใต้ Tool Pill) */}
           {streamingMsg && (
             <ChatBubble
+              key="streaming"
               msg={streamingMsg}
               assistantName={assistantName}
               showToolDetails={showToolDetails}
@@ -154,6 +156,7 @@ export default function ChatPage({
             />
           )}
 
+          {/* 4. กล่อง Typing สำหรับจังหวะกำลังคิด */}
           <AnimatePresence>
             {thinking && !hasLivePlan && !streamingMsg && <TypingBubble key="typing" assistantName={assistantName} />}
           </AnimatePresence>
@@ -214,15 +217,15 @@ export default function ChatPage({
                 <Icon name="x" size={15} />
               </motion.button>
             ) : (
-              <motion.button
-                type="submit"
-                className="sh-send"
-                disabled={!draft.trim()}
-                whileTap={{ scale: 0.9 }}
-                whileHover={{ scale: 1.05 }}
-              >
-                <Icon name="send" size={15} />
-              </motion.button>
+            <motion.button
+              type="submit"
+              className="sh-send"
+              disabled={!draft.trim()}
+              whileTap={{ scale: 0.9 }}
+              whileHover={{ scale: 1.05 }}
+            >
+              <Icon name="send" size={15} />
+            </motion.button>
             )}
           </div>
           <div className="sh-composer-hints mono">
