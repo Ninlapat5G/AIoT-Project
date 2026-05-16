@@ -2,7 +2,6 @@ import { useState, useCallback, useRef } from 'react'
 import { runAgent } from '../utils/mainagent/agent'
 import { SKILLS } from '../utils/mainagent/skills'
 
-// helper: หา label ของ step สำหรับ UI
 function labelOfStep(step) {
   const skill = SKILLS[step?.type]
   if (skill?.label) {
@@ -18,12 +17,12 @@ export function useChat({
   const [messages, setMessages]     = useState([])
   const [apiHistory, setApiHistory] = useState([])
   const [thinking, setThinking]     = useState(false)
-  const [livePlan, setLivePlan]     = useState(null)     // {steps}
-  const [liveStatuses, setLiveStatuses] = useState([])   // [{status, summary}]
+  
+  // เก็บ livePlan ไว้ให้ UI ใช้เช็คปุ่ม Stop (X) แต่เราจะไม่เอามันไปวาดแยกซ้อนทับแล้ว
+  const [livePlan, setLivePlan]     = useState(null)     
+  const [liveStatuses, setLiveStatuses] = useState([])   
 
   const abortControllerRef = useRef(null)
-  const livePlanSnapshot = useRef({ plan: null, statuses: [] })
-  livePlanSnapshot.current = { plan: livePlan, statuses: liveStatuses }
   const lastCommandRef = useRef(null)
 
   const stopChat = useCallback(() => {
@@ -37,12 +36,14 @@ export function useChat({
   }, [])
 
   const sendMessage = useCallback(async text => {
-    setMessages(prev => [...prev, { role: 'user', text }])
+    const userMsgId = 'u-' + Date.now()
+    setMessages(prev => [...prev, { _id: userMsgId, role: 'user', text }])
     setThinking(true)
     setLivePlan(null)
     setLiveStatuses([])
 
     abortControllerRef.current = new AbortController()
+    const planMsgId = 'p-' + Date.now()
 
     try {
       const { reply, lastCommand } = await runAgent({
@@ -61,20 +62,32 @@ export function useChat({
         onPlanReady: (plan) => {
           setThinking(false)
           setLivePlan(plan)
-          setLiveStatuses(plan.steps.map(() => ({ status: 'pending' })))
+          const initStatuses = plan.steps.map(() => ({ status: 'pending' }))
+          setLiveStatuses(initStatuses)
+          
+          // 🛑 1. ยัด Tool Pill ลงในประวัติแชทตั้งแต่วินาทีแรก! ไม่มีร่างจำแลงอีกต่อไป!
+          setMessages(prev => [
+            ...prev,
+            { _id: planMsgId, role: 'plan', plan, statuses: initStatuses }
+          ])
         },
 
         onStepStart: (index) => {
-          setLiveStatuses(prev => prev.map((s, i) =>
-            i === index ? { ...s, status: 'running' } : s
+          setLiveStatuses(prev => prev.map((s, i) => i === index ? { ...s, status: 'running' } : s))
+          // 🛑 2. อัปเดตสถานะ Tool ในประวัติแชทแบบ Real-time
+          setMessages(prev => prev.map(m => 
+            m._id === planMsgId 
+              ? { ...m, statuses: m.statuses.map((s, i) => i === index ? { ...s, status: 'running' } : s) }
+              : m
           ))
         },
 
         onStepResult: (index, result) => {
-          setLiveStatuses(prev => prev.map((s, i) =>
-            i === index
-              ? { status: result.ok ? 'ok' : 'fail', summary: result.summary || '' }
-              : s
+          setLiveStatuses(prev => prev.map((s, i) => i === index ? { status: result.ok ? 'ok' : 'fail', summary: result.summary || '' } : s))
+          setMessages(prev => prev.map(m => 
+            m._id === planMsgId 
+              ? { ...m, statuses: m.statuses.map((s, i) => i === index ? { status: result.ok ? 'ok' : 'fail', summary: result.summary || '' } : s) }
+              : m
           ))
         },
 
@@ -85,41 +98,29 @@ export function useChat({
             if (last?.role === 'ai' && last?.streaming) {
               return [...prev.slice(0, -1), { ...last, text: last.text + chunk }]
             }
-            return [...prev, { role: 'ai', text: chunk, streaming: true }]
+            // 🛑 3. ข้อความ AI ถูกต่อท้ายแบบมี ID ตายตัว
+            return [...prev, { _id: 'a-' + Date.now(), role: 'ai', text: chunk, streaming: true }]
           })
         },
       })
 
-      // freeze plan ลง message stream (ก่อน AI message) แล้วเคลียร์ live state
+      // 🛑 4. พอจบ Turn ก็แค่ดึงธง Streaming ออก ไม่มีการแทรกหรือทำลาย Array แล้ว!
       setMessages(prev => {
         const last = prev[prev.length - 1]
         let base = prev
         let aiMsg = null
         if (last?.role === 'ai' && last?.streaming) {
-          aiMsg = { role: 'ai', text: last.text }
+          aiMsg = { ...last, streaming: false }
           base = prev.slice(0, -1)
         } else if (reply && last?.role !== 'ai') {
-          aiMsg = { role: 'ai', text: reply }
+          aiMsg = { _id: 'a-' + Date.now(), role: 'ai', text: reply }
         }
 
-        const planMsg = livePlanSnapshot.current.plan
-          ? [{
-              role: 'plan',
-              plan: livePlanSnapshot.current.plan,
-              statuses: livePlanSnapshot.current.statuses,
-            }]
-          : []
-
-        return [
-          ...base,
-          ...planMsg,
-          ...(aiMsg ? [aiMsg] : []),
-        ]
+        return [...base, ...(aiMsg ? [aiMsg] : [])]
       })
 
       setLivePlan(null)
       setLiveStatuses([])
-
       if (lastCommand !== null) lastCommandRef.current = lastCommand
 
       setApiHistory(prev => [
@@ -133,9 +134,9 @@ export function useChat({
         setMessages(prev => {
           const last = prev[prev.length - 1]
           if (last?.role === 'ai' && last?.streaming) {
-            return [...prev.slice(0, -1), { role: 'ai', text: last.text + '\n\n*— 🛑 หยุดการสร้างข้อความ —*' }]
+            return [...prev.slice(0, -1), { ...last, text: last.text + '\n\n*— 🛑 หยุดการสร้างข้อความ —*', streaming: false }]
           }
-          return [...prev, { role: 'ai', text: '*— 🛑 ยกเลิกการประมวลผล —*' }]
+          return [...prev, { _id: 'e-' + Date.now(), role: 'ai', text: '*— 🛑 ยกเลิกการประมวลผล —*' }]
         })
         return
       }
@@ -143,7 +144,7 @@ export function useChat({
       setMessages(prev => {
         const last = prev[prev.length - 1]
         const base = last?.streaming ? prev.slice(0, -1) : prev
-        return [...base, { role: 'ai', text: `⚠️ ${err.message}` }]
+        return [...base, { _id: 'e-' + Date.now(), role: 'ai', text: `⚠️ ${err.message}` }]
       })
     } finally {
       setThinking(false)

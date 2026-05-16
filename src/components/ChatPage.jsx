@@ -2,8 +2,6 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Icon from './ui/Icon'
 import ChatBubble, { TypingBubble } from './chat/ChatBubble'
-import PlanCard from './chat/PlanCard'
-import StepChip from './chat/StepChip'
 
 export default function ChatPage({
   messages, onSend, onStop, thinking,
@@ -65,74 +63,6 @@ export default function ChatPage({
 
   const hasLivePlan = livePlan?.steps?.length > 0;
 
-  // 🛑 1. หาตำแหน่งของข้อความ User ล่าสุด เพื่อเอาไว้ใช้ "ปักหมุด" Tool Pill
-  let lastUserIndex = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === 'user') {
-      lastUserIndex = i;
-      break;
-    }
-  }
-
-  // 🛑 2. สร้าง Array สำหรับ Render แบบเส้นตรง
-  const chatElements = [];
-  let uCount = 0, aCount = 0;
-
-  messages.forEach((m, i) => {
-    // ให้ Key เสถียร ไม่พึ่งพา index แบบเพียวๆ
-    const stableKey = m.role === 'user' ? `u-${++uCount}` : `a-${++aCount}`;
-
-    // วาดกล่องข้อความ
-    chatElements.push(
-      <ChatBubble
-        key={stableKey}
-        msg={m}
-        assistantName={assistantName}
-        showToolDetails={showToolDetails}
-        labelOfStep={labelOfStep}
-      />
-    );
-
-    // 🛑 3. THE ANCHOR POINT: ถ้าข้อความนี้คือ User Message ล่าสุด และมี Tool รันอยู่...
-    // ให้แทรก Tool Pill ต่อท้ายตรงนี้เลยทันที! (จะไม่มีการ Unmount อีกต่อไป)
-    if (i === lastUserIndex && hasLivePlan) {
-      chatElements.push(
-        <motion.div
-          key="live-plan-anchor"
-          initial={{ opacity: 0, y: -5 }}
-          animate={{ opacity: 1, y: 0 }}
-          style={{ marginBottom: 8 }}
-        >
-          {showToolDetails ? (
-            <PlanCard plan={livePlan} statuses={liveStatuses} labelOf={labelOfStep} />
-          ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {livePlan.steps.map((step, idx) => {
-                const s = liveStatuses[idx]
-                if (!s || s.status === 'pending') return null
-                return <StepChip key={idx} label={labelOfStep(step)} status={s.status} />
-              })}
-            </div>
-          )}
-        </motion.div>
-      );
-    }
-  });
-
-  // กันเหนียว กรณีไม่มีแชทเลย แต่ดันมี Plan วิ่งอยู่ (Edge Case)
-  if (messages.length === 0 && hasLivePlan) {
-    chatElements.push(
-      <motion.div
-        key="live-plan-anchor-fallback"
-        initial={{ opacity: 0, y: -5 }}
-        animate={{ opacity: 1, y: 0 }}
-        style={{ marginBottom: 8 }}
-      >
-        <PlanCard plan={livePlan} statuses={liveStatuses} labelOf={labelOfStep} />
-      </motion.div>
-    );
-  }
-
   return (
     <div className="sh-chatpage">
       <div className="sh-chat-frame">
@@ -168,15 +98,22 @@ export default function ChatPage({
           ) : (
             <>
               <div className="sh-side-timestamp mono">— บทสนทนา —</div>
-              {/* แปะก้อนแชทที่ถูกจัดเรียงเสร็จสมบูรณ์ลงไป */}
-              {chatElements}
+              
+              {/* 🛑 โยนภาระวาด Tool Pill ให้ ChatBubble จัดการไปเลยตามคิว เนียนกริ๊บ! */}
+              {messages.map((m, i) => (
+                <ChatBubble
+                  key={m._id || `msg-${i}`}
+                  msg={m}
+                  assistantName={assistantName}
+                  showToolDetails={showToolDetails}
+                  labelOfStep={labelOfStep}
+                />
+              ))}
             </>
           )}
 
           <AnimatePresence>
-            {thinking && !hasLivePlan && (lastUserIndex === messages.length - 1) && (
-              <TypingBubble key="typing" assistantName={assistantName} />
-            )}
+            {thinking && !hasLivePlan && <TypingBubble key="typing" assistantName={assistantName} />}
           </AnimatePresence>
         </div>
 
