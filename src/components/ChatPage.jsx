@@ -65,63 +65,42 @@ export default function ChatPage({
 
   const hasLivePlan = livePlan?.steps?.length > 0;
 
-  // 🛑 The Holy Grail Fix: สร้าง Array เส้นตรงเส้นเดียว ไม่ให้ React สับสน!
+  // 🛑 1. หาตำแหน่งของข้อความ User ล่าสุด เพื่อเอาไว้ใช้ "ปักหมุด" Tool Pill
+  let lastUserIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') {
+      lastUserIndex = i;
+      break;
+    }
+  }
+
+  // 🛑 2. สร้าง Array สำหรับ Render แบบเส้นตรง
   const chatElements = [];
+  let uCount = 0, aCount = 0;
 
   messages.forEach((m, i) => {
-    const isLastMessage = i === messages.length - 1;
-    const isAiMessage = m.role !== 'user';
+    // ให้ Key เสถียร ไม่พึ่งพา index แบบเพียวๆ
+    const stableKey = m.role === 'user' ? `u-${++uCount}` : `a-${++aCount}`;
 
-    // 1. ถ้าถึงคิวข้อความ AI ล่าสุด แล้วมี Tool ทำงานอยู่ ให้เอา Tool Pill มา "แทรกดักหน้า" ไว้
-    if (isLastMessage && isAiMessage && hasLivePlan) {
-      chatElements.push(
-        <AnimatePresence key="live-plan-presence">
-          <motion.div
-            key="live-plan"
-            initial={{ opacity: 0, y: -5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            style={{ marginBottom: 8 }}
-          >
-            {showToolDetails ? (
-              <PlanCard plan={livePlan} statuses={liveStatuses} labelOf={labelOfStep} />
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {livePlan.steps.map((step, idx) => {
-                  const s = liveStatuses[idx]
-                  if (!s || s.status === 'pending') return null
-                  return <StepChip key={idx} label={labelOfStep(step)} status={s.status} />
-                })}
-              </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
-      );
-    }
-
-    // 2. วาดกล่องข้อความตามปกติ (Key ไม่เปลี่ยน ข้อความจะไม่กระตุก 100%)
+    // วาดกล่องข้อความ
     chatElements.push(
       <ChatBubble
-        key={`msg-${i}`}
+        key={stableKey}
         msg={m}
         assistantName={assistantName}
         showToolDetails={showToolDetails}
         labelOfStep={labelOfStep}
       />
     );
-  });
 
-  // 3. กรณีมี Tool ทำงาน แต่ AI ยังไม่เริ่มตอบ (เช่น Tool รันนาน) ให้เอา Tool Pill ไปห้อยไว้ล่างสุดชั่วคราว
-  const noAiMessageYet = messages.length === 0 || messages[messages.length - 1].role === 'user';
-  
-  if (hasLivePlan && noAiMessageYet) {
-    chatElements.push(
-      <AnimatePresence key="live-plan-presence-bottom">
+    // 🛑 3. THE ANCHOR POINT: ถ้าข้อความนี้คือ User Message ล่าสุด และมี Tool รันอยู่...
+    // ให้แทรก Tool Pill ต่อท้ายตรงนี้เลยทันที! (จะไม่มีการ Unmount อีกต่อไป)
+    if (i === lastUserIndex && hasLivePlan) {
+      chatElements.push(
         <motion.div
-          key="live-plan"
+          key="live-plan-anchor"
           initial={{ opacity: 0, y: -5 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95 }}
           style={{ marginBottom: 8 }}
         >
           {showToolDetails ? (
@@ -136,7 +115,21 @@ export default function ChatPage({
             </div>
           )}
         </motion.div>
-      </AnimatePresence>
+      );
+    }
+  });
+
+  // กันเหนียว กรณีไม่มีแชทเลย แต่ดันมี Plan วิ่งอยู่ (Edge Case)
+  if (messages.length === 0 && hasLivePlan) {
+    chatElements.push(
+      <motion.div
+        key="live-plan-anchor-fallback"
+        initial={{ opacity: 0, y: -5 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{ marginBottom: 8 }}
+      >
+        <PlanCard plan={livePlan} statuses={liveStatuses} labelOf={labelOfStep} />
+      </motion.div>
     );
   }
 
@@ -175,14 +168,15 @@ export default function ChatPage({
           ) : (
             <>
               <div className="sh-side-timestamp mono">— บทสนทนา —</div>
-              
-              {/* 🛑 ดึง Array ที่จัดเรียงเสร็จแล้วมาใช้ตรงๆ ไม่มีแบ่งแยก! */}
+              {/* แปะก้อนแชทที่ถูกจัดเรียงเสร็จสมบูรณ์ลงไป */}
               {chatElements}
             </>
           )}
 
           <AnimatePresence>
-            {thinking && !hasLivePlan && noAiMessageYet && <TypingBubble key="typing" assistantName={assistantName} />}
+            {thinking && !hasLivePlan && (lastUserIndex === messages.length - 1) && (
+              <TypingBubble key="typing" assistantName={assistantName} />
+            )}
           </AnimatePresence>
         </div>
 
