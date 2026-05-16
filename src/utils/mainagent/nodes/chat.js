@@ -6,9 +6,7 @@ import { SystemMessage } from '@langchain/core/messages'
 import { makeLLM } from '../helpers/llmFactory.js'
 import { summarizeHistory } from '../helpers/historySummarizer.js'
 
-const CHAT_PERSONA_BASE = `ตอบสนทนาได้อย่างเป็นธรรมชาติ กระชับ เป็นมิตร ภาษาไทย
-ถ้ามีคำถามที่ต้องการข้อมูลก่อน execute ให้ถามตรงๆ ได้เลย
-ห้ามพูดถึงสถานะอุปกรณ์หรือรายการที่ทำ ถ้า user ไม่ได้ถาม`
+const CHAT_PERSONA_BASE = `คุยเล่นแบบเป็นกันเอง สดใส และกระชับ ถ้าต้องถามข้อมูลเพิ่มเพื่อไปทำงานต่อ ให้ถามผู้ใช้ตรงๆ ได้เลย และอย่าพูดเรื่องสถานะอุปกรณ์ถ้าเขาไม่ได้ถาม`
 
 export async function chatNode(state) {
   const { settings, signal, plan, onStream } = state

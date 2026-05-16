@@ -1,10 +1,7 @@
 import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
 import { makeLLM } from './llmFactory'
 
-const SUMMARIZER_PROMPT = `สรุปบทสนทนาต่อไปนี้เป็นรายการ bullet สั้นๆ เชิงข้อเท็จจริง
-ห้ามมีบุคลิก ห้ามใช้ภาษาสวยงาม ห้ามเพิ่มข้อมูลนอกบทสนทนา
-แต่ละ bullet คือ 1 สิ่งที่ระบบทำสำเร็จแล้ว (past tense) เช่น "- เสร็จแล้ว: ปิดไฟห้องนั่งเล่น"
-ห้ามพูดถึงคำสั่งล่าสุด (ไม่ต้องสรุป turn สุดท้ายของ user)`
+const SUMMARIZER_PROMPT = `สรุปสิ่งที่ทำสำเร็จแล้วเป็น bullet สั้นๆ เน้นแค่ข้อมูลเนื้อๆ ไม่ต้องแต่งประโยคสวยงาม ไม่ต้องมีอารมณ์ความรู้สึก เช่น '- ปิดไฟห้องนั่งเล่นแล้ว' (ข้ามคำสั่งสุดท้ายที่ user เพิ่งพิมพ์มา ไม่ต้องเอามาสรุป)`
 
 // บีบ history ทั้งหมดยกเว้น user message ล่าสุด เป็น bullet summary
 // คืน [HumanMessage(summary), lastUserMsg]
