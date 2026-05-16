@@ -46,7 +46,7 @@ export async function responseNode(state) {
 
   const llm = makeLLM(settings, { temperature: 0.3 })
   const msgsCtx = messages.length > 10
-    ? await summarizeHistory(messages, settings, signal)
+    ? (await summarizeHistory(messages, settings, signal)).messages
     : messages
 
   // ย้าย ctx ไปแปะท้าย HumanMessage สุดท้าย ให้ rules อยู่ใกล้จุด generate

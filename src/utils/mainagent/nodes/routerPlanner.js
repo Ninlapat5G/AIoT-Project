@@ -10,13 +10,16 @@ import { parseJSON } from '../helpers/jsonParser.js'
 import { summarizeHistory } from '../helpers/historySummarizer.js'
 import { buildPlanPrompt, buildPlanExamples } from '../skills/index.js'
 
-function buildSystemPrompt(settings, devices) {
+function buildSystemPrompt(settings, devices, lastCommand) {
   const kg = snapshotText({ devices, settings, now: nowString() })
   const skillBlock = buildPlanPrompt(settings)
   const examples = buildPlanExamples(settings)
 
-  return `${kg}
+  const lastCommandBlock = lastCommand
+    ? `\n[คำสั่งอุปกรณ์ล่าสุดในประวัติ (อ้างอิงสำหรับ clarify)]\n${lastCommand}\n`
+    : ''
 
+  return `${kg}${lastCommandBlock}
 ดูคำสั่งล่าสุดของ user แล้วสร้าง plan จาก history + KG
 
 [ประเภท step ที่ใส่ใน plan ได้]
@@ -41,14 +44,18 @@ export async function routerPlannerNode(state) {
   const devices = (state.deviceList?.current ?? state.deviceList) || []
   const messages = state.messages || []
 
-  const systemPrompt = buildSystemPrompt(settings, devices)
+  const kgText = snapshotText({ devices, settings, now: nowString() })
+  const systemPrompt = buildSystemPrompt(settings, devices, state.lastCommand)
   const llm = makeLLM(settings, { temperature: 0, maxTokens: 600 })
 
-  // บีบ history เฉพาะตอน convo ยาวจริงๆ (>10 msgs) — สั้นกว่านั้นใช้ full history
-  // เพื่อให้ planner เห็น clarify question + user reply ครบ
-  const msgsToUse = messages.length > 10
-    ? await summarizeHistory(messages, settings, signal)
-    : messages
+  let msgsToUse = messages
+  let nextLastCommand = state.lastCommand ?? null
+
+  if (messages.length > 10) {
+    const result = await summarizeHistory(messages, settings, signal, kgText)
+    msgsToUse = result.messages
+    if (result.lastCommand) nextLastCommand = result.lastCommand
+  }
 
   let plan
   try {
@@ -78,5 +85,5 @@ export async function routerPlannerNode(state) {
   const steps = Array.isArray(plan?.steps) ? plan.steps : []
   console.log(`  [Router] plan → ${JSON.stringify(steps.map(s => s.type))}`)
 
-  return { plan: { steps }, needs_clarify: false, completed: [] }
+  return { plan: { steps }, needs_clarify: false, completed: [], lastCommand: nextLastCommand }
 }

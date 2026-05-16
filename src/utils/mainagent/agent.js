@@ -48,6 +48,7 @@ const AgentState = Annotation.Root({
   completed:        Annotation({ reducer: (_, n) => n, default: () => [] }),
   needs_clarify:    Annotation({ reducer: (_, n) => n, default: () => false }),
   clarify_question: Annotation({ reducer: (_, n) => n, default: () => '' }),
+  lastCommand:      Annotation({ reducer: (_, n) => n, default: () => null }),
 })
 
 // ── Routing ───────────────────────────────────────────────────────────────────

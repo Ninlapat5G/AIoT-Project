@@ -26,7 +26,7 @@ export async function chatNode(state) {
 
   const llm = makeLLM(settings, { temperature: 0.3 })
   const msgsCtx = messages.length > 10
-    ? await summarizeHistory(messages, settings, signal)
+    ? (await summarizeHistory(messages, settings, signal)).messages
     : messages
 
   let finalMsg
