@@ -1,11 +1,6 @@
-// response — LLM ครั้งที่ 2: สรุปผลที่ทำให้ user เป็นภาษาธรรมชาติ
-//
-// อ่าน state.completed (รายการที่ plan_executor ทำสำเร็จ) → stream ตอบ
-
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { snapshotText } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
-import { summarizeHistory } from '../helpers/historySummarizer.js'
 
 const PERSONA_BASE = `หน้าที่ของคุณ: เล่าให้ user ฟังว่าระบบเพิ่งทำอะไรไปบ้าง โดยดูจากรายการ [สิ่งที่ดำเนินการสำเร็จในรอบนี้] ห้ามมโนเพิ่มหรือแต่งเรื่องเองเด็ดขาด`
 
@@ -45,12 +40,9 @@ export async function responseNode(state) {
   const ctxText = buildContext(state)
 
   const llm = makeLLM(settings, { temperature: 0.3 })
-  const msgsCtx = messages.length > 10
-    ? (await summarizeHistory(messages, settings, signal)).messages
-    : messages
 
   // ย้าย ctx ไปแปะท้าย HumanMessage สุดท้าย ให้ rules อยู่ใกล้จุด generate
-  const last = msgsCtx[msgsCtx.length - 1]
+  const last = messages[messages.length - 1]
   const lastWithCtx = new HumanMessage({
     content: String(last?.content || '') + ctxText,
   })
@@ -60,7 +52,7 @@ export async function responseNode(state) {
     [
       new SystemMessage(persona),
       new SystemMessage(PERSONA_BASE),
-      ...msgsCtx.slice(0, -1),
+      ...messages.slice(0, -1),
       lastWithCtx,
     ],
     { signal }

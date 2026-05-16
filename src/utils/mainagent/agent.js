@@ -1,17 +1,3 @@
-// Main Agent — plan-based architecture
-//
-// Flow:
-//   user → router_planner (LLM #1, วาง plan)
-//            ├─ needs_clarify → clarify → END
-//            ├─ all general   → chat (LLM #2) → END
-//            └─ มี step ทำงาน → plan_executor → response (LLM #2) → END
-//
-// Callback ที่ส่งเข้ามา:
-//   onPlanReady(plan)         — เรียกหลัง router_planner เสร็จ (ก่อน execute)
-//   onStepStart(index)        — ก่อนแต่ละ step
-//   onStepResult(index, res)  — หลังแต่ละ step  (res = {ok, summary})
-//   onStream(chunk)           — ระหว่าง response/chat/clarify stream
-
 import { StateGraph, START, END, Annotation, messagesStateReducer } from '@langchain/langgraph'
 import { HumanMessage, AIMessage, trimMessages } from '@langchain/core/messages'
 
@@ -20,6 +6,7 @@ import { planExecutorNode }  from './nodes/planExecutor.js'
 import { clarifyNode }       from './nodes/clarify.js'
 import { chatNode }          from './nodes/chat.js'
 import { responseNode }      from './nodes/response.js'
+import { memoryCompressorNode } from './nodes/memoryCompressor.js'
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -29,7 +16,6 @@ const AgentState = Annotation.Root({
   deviceList:      Annotation(),
   signal:          Annotation(),
 
-  // MQTT + React state binding (skill handler ใช้)
   mqttClient:      Annotation(),
   mqttWaitForStream: Annotation(),
   devicesRef:      Annotation(),
@@ -37,18 +23,20 @@ const AgentState = Annotation.Root({
   setDevices:      Annotation(),
   handleSaveSettings: Annotation(),
 
-  // Callbacks ให้ UI
   onPlanReady:     Annotation(),
   onStepStart:     Annotation(),
   onStepResult:    Annotation(),
   onStream:        Annotation(),
 
-  // ผลลัพธ์ขั้นกลาง
   plan:             Annotation({ reducer: (_, n) => n, default: () => null }),
   completed:        Annotation({ reducer: (_, n) => n, default: () => [] }),
   needs_clarify:    Annotation({ reducer: (_, n) => n, default: () => false }),
   clarify_question: Annotation({ reducer: (_, n) => n, default: () => '' }),
   lastCommand:      Annotation({ reducer: (_, n) => n, default: () => null }),
+  
+  // เพิ่มตัวแปรสำหรับรับรองระบบบีบอัดหน่วยความจำ
+  chat_summary:     Annotation({ reducer: (_, n) => n, default: () => '' }),
+  optimizedHistory: Annotation({ reducer: (_, n) => n, default: () => [] }),
 })
 
 // ── Routing ───────────────────────────────────────────────────────────────────
@@ -61,7 +49,6 @@ function routeAfterRouter(state) {
   return 'plan_executor'
 }
 
-// แตะ onPlanReady หลัง router เสร็จ (ก่อนเข้า path ถัดไป)
 async function announcePlan(state) {
   const { plan, needs_clarify, onPlanReady } = state
   if (!needs_clarify && plan?.steps?.length) {
@@ -73,19 +60,23 @@ async function announcePlan(state) {
 // ── Graph ─────────────────────────────────────────────────────────────────────
 
 const workflow = new StateGraph(AgentState)
-  .addNode('router_planner', routerPlannerNode)
-  .addNode('announce',       announcePlan)
-  .addNode('plan_executor',  planExecutorNode)
-  .addNode('clarify',        clarifyNode)
-  .addNode('chat',           chatNode)
-  .addNode('response',       responseNode)
+  .addNode('router_planner',    routerPlannerNode)
+  .addNode('announce',          announcePlan)
+  .addNode('plan_executor',     planExecutorNode)
+  .addNode('clarify',           clarifyNode)
+  .addNode('chat',              chatNode)
+  .addNode('response',          responseNode)
+  .addNode('memory_compressor', memoryCompressorNode) // ปลั๊กโหนดบีบความจำเพิ่มท้ายขบวน
   .addEdge(START, 'router_planner')
   .addEdge('router_planner', 'announce')
   .addConditionalEdges('announce', routeAfterRouter)
   .addEdge('plan_executor', 'response')
-  .addEdge('clarify',  END)
-  .addEdge('chat',     END)
-  .addEdge('response', END)
+  
+  // ลากท่อปลายทางทั้งหมดเข้าสู่ตัวคัดกรองหน่วยความจำก่อนจบ Turn แบบ Single Source of Truth
+  .addEdge('clarify',           'memory_compressor')
+  .addEdge('chat',              'memory_compressor')
+  .addEdge('response',          'memory_compressor')
+  .addEdge('memory_compressor', END)
 
 const compiled = workflow.compile()
 
@@ -124,13 +115,18 @@ export async function runAgent(params) {
     devicesRef, baseTopicRef, setDevices, handleSaveSettings,
     lastCommand: lastCommand ?? null,
     onPlanReady, onStepStart, onStepResult, onStream,
+    chat_summary: '',
+    optimizedHistory: [],
   })
 
   const lastMsg = finalState.messages?.[finalState.messages.length - 1]
   const reply = lastMsg?.content || ''
 
-  return { reply, lastCommand: finalState.lastCommand ?? null }
+  return { 
+    reply, 
+    lastCommand: finalState.lastCommand ?? null,
+    optimizedHistory: finalState.optimizedHistory ?? [] // คืนประวัติที่บีบอัดแล้วให้ตัวแปรแชทสเตทภายนอกไปบันทึกรอบถัดไป
+  }
 }
 
-// Re-export ของเดิมที่ external module ใช้
 export { detectAssistantName } from './helpers/detectAssistantName.js'

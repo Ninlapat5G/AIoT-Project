@@ -1,10 +1,5 @@
-// chat_node — สำหรับ plan ที่มีแต่ general step (คุยเล่น/clarify)
-//
-// LLM ครั้งที่ 2 ตอบเป็นตัวซิน ใช้ persona ของ user
-
 import { SystemMessage } from '@langchain/core/messages'
 import { makeLLM } from '../helpers/llmFactory.js'
-import { summarizeHistory } from '../helpers/historySummarizer.js'
 
 const CHAT_PERSONA_BASE = `คุยเล่นแบบเป็นกันเอง สดใส และกระชับ ถ้าต้องถามข้อมูลเพิ่มเพื่อไปทำงานต่อ ให้ถามผู้ใช้ตรงๆ ได้เลย และอย่าพูดเรื่องสถานะอุปกรณ์ถ้าเขาไม่ได้ถาม`
 
@@ -25,12 +20,9 @@ export async function chatNode(state) {
   ].filter(Boolean).join('\n\n')
 
   const llm = makeLLM(settings, { temperature: 0.3 })
-  const msgsCtx = messages.length > 10
-    ? (await summarizeHistory(messages, settings, signal)).messages
-    : messages
 
   let finalMsg
-  const stream = await llm.stream([new SystemMessage(persona), ...msgsCtx], { signal })
+  const stream = await llm.stream([new SystemMessage(persona), ...messages], { signal })
   for await (const chunk of stream) {
     if (chunk.content) onStream?.(chunk.content)
     finalMsg = finalMsg ? finalMsg.concat(chunk) : chunk
