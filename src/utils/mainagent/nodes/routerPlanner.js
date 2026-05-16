@@ -22,10 +22,13 @@ function buildSystemPrompt(settings, devices, lastCommand) {
   return `${kg}${lastCommandBlock}
 ดูคำสั่งล่าสุดของ user แล้วสร้าง plan จาก history + KG
 
+[การอ้างอิงคำสั่งก่อนหน้า]
+ถ้า user พูดสั้นๆ เช่น "ปิดเลย" "อันนั้น" "มัน" "ด้วย" "อีกอัน" — ให้ดู history ว่ากำลังพูดถึงอุปกรณ์ใด แล้วสร้าง plan ตามนั้นได้เลย ห้ามถามซ้ำถ้า context ชัดเจนอยู่แล้ว
+
 [ประเภท step ที่ใส่ใน plan ได้]
 ${skillBlock}
 
-[คำเตือนเด็ดขาด!] ห้ามพิมพ์คำเกริ่นนำ ห้ามอธิบาย และห้ามพิมพ์คำว่า 'รับทราบ' ตอบกลับมาเป็นโครงสร้าง JSON ล้วนๆ ตามตัวอย่างเท่านั้น
+[คำเตือนเด็ดขาด!] ตอบกลับมาเป็น JSON ตามตัวอย่างเท่านั้น ห้ามมีคำเกริ่นนำ คำอธิบาย หรือคำว่า 'รับทราบ' นอก JSON (ค่า value ภายใน JSON เป็นภาษาไทยได้ตามปกติ)
 
 ถ้าวางแผนได้:
 {"steps": [
@@ -57,19 +60,28 @@ export async function routerPlannerNode(state) {
     if (result.lastCommand) nextLastCommand = result.lastCommand
   }
 
+  const msgs = [new SystemMessage(systemPrompt), ...msgsToUse]
+
   let plan
   try {
-    const res = await llm.invoke(
-      [new SystemMessage(systemPrompt), ...msgsToUse],
-      { signal }
-    )
+    const res = await llm.invoke(msgs, { signal })
     plan = parseJSON(String(res.content || ''))
-  } catch (err) {
-    console.warn('  [Router] parse error → ask user:', err?.message)
-    return {
-      plan: null,
-      needs_clarify: true,
-      clarify_question: 'ขอโทษค่ะ ระบบวิเคราะห์คำสั่งสับสนนิดหน่อย ช่วยพูดใหม่อีกทีได้มั้ยคะ?',
+  } catch {
+    // retry ครั้งเดียวพร้อม reminder ให้ตอบ JSON
+    console.warn('  [Router] parse error → retry')
+    try {
+      const retry = await llm.invoke(
+        [...msgs, new HumanMessage('[ระบบ: ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่น]')],
+        { signal }
+      )
+      plan = parseJSON(String(retry.content || ''))
+    } catch (err2) {
+      console.warn('  [Router] retry failed:', err2?.message)
+      return {
+        plan: null,
+        needs_clarify: true,
+        clarify_question: 'ขอโทษค่ะ ระบบวิเคราะห์คำสั่งสับสนนิดหน่อย ช่วยพูดใหม่อีกทีได้มั้ยคะ?',
+      }
     }
   }
 
