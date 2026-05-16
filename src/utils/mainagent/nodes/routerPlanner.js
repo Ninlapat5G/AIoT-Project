@@ -40,12 +40,19 @@ export async function routerPlannerNode(state) {
   const devices = (state.deviceList?.current ?? state.deviceList) || []
   const messages = state.messages || []
 
-  // เรียกใช้งาน snapshotText แค่รอบเดียวอย่างคุ้มค่า
   const kgText = snapshotText({ devices, settings, now: nowString() })
   const systemPrompt = buildSystemPrompt(settings, devices, lastCommand, kgText)
   const llm = makeLLM(settings, { temperature: 0, maxTokens: 600 })
 
-  const msgs = [new SystemMessage(systemPrompt), ...messages]
+  // 🛑 ไม้เรียวพิฆาต: ดักคอ LLM ที่ข้อความสุดท้าย ป้องกันอาการอินกับแชทแล้วลืมพ่น JSON
+  const lastMsg = messages[messages.length - 1]
+  const previousMsgs = messages.slice(0, -1)
+  
+  const strictLastMsg = new HumanMessage(
+    `${lastMsg?.content || ''}\n\n[คำเตือนจากระบบ: วิเคราะห์คำสั่งด้านบนแล้วตอบกลับเป็นโครงสร้าง JSON เท่านั้น ห้ามตอบเป็นข้อความแชทธรรมดาเด็ดขาด!]`
+  )
+
+  const msgs = [new SystemMessage(systemPrompt), ...previousMsgs, strictLastMsg]
 
   let plan
   try {
