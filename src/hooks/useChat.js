@@ -24,6 +24,7 @@ export function useChat({
   const abortControllerRef = useRef(null)
   const livePlanSnapshot = useRef({ plan: null, statuses: [] })
   livePlanSnapshot.current = { plan: livePlan, statuses: liveStatuses }
+  const lastCommandRef = useRef(null)
 
   const stopChat = useCallback(() => {
     if (abortControllerRef.current) {
@@ -44,10 +45,11 @@ export function useChat({
     abortControllerRef.current = new AbortController()
 
     try {
-      const { reply } = await runAgent({
+      const { reply, lastCommand } = await runAgent({
         text,
         settings,
         apiHistory,
+        lastCommand: lastCommandRef.current,
         devicesRef,
         baseTopicRef,
         setDevices,
@@ -118,6 +120,8 @@ export function useChat({
       setLivePlan(null)
       setLiveStatuses([])
 
+      if (lastCommand !== null) lastCommandRef.current = lastCommand
+
       setApiHistory(prev => [
         ...prev,
         { role: 'user', content: text },
@@ -152,6 +156,7 @@ export function useChat({
     stopChat()
     setMessages([])
     setApiHistory([])
+    lastCommandRef.current = null
   }, [stopChat])
 
   return {

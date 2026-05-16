@@ -98,6 +98,7 @@ export async function runAgent(params) {
     mqttClient, mqttWaitForStream,
     devicesRef, baseTopicRef, setDevices, handleSaveSettings,
     signal,
+    lastCommand,
     onPlanReady, onStepStart, onStepResult, onStream,
   } = params
 
@@ -121,13 +122,14 @@ export async function runAgent(params) {
     signal,
     mqttClient, mqttWaitForStream,
     devicesRef, baseTopicRef, setDevices, handleSaveSettings,
+    lastCommand: lastCommand ?? null,
     onPlanReady, onStepStart, onStepResult, onStream,
   })
 
   const lastMsg = finalState.messages?.[finalState.messages.length - 1]
   const reply = lastMsg?.content || ''
 
-  return { reply }
+  return { reply, lastCommand: finalState.lastCommand ?? null }
 }
 
 // Re-export ของเดิมที่ external module ใช้
