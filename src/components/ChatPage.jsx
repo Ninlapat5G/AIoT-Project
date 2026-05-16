@@ -65,9 +65,17 @@ export default function ChatPage({
 
   const hasLivePlan = livePlan?.steps?.length > 0
 
-  // 🛑 FILTER LOGIC: แยกข้อความที่เสร็จแล้ว กับ ข้อความที่กำลังพ่น (Streaming) ออกจากกัน
-  const completedMsgs = messages.filter(m => !m.streaming)
-  const streamingMsg = messages.find(m => m.streaming)
+  // 🛑 1. สร้าง Stable Keys ให้ข้อความ เพื่อป้องกัน React รีเมาท์ Component แล้วแอนิเมชันเล่นซ้ำ
+  let uCount = 0, pCount = 0, aCount = 0;
+  const stableMessages = messages.map(m => {
+    let key = '';
+    if (m.role === 'user') key = `u-${++uCount}`;
+    else if (m.role === 'plan') key = `p-${++pCount}`;
+    else if (m.role === 'ai') key = `a-${++aCount}`;
+    return { ...m, _key: key };
+  });
+
+  const isStreaming = stableMessages.some(m => m.streaming);
 
   return (
     <div className="sh-chatpage">
@@ -95,7 +103,7 @@ export default function ChatPage({
 
         {/* Message list */}
         <div className="sh-side-scroll" ref={scrollRef}>
-          {messages.length === 0 ? (
+          {stableMessages.length === 0 ? (
             <div className="sh-chat-empty">
               <Icon name="sparkle" size={28} />
               <p>เริ่มต้นบทสนทนาใหม่</p>
@@ -105,60 +113,56 @@ export default function ChatPage({
             <>
               <div className="sh-side-timestamp mono">— บทสนทนา —</div>
               
-              {/* 1. วาดเฉพาะข้อความที่เสร็จสมบูรณ์แล้วไว้ด้านบนสุด */}
-              {completedMsgs.map((m, i) => (
-                <ChatBubble
-                  key={`completed-${i}`}
-                  msg={m}
-                  assistantName={assistantName}
-                  showToolDetails={showToolDetails}
-                  labelOfStep={labelOfStep}
-                />
+              {stableMessages.map((m) => (
+                <div key={m._key + '-wrap'} style={{ display: 'contents' }}>
+                  {/* 🛑 2. แทรก Tool Pill สด (Live Plan) ไว้ก่อนข้อความ AI ที่กำลังพ่น */}
+                  {m.streaming && hasLivePlan && (
+                    <div style={{ marginBottom: '8px' }}>
+                      {showToolDetails ? (
+                        <PlanCard plan={livePlan} statuses={liveStatuses} labelOf={labelOfStep} />
+                      ) : (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {livePlan.steps.map((step, i) => {
+                            const s = liveStatuses[i]
+                            if (!s || s.status === 'pending') return null
+                            return <StepChip key={i} label={labelOfStep(step)} status={s.status} />
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <ChatBubble
+                    key={m._key}
+                    msg={m}
+                    assistantName={assistantName}
+                    showToolDetails={showToolDetails}
+                    labelOfStep={labelOfStep}
+                  />
+                </div>
               ))}
             </>
           )}
 
-          {/* 2. แทรก Tool Pill ไว้ตรงกลาง (ให้เริ่มแสดงทันทีที่ Graph วาง Plan เสร็จ) */}
-          <AnimatePresence>
-            {hasLivePlan && showToolDetails && (
-              <PlanCard
-                key="live-plan"
-                plan={livePlan}
-                statuses={liveStatuses}
-                labelOf={labelOfStep}
-              />
-            )}
-            {hasLivePlan && !showToolDetails && (
-              <div key="live-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {livePlan.steps.map((step, i) => {
-                  const s = liveStatuses[i]
-                  if (!s || s.status === 'pending') return null
-                  return (
-                    <StepChip
-                      key={i}
-                      label={labelOfStep(step)}
-                      status={s.status}
-                    />
-                  )
-                })}
-              </div>
-            )}
-          </AnimatePresence>
-
-          {/* 3. ข้อความที่กำลังสตรีมอยู่ จะถูกวาดไว้ล่างสุดเสมอ (ใต้ Tool Pill) */}
-          {streamingMsg && (
-            <ChatBubble
-              key="streaming"
-              msg={streamingMsg}
-              assistantName={assistantName}
-              showToolDetails={showToolDetails}
-              labelOfStep={labelOfStep}
-            />
+          {/* 🛑 3. กรณีมี Live Plan วิ่งอยู่ แต่ AI ยังไม่เริ่มสตรีมข้อความตอบกลับ */}
+          {!isStreaming && hasLivePlan && (
+            <div style={{ marginBottom: '8px' }}>
+              {showToolDetails ? (
+                <PlanCard plan={livePlan} statuses={liveStatuses} labelOf={labelOfStep} />
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {livePlan.steps.map((step, i) => {
+                    const s = liveStatuses[i]
+                    if (!s || s.status === 'pending') return null
+                    return <StepChip key={i} label={labelOfStep(step)} status={s.status} />
+                  })}
+                </div>
+              )}
+            </div>
           )}
 
-          {/* 4. กล่อง Typing สำหรับจังหวะกำลังคิด */}
           <AnimatePresence>
-            {thinking && !hasLivePlan && !streamingMsg && <TypingBubble key="typing" assistantName={assistantName} />}
+            {thinking && !hasLivePlan && !isStreaming && <TypingBubble key="typing" assistantName={assistantName} />}
           </AnimatePresence>
         </div>
 
@@ -217,15 +221,15 @@ export default function ChatPage({
                 <Icon name="x" size={15} />
               </motion.button>
             ) : (
-            <motion.button
-              type="submit"
-              className="sh-send"
-              disabled={!draft.trim()}
-              whileTap={{ scale: 0.9 }}
-              whileHover={{ scale: 1.05 }}
-            >
-              <Icon name="send" size={15} />
-            </motion.button>
+              <motion.button
+                type="submit"
+                className="sh-send"
+                disabled={!draft.trim()}
+                whileTap={{ scale: 0.9 }}
+                whileHover={{ scale: 1.05 }}
+              >
+                <Icon name="send" size={15} />
+              </motion.button>
             )}
           </div>
           <div className="sh-composer-hints mono">
