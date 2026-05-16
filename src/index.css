@@ -688,10 +688,68 @@
     border: 1px solid oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.25);
     color: var(--accent);
   }
-  .sh-action-chip--executing {
+  .sh-action-chip--executing,
+  .sh-action-chip--running {
     border-style: dashed;
-    opacity: 0.7;
+    opacity: 0.85;
   }
+  .sh-action-chip--ok {
+    color: oklch(0.78 0.16 145);
+    background: oklch(0.78 0.16 145 / 0.08);
+    border-color: oklch(0.78 0.16 145 / 0.3);
+  }
+  .sh-action-chip--fail {
+    color: oklch(0.70 0.20 25);
+    background: oklch(0.70 0.20 25 / 0.08);
+    border-color: oklch(0.70 0.20 25 / 0.3);
+  }
+
+  /* Plan card — Mode A (showToolDetails=true) */
+  .sh-plan-card {
+    @apply rounded-xl shrink-0 self-start;
+    padding: 10px 12px;
+    background: var(--bg-0);
+    border: 1px solid oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.3);
+    min-width: 280px; max-width: 100%;
+  }
+  .sh-plan-head {
+    @apply flex items-center gap-2 mb-2 text-[10px] tracking-wider;
+    color: var(--accent);
+  }
+  .sh-plan-count {
+    @apply ml-auto px-2 py-0.5 rounded-full text-[9px];
+    background: oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.12);
+  }
+  .sh-plan-list { @apply m-0 p-0 list-none flex flex-col gap-1.5; }
+  .sh-plan-row {
+    @apply flex items-start gap-2 text-[12px] leading-snug;
+    padding: 4px 0;
+  }
+  .sh-plan-icon {
+    @apply flex items-center justify-center shrink-0;
+    width: 16px; height: 16px;
+    margin-top: 1px;
+  }
+  .sh-plan-body { @apply flex flex-col gap-0.5 min-w-0 flex-1; }
+  .sh-plan-type {
+    @apply text-[9px] tracking-wider;
+    color: var(--ink-xdim);
+  }
+  .sh-plan-label { color: var(--ink); }
+  .sh-plan-result {
+    @apply text-[10px] mt-0.5 leading-snug;
+    color: var(--ink-dim);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .sh-plan-row--pending .sh-plan-label { color: var(--ink-dim); }
+  .sh-plan-row--ok .sh-plan-icon   { color: oklch(0.78 0.16 145); }
+  .sh-plan-row--fail .sh-plan-icon { color: oklch(0.70 0.20 25); }
+  .sh-plan-row--fail .sh-plan-label{ color: oklch(0.70 0.20 25); }
+  .sh-plan-spin    { display: inline-flex; color: var(--accent); }
+  .sh-plan-ok      { display: inline-flex; }
+  .sh-plan-fail    { display: inline-flex; }
+  .sh-plan-pending { color: var(--ink-xdim); font-size: 13px; line-height: 1; }
 
   /* composer */
   .sh-composer {

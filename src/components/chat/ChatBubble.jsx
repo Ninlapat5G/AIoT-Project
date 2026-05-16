@@ -1,7 +1,8 @@
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
-import ToolPill from './ToolPill'
-import Icon from '../ui/Icon'
+import remarkGfm from 'remark-gfm'
+import PlanCard from './PlanCard'
+import StepChip from './StepChip'
 
 const mdComponents = {
   a: ({ href, children }) => (
@@ -18,29 +19,29 @@ const AvatarLogo = () => (
   <img src="/syn_icon.jpg" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
 )
 
-export default function ChatBubble({ msg, assistantName = 'Assistant' }) {
-  if (msg.role === 'round-summary') {
+export default function ChatBubble({ msg, assistantName = 'Assistant', showToolDetails = true, labelOfStep }) {
+  // Plan message — โผล่หลัง turn จบ
+  if (msg.role === 'plan') {
+    if (showToolDetails) {
+      return <PlanCard plan={msg.plan} statuses={msg.statuses} labelOf={labelOfStep} />
+    }
+    // Mode B: โชว์ chip ทีละ step ตามที่ทำไป
     return (
-      <motion.div
-        className="sh-action-chip"
-        initial={{ opacity: 0, scale: 0.82, y: 8 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ type: 'spring', stiffness: 450, damping: 26 }}
-      >
-        <motion.span
-          initial={{ rotate: -25, scale: 1.4 }}
-          animate={{ rotate: 0, scale: 1 }}
-          transition={{ type: 'spring', stiffness: 500, damping: 18, delay: 0.08 }}
-        >
-          <Icon name="bolt" size={10} />
-        </motion.span>
-        <span>{msg.summary}</span>
-      </motion.div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <AnimatePresence>
+          {msg.plan.steps.map((step, i) => {
+            const s = msg.statuses?.[i] || { status: 'ok' }
+            return (
+              <StepChip
+                key={i}
+                label={labelOfStep(step)}
+                status={s.status === 'pending' || s.status === 'running' ? 'ok' : s.status}
+              />
+            )
+          })}
+        </AnimatePresence>
+      </div>
     )
-  }
-
-  if (msg.role === 'tool') {
-    return <ToolPill name={msg.name} args={msg.args} result={msg.result} round={msg.round} />
   }
 
   const isUser = msg.role === 'user'
@@ -67,7 +68,7 @@ export default function ChatBubble({ msg, assistantName = 'Assistant' }) {
         <div className="sh-msg-text">
           {isUser
             ? msg.text
-            : <ReactMarkdown components={mdComponents}>{msg.text}</ReactMarkdown>
+            : <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{msg.text}</ReactMarkdown>
           }
         </div>
       </div>

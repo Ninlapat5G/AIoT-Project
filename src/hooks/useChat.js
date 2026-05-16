@@ -1,14 +1,29 @@
 import { useState, useCallback, useRef } from 'react'
-import { runAgent } from '../utils/agent'
+import { runAgent } from '../utils/mainagent/agent'
+import { SKILLS } from '../utils/mainagent/skills'
 
-export function useChat({ settings, devicesRef, executeTool }) {
+// helper: หา label ของ step สำหรับ UI
+function labelOfStep(step) {
+  const skill = SKILLS[step?.type]
+  if (skill?.label) {
+    try { return skill.label(step) } catch { /* fall through */ }
+  }
+  return step?.type || 'step'
+}
+
+export function useChat({
+  settings, devicesRef, baseTopicRef, setDevices,
+  mqttClient, mqttWaitForStream, handleSaveSettings,
+}) {
   const [messages, setMessages]     = useState([])
   const [apiHistory, setApiHistory] = useState([])
   const [thinking, setThinking]     = useState(false)
-  const [executing, setExecuting]   = useState([])  // array — parallel tools run simultaneously
+  const [livePlan, setLivePlan]     = useState(null)     // {steps}
+  const [liveStatuses, setLiveStatuses] = useState([])   // [{status, summary}]
 
   const abortControllerRef = useRef(null)
-  const lastCommandedDeviceRef = useRef(null)
+  const livePlanSnapshot = useRef({ plan: null, statuses: [] })
+  livePlanSnapshot.current = { plan: livePlan, statuses: liveStatuses }
 
   const stopChat = useCallback(() => {
     if (abortControllerRef.current) {
@@ -16,53 +31,49 @@ export function useChat({ settings, devicesRef, executeTool }) {
       abortControllerRef.current = null
     }
     setThinking(false)
-    setExecuting([])
+    setLivePlan(null)
+    setLiveStatuses([])
   }, [])
 
   const sendMessage = useCallback(async text => {
     setMessages(prev => [...prev, { role: 'user', text }])
     setThinking(true)
-    setExecuting([])
+    setLivePlan(null)
+    setLiveStatuses([])
 
     abortControllerRef.current = new AbortController()
-    const toolsThisTurn = []
 
     try {
-      const { reply, lastCommandedDevice } = await runAgent({
+      const { reply } = await runAgent({
         text,
         settings,
-        deviceList: devicesRef,
         apiHistory,
-        executeTool,
-        lastCommandedDevice: lastCommandedDeviceRef.current,
+        devicesRef,
+        baseTopicRef,
+        setDevices,
+        mqttClient,
+        mqttWaitForStream,
+        handleSaveSettings,
         signal: abortControllerRef.current.signal,
 
-        onToolCall: (name, args, round) => {
+        onPlanReady: (plan) => {
           setThinking(false)
-          setExecuting(prev => [...prev, { name, args, round }])
-          // Remove ALL streaming AI messages — pre-tool reasoning text must not appear
-          // as completed responses (fires for every tool call, safe to run multiple times)
-          setMessages(prev => prev.filter(m => !(m.role === 'ai' && m.streaming)))
+          setLivePlan(plan)
+          setLiveStatuses(plan.steps.map(() => ({ status: 'pending' })))
         },
 
-        onToolResult: (name, args, result, round) => {
-          toolsThisTurn.push({ name, result })
-          // เมื่อ showToolDetails === false ไม่แสดง pill ทีละตัว (จะมี round-summary chip แทน)
-          if (settings.showToolDetails !== false) {
-            setMessages(prev => [...prev, { role: 'tool', name, args, result, round }])
-          }
-          setExecuting(prev => {
-            const next = prev.filter(e => !(e.name === name && e.round === round))
-            if (next.length === 0) setThinking(true)
-            return next
-          })
+        onStepStart: (index) => {
+          setLiveStatuses(prev => prev.map((s, i) =>
+            i === index ? { ...s, status: 'running' } : s
+          ))
         },
 
-        onRoundSummary: (summary, round) => {
-          setMessages(prev => {
-            const clean = prev.filter(m => !(m.role === 'ai' && m.streaming))
-            return [...clean, { role: 'round-summary', summary, round }]
-          })
+        onStepResult: (index, result) => {
+          setLiveStatuses(prev => prev.map((s, i) =>
+            i === index
+              ? { status: result.ok ? 'ok' : 'fail', summary: result.summary || '' }
+              : s
+          ))
         },
 
         onStream: chunk => {
@@ -77,18 +88,35 @@ export function useChat({ settings, devicesRef, executeTool }) {
         },
       })
 
+      // freeze plan ลง message stream (ก่อน AI message) แล้วเคลียร์ live state
       setMessages(prev => {
         const last = prev[prev.length - 1]
+        let base = prev
+        let aiMsg = null
         if (last?.role === 'ai' && last?.streaming) {
-          return [...prev.slice(0, -1), { role: 'ai', text: last.text }]
+          aiMsg = { role: 'ai', text: last.text }
+          base = prev.slice(0, -1)
+        } else if (reply && last?.role !== 'ai') {
+          aiMsg = { role: 'ai', text: reply }
         }
-        if (reply && last?.role !== 'ai') {
-          return [...prev, { role: 'ai', text: reply }]
-        }
-        return prev
+
+        const planMsg = livePlanSnapshot.current.plan
+          ? [{
+              role: 'plan',
+              plan: livePlanSnapshot.current.plan,
+              statuses: livePlanSnapshot.current.statuses,
+            }]
+          : []
+
+        return [
+          ...base,
+          ...planMsg,
+          ...(aiMsg ? [aiMsg] : []),
+        ]
       })
 
-      lastCommandedDeviceRef.current = lastCommandedDevice ?? lastCommandedDeviceRef.current
+      setLivePlan(null)
+      setLiveStatuses([])
 
       setApiHistory(prev => [
         ...prev,
@@ -102,10 +130,8 @@ export function useChat({ settings, devicesRef, executeTool }) {
           const last = prev[prev.length - 1]
           if (last?.role === 'ai' && last?.streaming) {
             return [...prev.slice(0, -1), { role: 'ai', text: last.text + '\n\n*— 🛑 หยุดการสร้างข้อความ —*' }]
-          } else if (last?.role === 'user' || executing.length > 0) {
-            return [...prev, { role: 'ai', text: '*— 🛑 ยกเลิกการประมวลผล —*' }]
           }
-          return prev
+          return [...prev, { role: 'ai', text: '*— 🛑 ยกเลิกการประมวลผล —*' }]
         })
         return
       }
@@ -117,16 +143,19 @@ export function useChat({ settings, devicesRef, executeTool }) {
       })
     } finally {
       setThinking(false)
-      setExecuting([])
+      setLivePlan(null)
+      setLiveStatuses([])
     }
-  }, [settings, devicesRef, apiHistory, executeTool])
+  }, [settings, devicesRef, baseTopicRef, setDevices, mqttClient, mqttWaitForStream, handleSaveSettings, apiHistory])
 
   const clearChat = useCallback(() => {
     stopChat()
     setMessages([])
     setApiHistory([])
-    lastCommandedDeviceRef.current = null
   }, [stopChat])
 
-  return { messages, thinking, executing, sendMessage, clearChat, stopChat }
+  return {
+    messages, thinking, livePlan, liveStatuses, labelOfStep,
+    sendMessage, clearChat, stopChat,
+  }
 }

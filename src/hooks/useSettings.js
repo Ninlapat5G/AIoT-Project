@@ -1,8 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { DEFAULT_SETTINGS } from '../data'
 import { saveSettings, loadSettings } from '../utils/storage'
-import { detectAssistantName } from '../utils/agent'
-import { extractNameFromText } from '../utils/onboardingAgent'
+import { detectAssistantName } from '../utils/mainagent/agent'
+import { extractNameFromText } from '../utils/onboarding/onboarding'
 
 const LAST_DETECTED_PROMPT_KEY = 'sh_last_detected_prompt'
 const LAST_DETECTED_BIO_KEY    = 'sh_last_detected_bio'

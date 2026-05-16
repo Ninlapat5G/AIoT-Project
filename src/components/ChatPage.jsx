@@ -2,10 +2,13 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Icon from './ui/Icon'
 import ChatBubble, { TypingBubble } from './chat/ChatBubble'
-import ToolPill from './chat/ToolPill'
+import PlanCard from './chat/PlanCard'
+import StepChip from './chat/StepChip'
 
 export default function ChatPage({
-  messages, onSend, onStop, thinking, executing, onClear, modelName, skillCount, msgCount,
+  messages, onSend, onStop, thinking,
+  livePlan, liveStatuses, labelOfStep,
+  onClear, modelName, skillCount, msgCount,
   draft, onDraftChange: setDraft, assistantName = 'Assistant', showToolDetails = true,
 }) {
   const [isListening, setIsListening] = useState(false)
@@ -28,15 +31,11 @@ export default function ChatPage({
         }
       };
 
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-
+      recognition.onend = () => { setIsListening(false); };
       recognition.onerror = (event) => {
         console.error("Mic error:", event.error);
         setIsListening(false);
       };
-
       recognitionRef.current = recognition;
     }
   }, []);
@@ -44,7 +43,7 @@ export default function ChatPage({
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [messages, thinking, executing])
+  }, [messages, thinking, livePlan, liveStatuses])
 
   const submit = () => {
     if (draft.trim()) { onSend(draft.trim()); setDraft('') }
@@ -55,7 +54,6 @@ export default function ChatPage({
       alert("เบราว์เซอร์นี้ไม่รองรับการพิมพ์ด้วยเสียงน้า ลองเปลี่ยนไปใช้ Chrome ดูนะฮะ 🥺");
       return;
     }
-
     if (isListening) {
       recognitionRef.current.stop();
       setIsListening(false);
@@ -64,6 +62,8 @@ export default function ChatPage({
       setIsListening(true);
     }
   };
+
+  const hasLivePlan = livePlan?.steps?.length > 0
 
   return (
     <div className="sh-chatpage">
@@ -100,54 +100,47 @@ export default function ChatPage({
           ) : (
             <>
               <div className="sh-side-timestamp mono">— บทสนทนา —</div>
-              {messages.map((m, i) => <ChatBubble key={i} msg={m} assistantName={assistantName} showToolDetails={showToolDetails} />)}
+              {messages.map((m, i) => (
+                <ChatBubble
+                  key={i}
+                  msg={m}
+                  assistantName={assistantName}
+                  showToolDetails={showToolDetails}
+                  labelOfStep={labelOfStep}
+                />
+              ))}
             </>
           )}
 
-          {/* Tool executing display — full pills or compact chip depending on setting */}
+          {/* Live plan / step chips ระหว่างที่ executor ทำงาน */}
           <AnimatePresence>
-            {!showToolDetails && executing.length > 0 ? (
-              <motion.div
-                key="executing-chip"
-                className="sh-action-chip sh-action-chip--executing"
-                initial={{ opacity: 0, scale: 0.9, y: 6 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: -4 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-              >
-                <motion.span
-                  animate={{ opacity: [1, 0.35, 1] }}
-                  transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut' }}
-                >
-                  <Icon name="bolt" size={10} />
-                </motion.span>
-                <span>กำลังดำเนินการ</span>
-                <span style={{ display: 'inline-flex', gap: 3, alignItems: 'center', marginLeft: 2 }}>
-                  {[0, 1, 2].map(i => (
-                    <motion.span
+            {hasLivePlan && showToolDetails && (
+              <PlanCard
+                key="live-plan"
+                plan={livePlan}
+                statuses={liveStatuses}
+                labelOf={labelOfStep}
+              />
+            )}
+            {hasLivePlan && !showToolDetails && (
+              <div key="live-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {livePlan.steps.map((step, i) => {
+                  const s = liveStatuses[i]
+                  if (!s || s.status === 'pending') return null
+                  return (
+                    <StepChip
                       key={i}
-                      style={{ width: 3, height: 3, borderRadius: '50%', backgroundColor: 'currentColor', display: 'inline-block' }}
-                      animate={{ opacity: [0.3, 1, 0.3], y: [0, -2, 0] }}
-                      transition={{ repeat: Infinity, duration: 1.2, delay: i * 0.15, ease: 'easeInOut' }}
+                      label={labelOfStep(step)}
+                      status={s.status}
                     />
-                  ))}
-                </span>
-              </motion.div>
-            ) : (
-              executing.map(e => (
-                <ToolPill
-                  key={`${e.name}-r${e.round}`}
-                  name={e.name}
-                  args={e.args}
-                  round={e.round}
-                  executing
-                />
-              ))
+                  )
+                })}
+              </div>
             )}
           </AnimatePresence>
 
           <AnimatePresence>
-            {thinking && executing.length === 0 && <TypingBubble key="typing" assistantName={assistantName} />}
+            {thinking && !hasLivePlan && <TypingBubble key="typing" assistantName={assistantName} />}
           </AnimatePresence>
         </div>
 
@@ -171,7 +164,6 @@ export default function ChatPage({
               style={{ flex: 1 }}
             />
 
-            {/* ปุ่มไมโครโฟน */}
             <motion.button
               type="button"
               className="sh-send"
@@ -194,8 +186,7 @@ export default function ChatPage({
               <Icon name="mic" size={15} />
             </motion.button>
 
-            {/* ปุ่มส่งข้อความ หรือ หยุด */}
-            {(thinking || executing.length > 0) ? (
+            {(thinking || hasLivePlan) ? (
               <motion.button
                 type="button"
                 className="sh-send"

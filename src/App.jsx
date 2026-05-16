@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { INITIAL_TWEAKS } from './data'
 import { clearAll, saveTweaks, loadTweaks } from './utils/storage'
 import { normalizeBase, buildFullTopic, buildCmdTopic, buildConfigTopic } from './utils/mqttTopic'
-import { createExecuteTool } from './utils/agentSkills'
 
 import { useMQTT } from './hooks/useMQTT'
 import { useChat } from './hooks/useChat'
@@ -111,17 +110,6 @@ export default function App() {
     }
   }, [mqttPublish, setDevices, devicesRef, baseTopicRef])
 
-  // ── Tool executor ─────────────────────────────────────────────────────────────
-  const executeTool = useCallback(
-    createExecuteTool({
-      mqttClient, sensorCache, settings, mqttWaitForMessage, mqttWaitForStream,
-      devicesRef, baseTopicRef, setDevices,
-      normalizeBase, buildFullTopic,
-      handleSaveSettings,
-    }),
-    [mqttClient, sensorCache, settings, mqttWaitForMessage, mqttWaitForStream, handleSaveSettings]
-  )
-
   // ── Raw MQTT publish (used by DeviceCard terminal widget) ─────────────────────
   // terminal ส่ง command ตรงๆ ไปที่ device.topic (ไม่ต่อ /set)
   const handleRawPublish = useCallback((topic, payload) => {
@@ -147,10 +135,17 @@ export default function App() {
   }, [setDevices])
 
   // ── Chat ──────────────────────────────────────────────────────────────────────
-  const { messages, thinking, executing, sendMessage, clearChat, stopChat } = useChat({
+  const {
+    messages, thinking, livePlan, liveStatuses, labelOfStep,
+    sendMessage, clearChat, stopChat,
+  } = useChat({
     settings,
     devicesRef,
-    executeTool,
+    baseTopicRef,
+    setDevices,
+    mqttClient,
+    mqttWaitForStream,
+    handleSaveSettings,
   })
 
   // ── Onboarding ────────────────────────────────────────────────────────────────
@@ -361,7 +356,9 @@ export default function App() {
                     onSend={onboarding.active ? onboarding.send : sendMessage}
                     onStop={stopChat}
                     thinking={onboarding.active ? onboarding.thinking : thinking}
-                    executing={onboarding.active ? [] : executing}
+                    livePlan={onboarding.active ? null : livePlan}
+                    liveStatuses={onboarding.active ? [] : liveStatuses}
+                    labelOfStep={labelOfStep}
                     onClear={onboarding.active ? null : clearChat}
                     modelName={modelShort}
                     skillCount={skillCount}

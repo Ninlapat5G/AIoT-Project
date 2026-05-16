@@ -14,7 +14,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DEFAULT_API_KEY } from '../config/default_key'
 import { loadOnboarding, saveOnboarding } from '../utils/storage'
-import { runSin, testApiKey } from '../utils/onboardingAgent'
+import { runSin, testApiKey } from '../utils/onboarding/onboarding'
+import { runGreet } from '../utils/onboarding/greet'
 
 export function useOnboarding({ settings, handleSaveSettings, devicesRef, onComplete, onFarewellStart }) {
   const [completed,  setCompleted]  = useState(() => loadOnboarding()?.completed || false)
@@ -120,30 +121,18 @@ export function useOnboarding({ settings, handleSaveSettings, devicesRef, onComp
     setThinking(true)
 
     abortRef.current = new AbortController()
-    let greetingReply = ''
     try {
-      const result = await runSin({
-        userMessage: null,
-        apiHistory: [],
-        userName: '',
-        stage: 'intro',
+      const { reply } = await runGreet({
         settings: settingsRef.current,
-        devicesRef,
         signal: abortRef.current.signal,
-        onStream: chunk => {
-          greetingReply += chunk
-          streamChunk(chunk)
-        },
+        onStream: streamChunk,
       })
       finalizeStream()
-      if (greetingReply) setApiHistory([{ role: 'assistant', content: greetingReply }])
-      // sync stage/userName จาก graph (เผื่อ trigger มีชื่อ)
-      if (result.stage    !== stage)    setStage(result.stage)
-      if (result.userName !== userName) setUserName(result.userName)
+      if (reply) setApiHistory([{ role: 'assistant', content: reply }])
     } catch (e) {
       if (e.name !== 'AbortError') {
         finalizeStream()
-        const fallback = 'สวัสดีค่ะ! หนูชื่อซิน AI ของ SynaptaOS 🌟 อยากให้เรียกว่าอะไรดีคะ?'
+        const fallback = 'สวัสดีค่ะ! หนูชื่อซิน AI ของ SynaptaOS 🌟 ขอทราบชื่อเธอหน่อยได้มั้ยคะ?'
         setMessages(prev => [...prev, { role: 'ai', text: fallback }])
         setApiHistory([{ role: 'assistant', content: fallback }])
       }
