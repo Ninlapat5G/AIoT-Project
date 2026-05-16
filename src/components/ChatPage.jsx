@@ -65,6 +65,10 @@ export default function ChatPage({
 
   const hasLivePlan = livePlan?.steps?.length > 0
 
+  // 🛑 แยกข้อความที่เสร็จแล้ว กับ ข้อความที่กำลังพิมพ์ (Streaming) ออกจากกัน
+  const completedMsgs = messages.filter(m => !m.streaming)
+  const streamingMsg = messages.find(m => m.streaming)
+
   return (
     <div className="sh-chatpage">
       <div className="sh-chat-frame">
@@ -100,7 +104,8 @@ export default function ChatPage({
           ) : (
             <>
               <div className="sh-side-timestamp mono">— บทสนทนา —</div>
-              {messages.map((m, i) => (
+              {/* 🛑 แสดงเฉพาะข้อความที่เสร็จสมบูรณ์แล้วไว้ด้านบนสุด */}
+              {completedMsgs.map((m, i) => (
                 <ChatBubble
                   key={i}
                   msg={m}
@@ -112,7 +117,7 @@ export default function ChatPage({
             </>
           )}
 
-          {/* Live plan / step chips ระหว่างที่ executor ทำงาน */}
+          {/* 🛑 แสดง Tool Pill ไว้ตรงกลาง (หลังข้อความเก่า แต่ก่อนข้อความที่กำลังสตรีม) */}
           <AnimatePresence>
             {hasLivePlan && showToolDetails && (
               <PlanCard
@@ -139,8 +144,18 @@ export default function ChatPage({
             )}
           </AnimatePresence>
 
+          {/* 🛑 แสดงข้อความที่กำลังพิมพ์ (Streaming) ไว้ล่างสุดเสมอ */}
+          {streamingMsg && (
+            <ChatBubble
+              msg={streamingMsg}
+              assistantName={assistantName}
+              showToolDetails={showToolDetails}
+              labelOfStep={labelOfStep}
+            />
+          )}
+
           <AnimatePresence>
-            {thinking && !hasLivePlan && <TypingBubble key="typing" assistantName={assistantName} />}
+            {thinking && !hasLivePlan && !streamingMsg && <TypingBubble key="typing" assistantName={assistantName} />}
           </AnimatePresence>
         </div>
 
