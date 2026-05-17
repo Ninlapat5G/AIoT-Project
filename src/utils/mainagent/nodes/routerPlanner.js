@@ -44,10 +44,11 @@ export async function routerPlannerNode(state) {
   const systemPrompt = buildSystemPrompt(settings, devices, lastCommand, kgText)
   const llm = makeLLM(settings, { temperature: 0, maxTokens: 600 })
 
-  // 🛑 ไม้เรียวพิฆาต: ดักคอ LLM ที่ข้อความสุดท้าย ป้องกันอาการอินกับแชทแล้วลืมพ่น JSON
+  // แนบ reminder ปิดท้ายข้อความ user ล่าสุด เพื่อบังคับให้ LLM ตอบเป็น JSON ไม่หลุดไปคุยเล่น
   const lastMsg = messages[messages.length - 1]
   const previousMsgs = messages.slice(0, -1)
-  
+
+
   const strictLastMsg = new HumanMessage(
     `${lastMsg?.content || ''}\n\n[คำเตือนจากระบบ: วิเคราะห์คำสั่งด้านบนแล้วตอบกลับเป็นโครงสร้าง JSON เท่านั้น ห้ามตอบเป็นข้อความแชทธรรมดาเด็ดขาด!]`
   )

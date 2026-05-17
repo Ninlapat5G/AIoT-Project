@@ -64,8 +64,7 @@ export function useChat({
           setLivePlan(plan)
           const initStatuses = plan.steps.map(() => ({ status: 'pending' }))
           setLiveStatuses(initStatuses)
-          
-          // 🛑 1. ยัด Tool Pill ลงในประวัติแชทตั้งแต่วินาทีแรก! ไม่มีร่างจำแลงอีกต่อไป!
+
           setMessages(prev => [
             ...prev,
             { _id: planMsgId, role: 'plan', plan, statuses: initStatuses }
@@ -74,8 +73,7 @@ export function useChat({
 
         onStepStart: (index) => {
           setLiveStatuses(prev => prev.map((s, i) => i === index ? { ...s, status: 'running' } : s))
-          // 🛑 2. อัปเดตสถานะ Tool ในประวัติแชทแบบ Real-time
-          setMessages(prev => prev.map(m => 
+          setMessages(prev => prev.map(m =>
             m._id === planMsgId 
               ? { ...m, statuses: m.statuses.map((s, i) => i === index ? { ...s, status: 'running' } : s) }
               : m
@@ -98,13 +96,11 @@ export function useChat({
             if (last?.role === 'ai' && last?.streaming) {
               return [...prev.slice(0, -1), { ...last, text: last.text + chunk }]
             }
-            // 🛑 3. ข้อความ AI ถูกต่อท้ายแบบมี ID ตายตัว
             return [...prev, { _id: 'a-' + Date.now(), role: 'ai', text: chunk, streaming: true }]
           })
         },
       })
 
-      // 🛑 4. พอจบ Turn ก็แค่ดึงธง Streaming ออก ไม่มีการแทรกหรือทำลาย Array แล้ว!
       setMessages(prev => {
         const last = prev[prev.length - 1]
         let base = prev

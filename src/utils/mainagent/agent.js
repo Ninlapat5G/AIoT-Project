@@ -33,8 +33,8 @@ const AgentState = Annotation.Root({
   needs_clarify:    Annotation({ reducer: (_, n) => n, default: () => false }),
   clarify_question: Annotation({ reducer: (_, n) => n, default: () => '' }),
   lastCommand:      Annotation({ reducer: (_, n) => n, default: () => null }),
-  
-  // เพิ่มตัวแปรสำหรับรับรองระบบบีบอัดหน่วยความจำ
+
+  // state สำหรับ memory_compressor — เก็บสรุปและ history ที่บีบอัดแล้ว
   chat_summary:     Annotation({ reducer: (_, n) => n, default: () => '' }),
   optimizedHistory: Annotation({ reducer: (_, n) => n, default: () => [] }),
 })
@@ -52,9 +52,8 @@ function routeAfterRouter(state) {
 async function announcePlan(state) {
   const { plan, needs_clarify, onPlanReady } = state
   if (!needs_clarify && plan?.steps?.length) {
-    // 🛑 เช็คว่าถ้ามีแค่ tool 'general' อย่างเดียว (คุยเล่น) ไม่ต้องส่งไปวาด Tool Pill
+    // ข้ามการแจ้ง plan ถ้ามีแต่ step ประเภท general — ผู้ใช้ไม่ต้องเห็น Tool Pill เปล่า
     const isOnlyGeneral = plan.steps.every(s => s.type === 'general')
-    
     if (!isOnlyGeneral) {
       onPlanReady?.(plan)
     }
@@ -71,13 +70,13 @@ const workflow = new StateGraph(AgentState)
   .addNode('clarify',           clarifyNode)
   .addNode('chat',              chatNode)
   .addNode('response',          responseNode)
-  .addNode('memory_compressor', memoryCompressorNode) // ปลั๊กโหนดบีบความจำเพิ่มท้ายขบวน
+  .addNode('memory_compressor', memoryCompressorNode)
   .addEdge(START, 'router_planner')
   .addEdge('router_planner', 'announce')
   .addConditionalEdges('announce', routeAfterRouter)
   .addEdge('plan_executor', 'response')
-  
-  // ลากท่อปลายทางทั้งหมดเข้าสู่ตัวคัดกรองหน่วยความจำก่อนจบ Turn แบบ Single Source of Truth
+
+  // ทุก path ก่อนจบจะผ่าน memory_compressor เพื่อบีบประวัติแชทไว้ใช้รอบถัดไป
   .addEdge('clarify',           'memory_compressor')
   .addEdge('chat',              'memory_compressor')
   .addEdge('response',          'memory_compressor')
@@ -127,10 +126,10 @@ export async function runAgent(params) {
   const lastMsg = finalState.messages?.[finalState.messages.length - 1]
   const reply = lastMsg?.content || ''
 
-  return { 
-    reply, 
+  return {
+    reply,
     lastCommand: finalState.lastCommand ?? null,
-    optimizedHistory: finalState.optimizedHistory ?? [] // คืนประวัติที่บีบอัดแล้วให้ตัวแปรแชทสเตทภายนอกไปบันทึกรอบถัดไป
+    optimizedHistory: finalState.optimizedHistory ?? [],
   }
 }
 

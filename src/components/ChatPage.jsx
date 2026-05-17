@@ -98,8 +98,7 @@ export default function ChatPage({
           ) : (
             <>
               <div className="sh-side-timestamp mono">— บทสนทนา —</div>
-              
-              {/* 🛑 โยนภาระวาด Tool Pill ให้ ChatBubble จัดการไปเลยตามคิว เนียนกริ๊บ! */}
+
               {messages.map((m, i) => (
                 <ChatBubble
                   key={m._id || `msg-${i}`}

@@ -93,7 +93,7 @@ hub/
 | ส่วน | เทคโนโลยี |
 |---|---|
 | UI | React 18 + Vite 5 + Tailwind CSS |
-| AI / Agent | LangGraph ReAct + Typhoon v2.5 |
+| AI / Agent | LangGraph Plan-and-Execute + Typhoon v2.5 |
 | IoT | MQTT over WebSocket (mqtt.js) |
 | Hub Agent | Python + OpenAI-compatible ReAct loop + paho-mqtt |
 | Deploy | Vercel (static) |
@@ -102,52 +102,67 @@ hub/
 
 ## สถาปัตยกรรม
 
-### Frontend Agent (LangGraph StateGraph)
+### Frontend Agent (LangGraph Plan-and-Execute)
 
 ```
 ผู้ใช้ พิมพ์/พูด
        │
        ▼
-    router ──► จำแนก intent (home_control / realtime_data / settings / general)
-       │       └── filter tools ที่ agent จะเห็นในรอบนี้
+  router_planner ──► สร้าง plan ทั้งก้อนเป็น JSON ตั้งแต่ต้น
+       │             {steps: [{type, ...args}, ...]}
+       │             หรือ {need_clarify: true, question: "..."}
        ▼
-    agent ──► tool_calls? ──► tools ──► reflect ──► agent (loop)
-       │                         └──► บันทึก lastCommandedDevice ใน state
+   announce ──► ส่ง plan ให้ UI วาด Tool Pills (ข้ามถ้าเป็น general ล้วน)
        │
-       │ (ไม่มี tool_calls)
-       │
-       ├── เข้า guard เมื่อครบ 3 เงื่อนไข AND:
-       │     1. lastCommandedDevice != null (มีประวัติสั่งอุปกรณ์ใน session)
-       │     2. intent มี home_control
-       │     3. agent รอบนี้ไม่เรียก tool
-       │
-       │   guard ──► retry?  ──► executor ──► tools ──► responder
-       │             └─ ไม่ retry ──► responder
-       │
-       └── ไม่เข้าเงื่อนไข ──► responder
-
-responder ──► stream คำตอบ ──► END
+       ├── needs_clarify ──► clarify ──┐
+       │                                │
+       ├── steps ทั้งหมดเป็น general ──► chat ──┤
+       │                                │
+       └── มี step ที่ต้อง execute ──► plan_executor ──► response ──┤
+                                       (รัน skill ทีละ step,                │
+                                        ส่ง onStepStart/onStepResult)       │
+                                                                            │
+                                memory_compressor ◄─────────────────────────┘
+                                       │
+                                       ▼
+                                      END
 ```
 
-**Router — intent-based tool filtering**
-- จำแนกเจตนาผู้ใช้ก่อน agent ตัดสินใจ → agent มองเห็นเฉพาะ tool ที่เกี่ยวข้องกับเจตนานั้น (เช่น web_search ไม่โผล่เมื่อ user แค่สั่งเปิดไฟ)
-- ลด surface area ของการตัดสินใจ ทำให้ tool selection ของ small models แม่นขึ้น
+**Router-Planner — วาง plan ทั้งก้อนก่อนรัน**
+- LLM อ่านคำสั่ง user + Knowledge Graph + history แล้วตอบเป็น JSON ชุดเดียวว่าจะทำกี่ step ใช้ skill ไหน args อะไรบ้าง
+- ต่างจาก ReAct ที่ต้องคิดทีละ step เรียก tool แล้วค่อยคิดต่อ — plan-first ลดจำนวนรอบ LLM ลงเหลือ ~2 (planner + responder) และ UI เห็นแผนทั้งหมดก่อน execute
+- ถ้าข้อมูลไม่พอ → ตั้ง `need_clarify` ให้ clarify node ถามผู้ใช้
 
-**Guard System — ป้องกัน hallucination**
-- `lastCommandedDevice` เก็บ device ล่าสุดที่ถูกสั่งใน session state (reset เมื่อล้างแชท)
-- Guard อ่าน KG state ปัจจุบันของ device นั้น เทียบกับ draft response ของ agent
-- ถ้า agent อ้างว่าทำสำเร็จแต่ tool ไม่ได้ถูกเรียก → executor บังคับ tool call ใหม่
-- ครอบคลุมทุก device type (digital / analog / hub) ผ่าน KG
+**Plan-Executor — รัน step ตาม plan**
+- รัน step แบบ sequential ตามลำดับใน plan
+- แต่ละ `step.type` map ไปยัง skill ใน `src/utils/mainagent/skills/`:
 
-**Reflect — กัน tool loop ใน turn เดียวกัน**
-- คั่นระหว่าง `tools → agent`: สรุปว่า turn นี้เรียก tool อะไรไปบ้าง ได้ผลอะไร ข้อมูลพอตอบ user หรือยัง
-- Inject เป็น SystemMessage ให้ agent เห็นก่อนตัดสินใจรอบใหม่ → กันเคส agent วนเรียก tool เดิมแบบเปลี่ยน keyword หนี dedupe
-- กรอง remaining ที่พูดถึง device นอก KG ทิ้ง → กัน reflect หลอน device ที่ไม่มีจริง
-- Scope เฉพาะ turn ปัจจุบัน, ถูก filter ออกใน responder จึงไม่ leak เข้าคำตอบสุดท้าย
+  | Skill | หน้าที่ |
+  |---|---|
+  | `homeControl` | สั่ง MQTT ไปยัง IoT device (digital/analog) |
+  | `hubControl` | ส่ง task ไปยัง Hub Agent (Python ReAct) |
+  | `realtimeData` | ค้นเว็บผ่าน Serper API |
+  | `manageSettings` | อ่าน/แก้ settings ผ่านภาษาธรรมชาติ |
+  | `general` | ตอบคำถาม/คุยเล่นด้วย LLM โดยตรง |
+  | `deviceNotFound` | จัดการเคส plan อ้างถึง device ที่ไม่อยู่ใน KG |
+
+- แต่ละ step ส่ง callback `onStepStart` / `onStepResult` ออก UI → Tool Pill เปลี่ยนสถานะ pending → running → ok/fail แบบ real-time
+
+**Response — สรุปผลให้ user**
+- รับผลของทุก step ที่รันไป + KG ปัจจุบัน → stream คำตอบเป็นภาษาธรรมชาติให้ user
+
+**Memory Compressor — บีบประวัติแชทก่อนจบ turn**
+- ทุก path (chat / clarify / response) ผ่าน node นี้ก่อน END
+- สรุปประวัติทั้งหมดให้สั้นลง คืนเป็น `optimizedHistory` ให้ caller (`useChat`) เก็บไว้ใช้ turn ถัดไป
+- กัน context window ระเบิดเมื่อสนทนายาว ๆ โดยไม่ทิ้งใจความสำคัญ
 
 ```
-tools ──► MQTT ──► IoT Devices (digital / analog)
-      └──► MQTT ──► Hub Agent (Python)
-                      └── ReAct loop (os_exec + web_search)
+plan_executor ──► homeControl  ──► MQTT ──► IoT Devices (digital / analog)
+              ├── hubControl   ──► MQTT ──► Hub Agent (Python)
+              │                                └── ReAct loop (os_exec + web_search)
+              ├── realtimeData ──► Serper API
+              └── manageSettings ──► local Settings store
 ```
+
+> หมายเหตุ: architecture เวอร์ชันก่อนหน้า (ReAct + Reflect + Guard) อยู่ที่ branch [`old_architecture`](../../tree/old_architecture) สำหรับอ้างอิง
 
