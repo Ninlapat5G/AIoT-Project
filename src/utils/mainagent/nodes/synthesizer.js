@@ -15,7 +15,6 @@ const SUMMARIZE_PROMPT = `คุณคือ Evaluator — ประเมิน
 
 [กฎ]
 - Plain text 1 ประโยค ห้าม JSON / markdown / code block / อีโมจิ
-- ห้ามอธิบาย ห้ามเล่ารายละเอียดข้อมูล — พ่นแค่คำสั่งตรง ๆ
 - ระบุอุปกรณ์ให้ชัด (เช่น "ไฟหน้าบ้าน" ไม่ใช่ "ไฟ")`
 
 export async function synthesizerNode(state) {
