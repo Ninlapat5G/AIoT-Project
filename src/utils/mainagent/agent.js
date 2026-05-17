@@ -6,9 +6,12 @@ import { planExecutorNode }  from './nodes/planExecutor.js'
 import { clarifyNode }       from './nodes/clarify.js'
 import { chatNode }          from './nodes/chat.js'
 import { responseNode }      from './nodes/response.js'
+import { synthesizerNode }   from './nodes/synthesizer.js'
 import { memoryCompressorNode } from './nodes/memoryCompressor.js'
 
 // ── State ─────────────────────────────────────────────────────────────────────
+
+const appendArray = (curr, next) => [...(curr || []), ...(next || [])]
 
 const AgentState = Annotation.Root({
   messages:        Annotation({ reducer: messagesStateReducer, default: () => [] }),
@@ -29,10 +32,25 @@ const AgentState = Annotation.Root({
   onStream:        Annotation(),
 
   plan:             Annotation({ reducer: (_, n) => n, default: () => null }),
-  completed:        Annotation({ reducer: (_, n) => n, default: () => [] }),
+  // completed: append ข้ามรอบของ multi-router ภายใน turn เดียว (reset ใน runAgent ทุก turn)
+  completed:        Annotation({ reducer: appendArray, default: () => [] }),
   needs_clarify:    Annotation({ reducer: (_, n) => n, default: () => false }),
   clarify_question: Annotation({ reducer: (_, n) => n, default: () => '' }),
   lastCommand:      Annotation({ reducer: (_, n) => n, default: () => null }),
+
+  // multi-router state
+  router_round:       Annotation({ reducer: (_, n) => n, default: () => 0 }),
+  max_router_rounds:  Annotation({ reducer: (_, n) => n, default: () => 2 }),
+  needs_next_round:   Annotation({ reducer: (_, n) => n, default: () => false }),
+  router_context:     Annotation({ reducer: (_, n) => n, default: () => '' }),
+
+  // executor failure tracking
+  has_failed_step: Annotation({ reducer: (_, n) => n, default: () => false }),
+  failed_steps:    Annotation({ reducer: appendArray, default: () => [] }),
+
+  // carry-over ข้าม turn — ส่งกลับ caller แล้วป้อนเข้ามาใหม่ turn ถัดไป
+  wait_retry:      Annotation({ reducer: (_, n) => n, default: () => '' }),
+  pending_clarify: Annotation({ reducer: (_, n) => n, default: () => '' }),
 
   // state สำหรับ memory_compressor — เก็บสรุปและ history ที่บีบอัดแล้ว
   chat_summary:     Annotation({ reducer: (_, n) => n, default: () => '' }),
@@ -45,8 +63,16 @@ function routeAfterRouter(state) {
   if (state.needs_clarify) return 'clarify'
   const steps = state.plan?.steps || []
   if (steps.length > 0 && steps.every(s => s.type === 'general')) return 'chat'
-  if (steps.length === 0) return 'chat'
+  if (steps.length === 0) return state.needs_next_round ? 'synthesizer' : 'response'
   return 'plan_executor'
+}
+
+function routeAfterExecutor(state) {
+  if (state.has_failed_step) return 'response'  // ตัดวงจร multi-router — แจ้ง user
+  if (state.needs_next_round && state.router_round < state.max_router_rounds) {
+    return 'synthesizer'
+  }
+  return 'response'
 }
 
 async function announcePlan(state) {
@@ -70,11 +96,13 @@ const workflow = new StateGraph(AgentState)
   .addNode('clarify',           clarifyNode)
   .addNode('chat',              chatNode)
   .addNode('response',          responseNode)
+  .addNode('synthesizer',       synthesizerNode)
   .addNode('memory_compressor', memoryCompressorNode)
   .addEdge(START, 'router_planner')
   .addEdge('router_planner', 'announce')
   .addConditionalEdges('announce', routeAfterRouter)
-  .addEdge('plan_executor', 'response')
+  .addConditionalEdges('plan_executor', routeAfterExecutor)
+  .addEdge('synthesizer', 'router_planner')
 
   // ทุก path ก่อนจบจะผ่าน memory_compressor เพื่อบีบประวัติแชทไว้ใช้รอบถัดไป
   .addEdge('clarify',           'memory_compressor')
@@ -94,6 +122,9 @@ export async function runAgent(params) {
     devicesRef, baseTopicRef, setDevices, handleSaveSettings,
     signal,
     lastCommand,
+    wait_retry,
+    pending_clarify,
+    maxRouterRounds,
     onPlanReady, onStepStart, onStepResult, onStream,
   } = params
 
@@ -121,6 +152,17 @@ export async function runAgent(params) {
     onPlanReady, onStepStart, onStepResult, onStream,
     chat_summary: '',
     optimizedHistory: [],
+
+    router_round: 0,
+    max_router_rounds: maxRouterRounds ?? 2,
+    needs_next_round: false,
+    router_context: '',
+    has_failed_step: false,
+    failed_steps: [],
+    completed: [],
+
+    wait_retry: wait_retry ?? '',
+    pending_clarify: pending_clarify ?? '',
   })
 
   const lastMsg = finalState.messages?.[finalState.messages.length - 1]
@@ -130,6 +172,8 @@ export async function runAgent(params) {
     reply,
     lastCommand: finalState.lastCommand ?? null,
     optimizedHistory: finalState.optimizedHistory ?? [],
+    wait_retry: finalState.wait_retry ?? '',
+    pending_clarify: finalState.pending_clarify ?? '',
   }
 }
 

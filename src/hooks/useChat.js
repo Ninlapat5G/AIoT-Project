@@ -24,6 +24,8 @@ export function useChat({
 
   const abortControllerRef = useRef(null)
   const lastCommandRef = useRef(null)
+  const waitRetryRef = useRef('')
+  const pendingClarifyRef = useRef('')
 
   const stopChat = useCallback(() => {
     if (abortControllerRef.current) {
@@ -46,11 +48,13 @@ export function useChat({
     const planMsgId = 'p-' + Date.now()
 
     try {
-      const { reply, lastCommand } = await runAgent({
+      const { reply, lastCommand, wait_retry, pending_clarify } = await runAgent({
         text,
         settings,
         apiHistory,
         lastCommand: lastCommandRef.current,
+        wait_retry: waitRetryRef.current,
+        pending_clarify: pendingClarifyRef.current,
         devicesRef,
         baseTopicRef,
         setDevices,
@@ -118,6 +122,8 @@ export function useChat({
       setLivePlan(null)
       setLiveStatuses([])
       if (lastCommand !== null) lastCommandRef.current = lastCommand
+      waitRetryRef.current = wait_retry ?? ''
+      pendingClarifyRef.current = pending_clarify ?? ''
 
       setApiHistory(prev => [
         ...prev,
@@ -154,6 +160,8 @@ export function useChat({
     setMessages([])
     setApiHistory([])
     lastCommandRef.current = null
+    waitRetryRef.current = ''
+    pendingClarifyRef.current = ''
   }, [stopChat])
 
   return {
