@@ -87,42 +87,51 @@ function buildRoundOnePrompt(settings, lastCommand, kgText, pending_clarify, wai
 function buildRoundTwoPrompt(settings, kgText, router_context) {
   const skillBlock = buildPlanPrompt(settings)
 
-  const roleBlock = `[หน้าที่ของคุณ — ตอนนี้คุณอยู่ในรอบที่ 2 ของ turn นี้]
-รอบที่ 1 คุณค้น/ดึงข้อมูลมาเสร็จแล้ว ผลอยู่ใน [ข้อมูลที่ค้นมาได้] ข้างล่าง
-หน้าที่ตอนนี้: อ่านข้อมูล + ดู user request เดิม แล้วตัดสินใจ "action" ที่จะทำต่อ (หรือไม่ทำ)
+  // ลำดับการอ่านที่ออกแบบไว้:
+  // 1. รู้ก่อนว่าตัวเองอยู่จุดไหนใน flow (บทบาท)
+  // 2. เห็นข้อมูลที่มีอยู่แล้ว (สำคัญสุดสำหรับการตัดสินใจ — วางใกล้ top)
+  // 3. รู้ context ของบ้าน
+  // 4. รู้ว่าเลือก tool อะไรได้ (เห็นครบ — ไม่ filter)
+  // 5. รู้กฎตัดสินใจ + ตัวอย่าง
+
+  const roleBlock = `[หน้าที่ของคุณ — router ตัวต่อมา รับงานต่อจาก router ก่อนหน้า]
+router ตัวก่อนหน้าได้ทำการดึงข้อมูลมาให้แล้ว และส่งต่อมาให้คุณตัดสินใจขั้นถัดไป
+ผลของรอบก่อนอยู่ใน [ข้อมูลที่ได้มาแล้ว] ข้างล่าง
+หน้าที่ตอนนี้: อ่านข้อมูลที่ได้รับ + ดู user request เดิม → ตัดสินใจ step ต่อไปที่จะทำ
 ตอบกลับเป็น JSON ก้อนเดียว`
 
-  const dataBlock = `[ข้อมูลที่ค้นมาได้ ในรอบ 1]
+  const dataBlock = `[ข้อมูลที่ได้มาแล้ว — ผลของรอบก่อน]
 ${router_context}`
 
   const kgBlock = `[สถานะบ้านตอนนี้]
 ${kgText}`
 
-  const toolsBlock = `[เครื่องมือที่ใช้ได้ในรอบนี้]
-${skillBlock}
+  const toolsBlock = `[เครื่องมือที่ใช้ได้]
+${skillBlock}`
 
-ข้อจำกัดสำคัญของรอบ 2:
-- ห้ามใช้ realtime_data หรือ step ค้นข้อมูลเรื่องเดิมซ้ำ — ข้อมูลอยู่ข้างบนแล้ว
-- ใช้เฉพาะ step ที่เป็น action จริง (เช่น home_control, hub_control, manage_settings)`
+  const decisionBlock = `[วิธีตัดสินใจ]
+ขั้น 1: อ่าน [ข้อมูลที่ได้มาแล้ว] + ดู user request เดิม
+ขั้น 2: ถามตัวเอง "ข้อมูลที่มีตอบเงื่อนไขของ user ได้ครบหรือยัง?"
+  - ครบแล้ว → ทำ action ตามเงื่อนไข หรือ ไม่ทำอะไรเลย แล้วตั้ง "needs_next_round": false (จบ)
+  - ยังไม่ครบ → ค้น/ดึงข้อมูลเพิ่ม (อย่าค้นซ้ำเรื่องที่มีคำตอบอยู่แล้ว) "needs_next_round": true
 
-  const decisionBlock = `[ตัดสินใจ]
-1. ดู user request เดิม + เงื่อนไขที่ user สั่ง
-2. เอาข้อมูลจาก [ข้อมูลที่ค้นมาได้] มาตรวจว่าเงื่อนไขเข้าหรือไม่
-3. ตอบตาม 3 รูปแบบนี้:
+รูปแบบคำตอบที่เจอบ่อย:
 
-   (ก) เงื่อนไขเข้า → ใส่ action step ที่ต้องทำ
-       ตัวอย่าง: ข้อมูลบอก "BTC = $105k" + user สั่ง "ถ้า BTC > 100k เปิดไฟห้องนอน"
-       ตอบ: {"steps":[{"type":"home_control","device":"ไฟห้องนอน","payload":"ON",...}],"needs_next_round":false}
+(ก) ข้อมูลครบ + เงื่อนไขเข้า → ใส่ action step
+    ตัวอย่าง: ข้อมูล "BTC = $105k", user สั่ง "ถ้า BTC > 100k เปิดไฟห้องนอน"
+    ตอบ: {"steps":[{"type":"home_control","device":"ไฟห้องนอน","payload":"ON",...}],"needs_next_round":false}
 
-   (ข) เงื่อนไขไม่เข้า → ไม่ทำอะไร
-       ตัวอย่าง: ข้อมูลบอก "BTC = $80k" + user สั่ง "ถ้า BTC > 100k เปิดไฟห้องนอน"
-       ตอบ: {"steps":[],"needs_next_round":false}
+(ข) ข้อมูลครบ + เงื่อนไขไม่เข้า → ไม่ทำอะไร
+    ตัวอย่าง: ข้อมูล "BTC = $80k", user สั่ง "ถ้า BTC > 100k เปิดไฟห้องนอน"
+    ตอบ: {"steps":[],"needs_next_round":false}
 
-   (ค) user สั่งเป็น 2 ฝั่ง (ถ้า A ทำ X, ถ้า B ทำ Y) → เลือกฝั่งที่ตรงข้อมูล
-       ตัวอย่าง: ข้อมูลบอก "หุ้นลง" + user สั่ง "ถ้าขึ้นเปิดไฟ ถ้าลงปิดไฟ"
-       ตอบ: {"steps":[{"type":"home_control","device":"ไฟหน้าบ้าน","payload":"OFF",...}],"needs_next_round":false}
+(ค) user สั่ง 2 ฝั่ง (ถ้า A ทำ X, ถ้า B ทำ Y) → เลือกฝั่งที่ตรงข้อมูล
+    ตัวอย่าง: ข้อมูล "หุ้นลง 4%", user สั่ง "ถ้าขึ้นเปิดไฟ ถ้าลงปิดไฟ"
+    ตอบ: {"steps":[{"type":"home_control","device":"ไฟหน้าบ้าน","payload":"OFF",...}],"needs_next_round":false}
 
-"needs_next_round": false เสมอ (รอบ 2 เป็นรอบจบ)`
+(ง) ข้อมูลยังไม่ครบ ต้องค้นเพิ่ม → ค้น (ห้ามค้นซ้ำเรื่องเดิม)
+    ตัวอย่าง: รอบก่อนได้ราคา BTC วันนี้ แต่ user ถามแนวโน้มสัปดาห์ → ค้นเพิ่ม
+    ตอบ: {"steps":[{"type":"realtime_data","query":"แนวโน้มราคา BTC สัปดาห์นี้"}],"needs_next_round":true}`
 
   return [roleBlock, dataBlock, kgBlock, toolsBlock, decisionBlock].join('\n\n')
 }
