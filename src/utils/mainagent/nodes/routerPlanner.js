@@ -1,8 +1,37 @@
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { snapshotText } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
-import { parseJSON } from '../helpers/jsonParser.js'
 import { buildPlanPrompt } from '../skills/index.js'
+
+// JSON schema บังคับให้ LLM ต้อง commit needs_next_round ทุกครั้ง — กัน Typhoon ลืมใส่ field
+const ROUTER_SCHEMA = {
+  type: 'object',
+  properties: {
+    steps: {
+      type: 'array',
+      description: 'รายการ step ที่ต้องทำในรอบนี้ — อาจเป็น array ว่างถ้าตัดสินใจไม่ทำอะไร',
+      items: {
+        type: 'object',
+        additionalProperties: true,
+        properties: { type: { type: 'string' } },
+        required: ['type'],
+      },
+    },
+    needs_next_round: {
+      type: 'boolean',
+      description: 'true เฉพาะกรณี: รอบนี้มี step ดึงข้อมูล แล้วต้องเอาผลไปตัดสินใจ step ถัดไปในรอบต่อมา ปกติให้ false',
+    },
+    need_clarify: {
+      type: 'boolean',
+      description: 'true ถ้าจะถาม user ล้วน ๆ ไม่ทำอะไร (ใช้แทน steps)',
+    },
+    question: {
+      type: 'string',
+      description: 'คำถาม clarify (ใช้คู่กับ need_clarify=true)',
+    },
+  },
+  required: ['steps', 'needs_next_round'],
+}
 
 function buildSystemPrompt(settings, devices, lastCommand, kgText, carryOver) {
   const skillBlock = buildPlanPrompt(settings)
@@ -77,19 +106,12 @@ ${skillBlock}`
 - ตัดสินใจไม่ทำอะไรเพิ่ม → {"steps":[],"needs_next_round":false}
 - ถามล้วน (โหมดเดียวกัน) → {"need_clarify":true,"question":"..."}`
 
-  // ── Section: format ──────────────────────────────────────────────────────
-  const formatBlock = `[รูปแบบคำตอบ]
-ตอบเป็น JSON ก้อนเดียวเท่านั้น
-ห้าม: เกริ่นนำ, markdown, code block, คำอธิบายข้าง JSON, คำว่า "รับทราบ"
-ค่า value ในภาษาไทยได้ตามปกติ`
-
   return [
     roleBlock,
     contextBlock,
     toolsBlock,
     decisionBlock,
     specialBlock,
-    formatBlock,
   ].join('\n\n')
 }
 
@@ -105,38 +127,26 @@ export async function routerPlannerNode(state) {
     wait_retry: state.wait_retry || '',
   }
   const systemPrompt = buildSystemPrompt(settings, devices, lastCommand, kgText, carryOver)
-  const llm = makeLLM(settings, { temperature: 0, maxTokens: 600 })
+  const llm = makeLLM(settings, {
+    temperature: 0,
+    maxTokens: 600,
+    structured: ROUTER_SCHEMA,
+  })
 
-  // แนบ reminder ปิดท้ายข้อความ user ล่าสุด เพื่อบังคับให้ LLM ตอบเป็น JSON ไม่หลุดไปคุยเล่น
   const lastMsg = messages[messages.length - 1]
   const previousMsgs = messages.slice(0, -1)
-
-  const strictLastMsg = new HumanMessage(
-    `${lastMsg?.content || ''}\n\n[คำเตือนจากระบบ: วิเคราะห์คำสั่งด้านบนแล้วตอบกลับเป็นโครงสร้าง JSON เท่านั้น ห้ามตอบเป็นข้อความแชทธรรมดาเด็ดขาด!]`
-  )
-
-  const msgs = [new SystemMessage(systemPrompt), ...previousMsgs, strictLastMsg]
+  const msgs = [new SystemMessage(systemPrompt), ...previousMsgs, new HumanMessage(String(lastMsg?.content || ''))]
 
   let plan
   try {
-    const res = await llm.invoke(msgs, { signal })
-    plan = parseJSON(String(res.content || ''))
-  } catch {
-    console.warn('  [Router] parse error → retry')
-    try {
-      const retry = await llm.invoke(
-        [...msgs, new HumanMessage('[ระบบ: ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่น]')],
-        { signal }
-      )
-      plan = parseJSON(String(retry.content || ''))
-    } catch (err2) {
-      console.warn('  [Router] retry failed:', err2?.message)
-      return {
-        plan: null,
-        needs_clarify: true,
-        clarify_question: 'ขอโทษค่ะ ระบบวิเคราะห์คำสั่งสับสนนิดหน่อย ช่วยพูดใหม่อีกทีได้มั้ยคะ?',
-        router_round: (state.router_round || 0) + 1,
-      }
+    plan = await llm.invoke(msgs, { signal })
+  } catch (err) {
+    console.warn('  [Router] structured-output failed:', err?.message)
+    return {
+      plan: null,
+      needs_clarify: true,
+      clarify_question: 'ขอโทษค่ะ ระบบวิเคราะห์คำสั่งสับสนนิดหน่อย ช่วยพูดใหม่อีกทีได้มั้ยคะ?',
+      router_round: (state.router_round || 0) + 1,
     }
   }
 
