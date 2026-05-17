@@ -33,30 +33,15 @@ const ROUTER_SCHEMA = {
   required: ['steps', 'needs_next_round'],
 }
 
-function buildSystemPrompt(settings, devices, lastCommand, kgText, carryOver) {
+function buildRoundOnePrompt(settings, lastCommand, kgText, pending_clarify, wait_retry) {
   const skillBlock = buildPlanPrompt(settings)
-  const { router_context, pending_clarify, wait_retry } = carryOver || {}
 
-  // ── Section: หน้าที่ ────────────────────────────────────────────────────────
   const roleBlock = `[หน้าที่ของคุณ]
-อ่านคำสั่งล่าสุดของ user แล้วเลือกเครื่องมือ (step) มาใช้ทำงาน ตอบกลับเป็น JSON ก้อนเดียวเท่านั้น`
+อ่านคำสั่งล่าสุดของ user แล้วเลือกเครื่องมือ (step) มาใช้ทำงาน ตอบกลับเป็น JSON ก้อนเดียว`
 
-  // ── Section: context ของสถานะปัจจุบัน + carry-over ─────────────────────────
   const contextParts = [`[สถานะบ้านตอนนี้]\n${kgText}`]
-
   if (lastCommand) {
     contextParts.push(`[อุปกรณ์ที่เพิ่งสั่งล่าสุด]\n${lastCommand}`)
-  }
-  if (router_context) {
-    contextParts.push(
-      `[ผลของรอบก่อน — คุณเพิ่งค้น/ดึงข้อมูลมาเสร็จ ในรอบที่ 1]
-${router_context}
-
-→ คุณอยู่ในรอบที่ 2 แล้ว
-→ ห้ามค้นหา/ดึงข้อมูลเรื่องเดิมซ้ำอีก — ใช้ข้อมูลข้างบนเลย
-→ ตัดสินใจตอนนี้ว่าจะทำ action ต่อยังไง (เช่น home_control เปิด/ปิดอุปกรณ์) หรือถ้าเงื่อนไขไม่เข้าก็ตอบ {"steps":[]}
-→ "needs_next_round": false เสมอ (จบ turn)`
-    )
   }
   if (pending_clarify) {
     contextParts.push(
@@ -70,15 +55,10 @@ ${router_context}
   }
   const contextBlock = contextParts.join('\n\n')
 
-  // ── Section: เครื่องมือ ────────────────────────────────────────────────────
-  const toolsBlock = `[เครื่องมือที่ใช้ได้]
-${skillBlock}`
+  const toolsBlock = `[เครื่องมือที่ใช้ได้]\n${skillBlock}`
 
-  // ── Section: กฎการตัดสินใจหลัก ────────────────────────────────────────────
   const decisionBlock = `[คิดก่อนวาง plan: รอบเดียวจบ หรือ ต้องค้นหาข้อมูลก่อนแล้วค่อยทำ?]
-ถ้ามี [ผลของรอบก่อน] อยู่ใน context ข้างบน = คุณอยู่รอบ 2 แล้ว ข้าม section นี้ไปทำตาม instruction ของรอบ 2 ใน context block
-
-ถ้าไม่มี = คุณอยู่รอบ 1 ใช้เกณฑ์ข้างล่าง:
+เกณฑ์เดียว:
 "งานนี้มี step ที่ต้องค้นหา/ดึงข้อมูล แล้วเอาผลของมันไปตัดสินใจ step ถัดไป ไหม?"
 
 (ก) ไม่มี — รู้ทุกอย่างจาก KG ปัจจุบันแล้ว → ใส่ทุก step ในรอบนี้, "needs_next_round": false
@@ -88,31 +68,71 @@ ${skillBlock}`
 
 (ข) มี — ต้องค้นหาข้อมูลก่อน แล้วค่อยเอาผลไปทำขั้นต่อไป → รอบนี้ใส่แค่ step ค้นหา, "needs_next_round": true
     อย่าเดาผลล่วงหน้าแล้ว plan step ถัดไปในรอบเดียวกัน
-    ปล่อยให้รอบ 2 (ซึ่งจะได้ [ผลของรอบก่อน] มาดู) เป็นคนตัดสินใจตามข้อมูลจริง
+    ปล่อยให้รอบ 2 (ซึ่งจะได้ผลค้นจริงมาดู) เป็นคนตัดสินใจ
     ตัวอย่าง:
       User: "ดูราคา BTC ถ้าเกิน 100k USD เปิดไฟห้องนอน"
       → มี step ค้นราคา BTC ที่ผลของมันใช้ตัดสินใจว่าจะเปิดไฟไหม → เข้าเคส (ข)
-      รอบ 1 ตอบ: {"steps":[{"type":"realtime_data","query":"ราคา BTC ตอนนี้ USD"}],"needs_next_round":true}
-      (ห้ามใส่ home_control ในรอบนี้)
+      ตอบ: {"steps":[{"type":"realtime_data","query":"ราคา BTC ตอนนี้ USD"}],"needs_next_round":true}
+      (ห้ามใส่ home_control ในรอบนี้)`
 
-      รอบ 2 (จะมี [ผลของรอบก่อน] ใน context) ตัดสินใจอีกที:
-        - เข้าเงื่อนไข → {"steps":[{"type":"home_control",...เปิดไฟห้องนอน...}],"needs_next_round":false}
-        - ไม่เข้า     → {"steps":[],"needs_next_round":false}`
-
-  // ── Section: เคสพิเศษ ──────────────────────────────────────────────────────
   const specialBlock = `[เคสอื่น ๆ]
 - user พูดสั้น ("ปิดเลย", "อันนั้น", "มัน", "ด้วย", "อีกอัน") → ดู history หาว่าหมายถึงอุปกรณ์ตัวไหน แล้ว plan ต่อ ไม่ต้องถามซ้ำ
 - ข้อมูลไม่พอจะ plan → ถามก่อน: {"steps":[{"type":"general","response":"คำถามสั้น ๆ"}],"needs_next_round":false}
 - ตัดสินใจไม่ทำอะไรเพิ่ม → {"steps":[],"needs_next_round":false}
 - ถามล้วน (โหมดเดียวกัน) → {"need_clarify":true,"question":"..."}`
 
-  return [
-    roleBlock,
-    contextBlock,
-    toolsBlock,
-    decisionBlock,
-    specialBlock,
-  ].join('\n\n')
+  return [roleBlock, contextBlock, toolsBlock, decisionBlock, specialBlock].join('\n\n')
+}
+
+function buildRoundTwoPrompt(settings, kgText, router_context) {
+  const skillBlock = buildPlanPrompt(settings)
+
+  const roleBlock = `[หน้าที่ของคุณ — ตอนนี้คุณอยู่ในรอบที่ 2 ของ turn นี้]
+รอบที่ 1 คุณค้น/ดึงข้อมูลมาเสร็จแล้ว ผลอยู่ใน [ข้อมูลที่ค้นมาได้] ข้างล่าง
+หน้าที่ตอนนี้: อ่านข้อมูล + ดู user request เดิม แล้วตัดสินใจ "action" ที่จะทำต่อ (หรือไม่ทำ)
+ตอบกลับเป็น JSON ก้อนเดียว`
+
+  const dataBlock = `[ข้อมูลที่ค้นมาได้ ในรอบ 1]
+${router_context}`
+
+  const kgBlock = `[สถานะบ้านตอนนี้]
+${kgText}`
+
+  const toolsBlock = `[เครื่องมือที่ใช้ได้ในรอบนี้]
+${skillBlock}
+
+ข้อจำกัดสำคัญของรอบ 2:
+- ห้ามใช้ realtime_data หรือ step ค้นข้อมูลเรื่องเดิมซ้ำ — ข้อมูลอยู่ข้างบนแล้ว
+- ใช้เฉพาะ step ที่เป็น action จริง (เช่น home_control, hub_control, manage_settings)`
+
+  const decisionBlock = `[ตัดสินใจ]
+1. ดู user request เดิม + เงื่อนไขที่ user สั่ง
+2. เอาข้อมูลจาก [ข้อมูลที่ค้นมาได้] มาตรวจว่าเงื่อนไขเข้าหรือไม่
+3. ตอบตาม 3 รูปแบบนี้:
+
+   (ก) เงื่อนไขเข้า → ใส่ action step ที่ต้องทำ
+       ตัวอย่าง: ข้อมูลบอก "BTC = $105k" + user สั่ง "ถ้า BTC > 100k เปิดไฟห้องนอน"
+       ตอบ: {"steps":[{"type":"home_control","device":"ไฟห้องนอน","payload":"ON",...}],"needs_next_round":false}
+
+   (ข) เงื่อนไขไม่เข้า → ไม่ทำอะไร
+       ตัวอย่าง: ข้อมูลบอก "BTC = $80k" + user สั่ง "ถ้า BTC > 100k เปิดไฟห้องนอน"
+       ตอบ: {"steps":[],"needs_next_round":false}
+
+   (ค) user สั่งเป็น 2 ฝั่ง (ถ้า A ทำ X, ถ้า B ทำ Y) → เลือกฝั่งที่ตรงข้อมูล
+       ตัวอย่าง: ข้อมูลบอก "หุ้นลง" + user สั่ง "ถ้าขึ้นเปิดไฟ ถ้าลงปิดไฟ"
+       ตอบ: {"steps":[{"type":"home_control","device":"ไฟหน้าบ้าน","payload":"OFF",...}],"needs_next_round":false}
+
+"needs_next_round": false เสมอ (รอบ 2 เป็นรอบจบ)`
+
+  return [roleBlock, dataBlock, kgBlock, toolsBlock, decisionBlock].join('\n\n')
+}
+
+function buildSystemPrompt(settings, devices, lastCommand, kgText, carryOver) {
+  const { router_context, pending_clarify, wait_retry } = carryOver || {}
+  if (router_context) {
+    return buildRoundTwoPrompt(settings, kgText, router_context)
+  }
+  return buildRoundOnePrompt(settings, lastCommand, kgText, pending_clarify, wait_retry)
 }
 
 export async function routerPlannerNode(state) {
