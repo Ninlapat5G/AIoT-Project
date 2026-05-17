@@ -84,49 +84,8 @@ function buildRoundOnePrompt(settings, lastCommand, kgText, pending_clarify, wai
   return [roleBlock, contextBlock, toolsBlock, decisionBlock, specialBlock].join('\n\n')
 }
 
-function buildRoundTwoPrompt(settings, kgText) {
-  const skillBlock = buildPlanPrompt(settings)
-
-  // Round 2 = Dumb Executor (Blindfold pattern)
-  // มันมองไม่เห็นคำสั่งดั้งเดิมของ user — เห็นแค่คำสั่งปฏิบัติการตรง ๆ จาก synthesizer
-  // หน้าที่: แปลงคำสั่ง text → JSON step สั่งงานอุปกรณ์ ห้ามคิดนอกกรอบ
-
-  const roleBlock = `[หน้าที่]
-คุณคือ Executor — อ่านประโยค "คำสั่ง" ที่ได้รับ มองหากริยาสั่งงาน (เปิด/ปิด/ตั้ง/หรี่/ฯลฯ) + อุปกรณ์ แล้วพ่น JSON step สั่งงานตามนั้น
-
-วิธีอ่านคำสั่ง:
-- ถ้าประโยคมีกริยาสั่งงาน + อุปกรณ์ → plan step ตามนั้น
-  แม้ประโยคจะมีบริบท/เหตุผลนำ (เช่น "ราคาหุ้นขึ้น ดังนั้นเปิดไฟหน้าบ้าน") ก็ตาม
-  ให้ focus ที่ส่วน action ("เปิดไฟหน้าบ้าน") แล้ว plan home_control
-- ถ้าประโยคบอกยกเลิก ("ไม่ต้องทำอะไร", "เงื่อนไขไม่ตรง") → ตอบ {"steps":[],"needs_next_round":false}
-
-ตัวอย่าง:
-  input: "เปิดไฟหน้าบ้าน"
-  output: {"steps":[{"type":"home_control","device":"ไฟหน้าบ้าน",...,"payload":"ON"}],"needs_next_round":false}
-
-  input: "ราคาหุ้น SCB ขึ้น ดังนั้นเปิดไฟหน้าบ้าน"
-  output: {"steps":[{"type":"home_control","device":"ไฟหน้าบ้าน",...,"payload":"ON"}],"needs_next_round":false}
-  (สนใจแค่ "เปิดไฟหน้าบ้าน" ตอนปลายประโยค ข้ามบริบทราคาหุ้นไป)
-
-  input: "เงื่อนไขไม่ตรง ไม่ต้องทำอะไร"
-  output: {"steps":[],"needs_next_round":false}
-
-ตอบ JSON ก้อนเดียว "needs_next_round": false เสมอ ห้ามคิดนอกกรอบ ห้ามทำเกินคำสั่ง`
-
-  const kgBlock = `[สถานะบ้านตอนนี้]
-${kgText}`
-
-  const toolsBlock = `[เครื่องมือที่ใช้ได้]
-${skillBlock}`
-
-  return [roleBlock, kgBlock, toolsBlock].join('\n\n')
-}
-
 function buildSystemPrompt(settings, devices, lastCommand, kgText, carryOver) {
-  const { router_context, pending_clarify, wait_retry } = carryOver || {}
-  if (router_context) {
-    return buildRoundTwoPrompt(settings, kgText)
-  }
+  const { pending_clarify, wait_retry } = carryOver || {}
   return buildRoundOnePrompt(settings, lastCommand, kgText, pending_clarify, wait_retry)
 }
 
@@ -135,12 +94,8 @@ export async function routerPlannerNode(state) {
   const devices = (state.deviceList?.current ?? state.deviceList) || []
   const messages = state.messages || []
 
-  const isRoundTwoPlus = !!(state.router_context)
-  // ไม่ยิง interim status ที่นี่ — ปล่อยให้ narration จาก synthesizer ค้างจน plan ก้อนต่อไปมา
-
   const kgText = snapshotText({ devices, settings, now: nowString() })
   const carryOver = {
-    router_context: state.router_context || '',
     pending_clarify: state.pending_clarify || '',
     wait_retry: state.wait_retry || '',
   }
@@ -151,19 +106,9 @@ export async function routerPlannerNode(state) {
     structured: ROUTER_SCHEMA,
   })
 
-  // Blindfold pattern: รอบ 2+ ตัด history + user message เดิมออก ส่งแค่ "คำสั่งปฏิบัติการ"
-  // จาก synthesizer ให้ executor ทำ — ป้องกัน LLM อ่าน user เดิมแล้วติด tool-use bias
-  let msgs
-  if (isRoundTwoPlus) {
-    msgs = [
-      new SystemMessage(systemPrompt),
-      new HumanMessage(String(state.router_context || '')),
-    ]
-  } else {
-    const lastMsg = messages[messages.length - 1]
-    const previousMsgs = messages.slice(0, -1)
-    msgs = [new SystemMessage(systemPrompt), ...previousMsgs, new HumanMessage(String(lastMsg?.content || ''))]
-  }
+  const lastMsg = messages[messages.length - 1]
+  const previousMsgs = messages.slice(0, -1)
+  const msgs = [new SystemMessage(systemPrompt), ...previousMsgs, new HumanMessage(String(lastMsg?.content || ''))]
 
   let plan
   try {
@@ -179,7 +124,7 @@ export async function routerPlannerNode(state) {
   }
 
   const nextRound = (state.router_round || 0) + 1
-  const maxRounds = state.max_router_rounds || 2
+  const maxRounds = state.max_router_rounds || 3
 
   if (plan?.need_clarify) {
     console.log(`  [Router] need_clarify → ${plan.question}`)

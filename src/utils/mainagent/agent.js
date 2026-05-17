@@ -6,7 +6,7 @@ import { planExecutorNode }  from './nodes/planExecutor.js'
 import { clarifyNode }       from './nodes/clarify.js'
 import { chatNode }          from './nodes/chat.js'
 import { responseNode }      from './nodes/response.js'
-import { synthesizerNode }   from './nodes/synthesizer.js'
+import { evaluatorNode }     from './nodes/evaluator.js'
 import { memoryCompressorNode } from './nodes/memoryCompressor.js'
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -41,9 +41,8 @@ const AgentState = Annotation.Root({
 
   // multi-router state
   router_round:       Annotation({ reducer: (_, n) => n, default: () => 0 }),
-  max_router_rounds:  Annotation({ reducer: (_, n) => n, default: () => 2 }),
+  max_router_rounds:  Annotation({ reducer: (_, n) => n, default: () => 3 }),
   needs_next_round:   Annotation({ reducer: (_, n) => n, default: () => false }),
-  router_context:     Annotation({ reducer: (_, n) => n, default: () => '' }),
 
   // executor failure tracking
   has_failed_step: Annotation({ reducer: (_, n) => n, default: () => false }),
@@ -64,16 +63,22 @@ function routeAfterRouter(state) {
   if (state.needs_clarify) return 'clarify'
   const steps = state.plan?.steps || []
   if (steps.length > 0 && steps.every(s => s.type === 'general')) return 'chat'
-  if (steps.length === 0) return state.needs_next_round ? 'synthesizer' : 'response'
+  if (steps.length === 0) return state.needs_next_round ? 'evaluator' : 'response'
   return 'plan_executor'
 }
 
 function routeAfterExecutor(state) {
   if (state.has_failed_step) return 'response'  // ตัดวงจร multi-router — แจ้ง user
   if (state.needs_next_round && state.router_round < state.max_router_rounds) {
-    return 'synthesizer'
+    return 'evaluator'
   }
   return 'response'
+}
+
+function routeAfterEvaluator(state) {
+  const steps = state.plan?.steps || []
+  if (steps.length === 0) return 'response'  // เงื่อนไขไม่ตรง / ไม่มีอะไรต้องทำ → จบ
+  return 'announce'  // มี step → ไปแสดง Tool Pill แล้วรัน
 }
 
 async function announcePlan(state) {
@@ -97,13 +102,13 @@ const workflow = new StateGraph(AgentState)
   .addNode('clarify',           clarifyNode)
   .addNode('chat',              chatNode)
   .addNode('response',          responseNode)
-  .addNode('synthesizer',       synthesizerNode)
+  .addNode('evaluator',         evaluatorNode)
   .addNode('memory_compressor', memoryCompressorNode)
   .addEdge(START, 'router_planner')
   .addEdge('router_planner', 'announce')
   .addConditionalEdges('announce', routeAfterRouter)
   .addConditionalEdges('plan_executor', routeAfterExecutor)
-  .addEdge('synthesizer', 'router_planner')
+  .addConditionalEdges('evaluator', routeAfterEvaluator)
 
   // ทุก path ก่อนจบจะผ่าน memory_compressor เพื่อบีบประวัติแชทไว้ใช้รอบถัดไป
   .addEdge('clarify',           'memory_compressor')
@@ -155,9 +160,8 @@ export async function runAgent(params) {
     optimizedHistory: [],
 
     router_round: 0,
-    max_router_rounds: maxRouterRounds ?? 2,
+    max_router_rounds: maxRouterRounds ?? 3,
     needs_next_round: false,
-    router_context: '',
     has_failed_step: false,
     failed_steps: [],
     completed: [],

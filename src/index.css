@@ -647,7 +647,7 @@
   .sh-typing span:nth-child(2) { animation-delay: .15s; }
   .sh-typing span:nth-child(3) { animation-delay: .30s; }
 
-  /* interim status chip — โชว์ระหว่าง synthesizer/router2 ทำงาน */
+  /* interim status chip — โชว์ระหว่าง evaluator ทำงาน */
   .sh-interim-chip {
     @apply inline-flex items-center gap-2 rounded-full;
     padding: 6px 12px;

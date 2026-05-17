@@ -20,7 +20,7 @@ const AvatarLogo = () => (
 )
 
 export default function ChatBubble({ msg, assistantName = 'Assistant', showToolDetails = true, labelOfStep }) {
-  // Interim status — chip ลอย ๆ ระหว่างรอ synthesizer/router2 ทำงาน
+  // Interim status — chip ลอย ๆ ระหว่างรอ evaluator ทำงาน
   if (msg.role === 'interim') {
     return (
       <motion.div
