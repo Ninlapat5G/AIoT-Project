@@ -178,7 +178,10 @@ export async function routerPlannerNode(state) {
     }
   }
 
-  const steps = Array.isArray(plan?.steps) ? plan.steps : []
+  // filter step ที่ Typhoon บางทีพ่น null / object ว่าง / ไม่มี type ออกทิ้ง
+  const steps = Array.isArray(plan?.steps)
+    ? plan.steps.filter(s => s && typeof s === 'object' && typeof s.type === 'string')
+    : []
 
   let needsNextRound = !!plan?.needs_next_round
   const rawNeedsNextRound = plan?.needs_next_round
