@@ -40,15 +40,17 @@ export function findDeviceByTopic(devices, topic) {
   ) || null
 }
 
+export function findDeviceByName(devices, name) {
+  if (!name) return null
+  const target = String(name).trim().toLowerCase()
+  return (devices || []).find(d => String(d.name || '').trim().toLowerCase() === target) || null
+}
+
 export function describeDeviceState(device) {
   if (!device) return 'unknown'
   if (device.type === 'digital') return device.on ? 'ON' : 'OFF'
   if (device.type === 'analog')  return `${device.value}/${device.max ?? 255}`
   return 'n/a'
-}
-
-function toolForDevice(device) {
-  return device.type === 'hub' ? 'hub' : 'mqtt_publish'
 }
 
 // ── Snapshot (text) — ใส่ใน system prompt ของ agent ──────────────────────────
@@ -87,8 +89,7 @@ export function snapshotText({ devices, settings, now }) {
         const last = i === devs.length - 1
         const branch = last ? '└─' : '├─'
         const state = describeDeviceState(d)
-        const tool  = toolForDevice(d)
-        lines.push(`    ${branch} ${d.name}  [${d.type} | ${state}]  → tool: ${tool}`)
+        lines.push(`    ${branch} ${d.name}  [${d.type} | ${state}]`)
         const indent = last ? '       ' : '    │  '
         lines.push(`${indent} topic: ${d.topic}`)
       })
@@ -101,7 +102,7 @@ export function snapshotText({ devices, settings, now }) {
     hubs.forEach((h, i) => {
       const last = i === hubs.length - 1
       const branch = last ? '└─' : '├─'
-      lines.push(`  ${branch} ${h.name} (${h.room})  → tool: hub`)
+      lines.push(`  ${branch} ${h.name} (${h.room})`)
       const indent = last ? '     ' : '  │  '
       lines.push(`${indent} topic: ${h.topic}`)
     })

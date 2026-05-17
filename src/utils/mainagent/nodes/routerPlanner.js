@@ -1,7 +1,9 @@
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
-import { snapshotText } from '../../kg.js'
+import { snapshotText, findDeviceByName } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
-import { buildPlanPrompt } from '../skills/index.js'
+import { buildPlanPrompt, SKILLS } from '../skills/index.js'
+
+const ALLOWED_STEP_TYPES = Object.keys(SKILLS)
 
 // JSON schema บังคับให้ LLM ต้อง commit needs_next_round ทุกครั้ง — กัน Typhoon ลืมใส่ field
 const ROUTER_SCHEMA = {
@@ -13,7 +15,13 @@ const ROUTER_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: true,
-        properties: { type: { type: 'string' } },
+        properties: {
+          type: {
+            type: 'string',
+            enum: ALLOWED_STEP_TYPES,
+            description: 'ค่าที่อนุญาตเท่านั้น — ห้ามใช้ค่าอื่น (รวมถึงห้ามใช้คำว่า mqtt_publish หรือชื่อ capability)',
+          },
+        },
         required: ['type'],
       },
     },
@@ -140,6 +148,17 @@ export async function routerPlannerNode(state) {
   const steps = Array.isArray(plan?.steps)
     ? plan.steps.filter(s => s && typeof s === 'object' && typeof s.type === 'string')
     : []
+
+  // เติม topic ให้ home_control step ที่ LLM ลืมใส่ — lookup ด้วย device name จาก KG
+  for (const s of steps) {
+    if (s.type === 'home_control' && !s.topic && s.device) {
+      const dev = findDeviceByName(devices, s.device)
+      if (dev?.topic) {
+        s.topic = dev.topic
+        console.log(`  [Router] auto-filled topic for "${s.device}" → ${dev.topic}`)
+      }
+    }
+  }
 
   let needsNextRound = !!plan?.needs_next_round
   const rawNeedsNextRound = plan?.needs_next_round
