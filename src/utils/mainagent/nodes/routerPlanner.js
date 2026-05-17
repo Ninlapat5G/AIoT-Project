@@ -32,32 +32,49 @@ function buildSystemPrompt(settings, devices, lastCommand, kgText, carryOver) {
 [การอ้างอิงคำสั่งก่อนหน้า]
 ถ้า user พูดสั้นๆ เช่น "ปิดเลย" "อันนั้น" "มัน" "ด้วย" "อีกอัน" — ให้ดู history ว่ากำลังพูดถึงอุปกรณ์ใด แล้วสร้าง plan ตามนั้นได้เลย ห้ามถามซ้ำถ้า context ชัดเจนอยู่แล้ว
 
-[การวางแผนแบบ 2 รอบ — needs_next_round]
-วิเคราะห์ว่า task ของ user ทำในรอบเดียวพอ หรือ ต้องเก็บข้อมูล realtime ก่อนค่อยตัดสินใจขั้นต่อไป
-- รอบเดียวพอ → ใส่ทุก step ที่ต้องทำ + "needs_next_round": false
-- ต้องเก็บข้อมูลก่อน (เช่น "ดูราคา X ถ้าเกิน Y ให้ทำ Z") → รอบนี้ใส่แค่ step ที่ดึงข้อมูล + "needs_next_round": true (ระบบจะส่งสรุปผลให้คุณตัดสินใจต่อรอบถัดไป)
-- ถ้า [ผลของรอบก่อน] มีอยู่แล้ว — แปลว่าคุณกำลังอยู่รอบที่ 2 ให้ตัดสินใจตามข้อมูลที่ได้ และตั้ง "needs_next_round": false (จบ)
+[กฎสำคัญที่สุด — การวางแผนหลายรอบ]
+ก่อนวาง plan ให้ถามตัวเองก่อน: "ฉันรู้ผลของทุก step แล้วหรือยัง?"
+- รู้แล้ว / ไม่ต้องรอข้อมูล → plan ทุก step ในรอบเดียว, "needs_next_round": false
+- ยังไม่รู้ผล เพราะต้องไปดึงข้อมูลก่อน → plan แค่ step ดึงข้อมูล, "needs_next_round": true
+  (ระบบจะส่งสรุปผลกลับมาให้คุณคิดต่อรอบถัดไป — รอบ 2 คุณจะเห็น [ผลของรอบก่อน] ใน prompt)
+
+สัญญาณว่าต้อง "needs_next_round": true (เกือบทุกครั้ง):
+- คำสั่งมีคำว่า "ถ้า" / "หาก" / "ขึ้นอยู่กับ" / "เผื่อ" / เงื่อนไขที่ขึ้นกับข้อมูล realtime
+- ต้องดู ราคา / ข่าว / อากาศ / อุณหภูมิ ก่อนถึงตัดสินใจทำ action
+- ผลของ step หนึ่งจะกำหนดว่าจะทำ step ถัดไปหรือไม่ / ทำแบบไหน
+
+ห้ามเด็ดขาด: "เดา" ผลของ realtime_data แล้ว plan home_control ในรอบเดียวกัน — มันผิด!
+ปล่อยให้รอบ 2 ตัดสินใจหลังจากเห็นข้อมูลจริงเสมอ
+
+ถ้า [ผลของรอบก่อน] มีแล้ว → คุณอยู่ในรอบ 2 → ตัดสินใจตามข้อมูลจริง + "needs_next_round": false เสมอ
 
 [ประเภท step ที่ใส่ใน plan ได้]
 ${skillBlock}
 
 [คำเตือนเด็ดขาด!] ตอบกลับมาเป็น JSON ตามตัวอย่างเท่านั้น ห้ามมีคำเกริ่นนำ คำอธิบาย หรือคำว่า 'รับทราบ' นอก JSON (ค่า value ภายใน JSON เป็นภาษาไทยได้ตามปกติ)
 
-ถ้าวางแผนได้:
-{"steps": [
+ตัวอย่าง — เคส "รวดเดียวจบ" (รู้ผลทุก step แล้ว):
+User: "เปิดไฟห้องนั่งเล่น"
+ตอบ: {"steps": [
   ${examples}
 ], "needs_next_round": false}
 
-ถ้าต้องเก็บข้อมูลก่อนแล้วค่อยตัดสินใจอีกรอบ:
-{"steps": [ ...steps สำหรับเก็บข้อมูล... ], "needs_next_round": true}
+ตัวอย่าง — เคส conditional (ต้องดึงข้อมูลก่อนตัดสินใจ — สำคัญ! อ่านให้เข้าใจ):
+User: "ดูราคา BTC ถ้าเกิน 100k USD เปิดไฟห้องนอน"
+รอบที่ 1 ตอบ: {"steps": [{"type": "realtime_data", "query": "ราคา BTC ตอนนี้ USD"}], "needs_next_round": true}
+(ห้ามใส่ home_control ในรอบ 1 — ยังไม่รู้ราคา! รอบ 2 ค่อยตัดสินใจ)
 
-ถ้าตัดสินใจแล้วว่าไม่ต้องทำอะไรเพิ่ม (เช่น เงื่อนไขไม่เข้า):
+เมื่อรอบ 2 มาถึง (จะมี [ผลของรอบก่อน] ใน prompt) ตอบ 1 ใน 2 แบบ:
+- เงื่อนไขเข้า → {"steps": [{"type": "home_control", ...เปิดไฟห้องนอน...}], "needs_next_round": false}
+- เงื่อนไขไม่เข้า → {"steps": [], "needs_next_round": false}
+
+ถ้าตัดสินใจแล้วว่าไม่ต้องทำอะไรเพิ่ม:
 {"steps": [], "needs_next_round": false}
 
-ถ้ามีอะไรยังไม่ชัด ให้ถามผ่าน general ก่อน (อย่ารันอะไรอื่นเลย):
+ถ้ามีอะไรยังไม่ชัด ให้ถามผ่าน general ก่อน:
 {"steps": [{"type": "general", "response": "คำถาม clarify"}], "needs_next_round": false}
 
-ถ้าต้องถามล้วน (ใช้ได้เหมือนกัน):
+ถ้าต้องถามล้วน:
 {"need_clarify": true, "question": "..."}`
 }
 
@@ -124,9 +141,10 @@ export async function routerPlannerNode(state) {
   const steps = Array.isArray(plan?.steps) ? plan.steps : []
 
   let needsNextRound = !!plan?.needs_next_round
+  const rawNeedsNextRound = plan?.needs_next_round
   if (nextRound >= maxRounds) needsNextRound = false  // รอบสุดท้าย — บังคับจบ ไม่ chain
 
-  console.log(`  [Router #${nextRound}] plan → ${JSON.stringify(steps.map(s => s.type))} | needs_next_round=${needsNextRound}`)
+  console.log(`  [Router #${nextRound}] plan → ${JSON.stringify(steps.map(s => s.type))} | needs_next_round=${needsNextRound} (raw=${JSON.stringify(rawNeedsNextRound)})`)
 
   return {
     plan: { steps },
