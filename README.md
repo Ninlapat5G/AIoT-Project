@@ -102,40 +102,45 @@ hub/
 
 ## สถาปัตยกรรม
 
-### Frontend Agent (LangGraph Plan-and-Execute)
+### Frontend Agent (LangGraph Plan-and-Execute + Multi-Router)
 
 ```
 ผู้ใช้ พิมพ์/พูด
        │
        ▼
-  router_planner ──► สร้าง plan ทั้งก้อนเป็น JSON ตั้งแต่ต้น
-       │             {steps: [{type, ...args}, ...]}
-       │             หรือ {need_clarify: true, question: "..."}
-       ▼
+  router_planner ◄─────────────────┐
+       │ (พ่น plan + needs_next_round)│  loop สูงสุด 2 รอบ
+       ▼                              │
    announce ──► ส่ง plan ให้ UI วาด Tool Pills (ข้ามถ้าเป็น general ล้วน)
-       │
-       ├── needs_clarify ──► clarify ──┐
-       │                                │
-       ├── steps ทั้งหมดเป็น general ──► chat ──┤
-       │                                │
-       └── มี step ที่ต้อง execute ──► plan_executor ──► response ──┤
-                                       (รัน skill ทีละ step,                │
-                                        ส่ง onStepStart/onStepResult)       │
-                                                                            │
-                                memory_compressor ◄─────────────────────────┘
-                                       │
-                                       ▼
-                                      END
+       │                              │
+       ├── needs_clarify ──► clarify ─┼────┐
+       ├── all general    ──► chat   ─┼────┤
+       └── มี step         ──► plan_executor (retry สูงสุด 3 ครั้ง/step)
+                                    │
+                                    ├── มี step fail หลัง retry หมด ──► response
+                                    │
+                                    ├── needs_next_round + ยังไม่ครบ max
+                                    │      ──► synthesizer ──── (กลับ router_planner รอบใหม่)
+                                    │
+                                    └── default ──► response ──────────┤
+                                                                       │
+                                              memory_compressor ◄──────┘
+                                                       │
+                                                       ▼
+                                                      END
 ```
 
-**Router-Planner — วาง plan ทั้งก้อนก่อนรัน**
-- LLM อ่านคำสั่ง user + Knowledge Graph + history แล้วตอบเป็น JSON ชุดเดียวว่าจะทำกี่ step ใช้ skill ไหน args อะไรบ้าง
-- ต่างจาก ReAct ที่ต้องคิดทีละ step เรียก tool แล้วค่อยคิดต่อ — plan-first ลดจำนวนรอบ LLM ลงเหลือ ~2 (planner + responder) และ UI เห็นแผนทั้งหมดก่อน execute
-- ถ้าข้อมูลไม่พอ → ตั้ง `need_clarify` ให้ clarify node ถามผู้ใช้
+**Router-Planner — วาง plan ทั้งก้อนก่อนรัน + ตัดสินใจว่าจะเรียกตัวเองอีกรอบไหม**
+- LLM อ่านคำสั่ง user + Knowledge Graph + history แล้วตอบเป็น JSON ชุดเดียว: `{steps: [...], needs_next_round: bool}`
+- **`needs_next_round=true`** เมื่อมี step ที่ต้องค้น/ดึงข้อมูล แล้วต้องใช้ผลไปตัดสินใจ step ถัดไป (เช่น "ดูราคา BTC ถ้าเกิน 100k เปิดไฟ" → รอบ 1 ค้น, รอบ 2 ตัดสินใจ)
+- ถ้าข้อมูลไม่พอจะวาง plan → ตั้ง `need_clarify` ให้ clarify node ถามผู้ใช้
+- บังคับ JSON schema ผ่าน `withStructuredOutput` กัน LLM ลืม field
 
-**Plan-Executor — รัน step ตาม plan**
-- รัน step แบบ sequential ตามลำดับใน plan
-- แต่ละ `step.type` map ไปยัง skill ใน `src/utils/mainagent/skills/`:
+**Plan-Executor — รัน step ตาม plan + retry**
+- รัน step แบบ sequential ตามลำดับ
+- แต่ละ step มี **retry สูงสุด 3 ครั้ง** ถ้า skill คืน `ok=false` (กัน network glitch / mqtt timeout)
+- ถ้าครบ 3 ครั้งยัง fail → step ที่เหลือยังทำต่อ แต่ flag `has_failed_step` จะตัดวงจร multi-router ส่งไป response แจ้ง user แทนการเข้า synthesizer
+- map `step.type` → skill ใน `src/utils/mainagent/skills/`:
 
   | Skill | หน้าที่ |
   |---|---|
@@ -146,15 +151,25 @@ hub/
   | `general` | ตอบคำถาม/คุยเล่นด้วย LLM โดยตรง |
   | `deviceNotFound` | จัดการเคส plan อ้างถึง device ที่ไม่อยู่ใน KG |
 
-- แต่ละ step ส่ง callback `onStepStart` / `onStepResult` ออก UI → Tool Pill เปลี่ยนสถานะ pending → running → ok/fail แบบ real-time
+- callback `onStepStart` / `onStepResult` ออก UI → Tool Pill เปลี่ยนสถานะ pending → running → ok/fail แบบ real-time
+
+**Synthesizer — Evaluator + Blindfold handoff**
+- เปิดทำงานเมื่อ router-planner รอบที่แล้วบอกว่า `needs_next_round=true` และ executor ไม่มี fail
+- หน้าที่: ประเมินเงื่อนไขจาก user request เทียบกับข้อมูลที่ค้นมา แล้วพ่น **"คำสั่งปฏิบัติการสั้น ๆ"** เช่น "เปิดไฟหน้าบ้าน" หรือ "เงื่อนไขไม่ตรง ไม่ต้องทำอะไร"
+- คำสั่งนี้ถูก inject เป็น `HumanMessage` ส่งกลับเข้า router-planner รอบใหม่ — **โดยตัด user message เดิมทิ้ง** (Blindfold pattern)
+- ผลคือ router รอบ 2 มองเห็นแต่คำสั่งตรง ๆ ไม่เห็นเรื่อง "หาข้อมูลหุ้น" เดิม → ไม่ติด tool-use bias ที่จะเลือก realtime_data ซ้ำ
+- ระหว่างทำงาน ยิง `onInterimStatus("กำลังตัดสินใจขั้นถัดไป")` ให้ UI โชว์ chip คั่นระหว่าง 2 Tool Pills
 
 **Response — สรุปผลให้ user**
-- รับผลของทุก step ที่รันไป + KG ปัจจุบัน → stream คำตอบเป็นภาษาธรรมชาติให้ user
+- รับผลของทุก step ที่รันไปทั้งหมด (สะสมข้าม rounds) + KG ปัจจุบัน → stream คำตอบเป็นภาษาธรรมชาติ
 
-**Memory Compressor — บีบประวัติแชทก่อนจบ turn**
+**Memory Compressor — บีบประวัติแชท + carry-over field ก่อนจบ turn**
 - ทุก path (chat / clarify / response) ผ่าน node นี้ก่อน END
-- สรุปประวัติทั้งหมดให้สั้นลง คืนเป็น `optimizedHistory` ให้ caller (`useChat`) เก็บไว้ใช้ turn ถัดไป
-- กัน context window ระเบิดเมื่อสนทนายาว ๆ โดยไม่ทิ้งใจความสำคัญ
+- บีบประวัติสนทนาเป็น `optimizedHistory` ให้ caller (`useChat`) เก็บไว้ใช้ turn ถัดไป — กัน context window ระเบิด
+- คำนวณ **carry-over fields** ส่งกลับ caller ผ่าน ref:
+  - `pending_clarify` — คำถามที่ถาม user ค้างไว้ (จาก clarify node) รอ user ตอบ turn ถัดไป
+  - `wait_retry` — งานที่ทำไม่สำเร็จ รอ user สั่งต่อ ("ลองอีกที" → router-planner รอบหน้าหยิบมา plan ใหม่)
+  - ทั้ง 2 field reset เป็น `''` เมื่อ turn ถัดไปทำสำเร็จ หรือ clear chat
 
 ```
 plan_executor ──► homeControl  ──► MQTT ──► IoT Devices (digital / analog)
