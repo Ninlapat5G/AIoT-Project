@@ -102,44 +102,54 @@ hub/
 
 ## สถาปัตยกรรม
 
-### Frontend Agent (LangGraph Plan-and-Execute + Multi-Router)
+### Frontend Agent (LangGraph Plan-and-Execute + Self-Looping Evaluator)
 
 ```
 ผู้ใช้ พิมพ์/พูด
        │
        ▼
-  router_planner ◄─────────────────┐
-       │ (พ่น plan + needs_next_round)│  loop สูงสุด 2 รอบ
-       ▼                              │
+  router_planner
+       │ (พ่น plan + needs_next_round)
+       ▼
    announce ──► ส่ง plan ให้ UI วาด Tool Pills (ข้ามถ้าเป็น general ล้วน)
-       │                              │
-       ├── needs_clarify ──► clarify ─┼────┐
-       ├── all general    ──► chat   ─┼────┤
+       │
+       ├── needs_clarify ──► clarify ─────────────────────┐
+       ├── all general    ──► chat ────────────────────────┤
        └── มี step         ──► plan_executor (retry สูงสุด 3 ครั้ง/step)
                                     │
-                                    ├── มี step fail หลัง retry หมด ──► response
+                                    ├── มี step fail หลัง retry หมด ──► response ──┤
                                     │
-                                    ├── needs_next_round + ยังไม่ครบ max
-                                    │      ──► synthesizer ──── (กลับ router_planner รอบใหม่)
+                                    ├── needs_next_round + ยังไม่ครบ max (default 3)
+                                    │      ▼
+                                    │   evaluator ◄────────────────────────┐
+                                    │      │ (ดู user + completed สะสม + KG)│
+                                    │      │ พ่น plan + needs_next_round    │
+                                    │      │                                │
+                                    │      ├── steps ว่าง ──► response ─────┤
+                                    │      │                                │
+                                    │      └── มี step ──► announce ──► plan_executor
+                                    │                                       │ (loop กลับ)
+                                    │                                       ▲
+                                    │                       (needs_next_round อีกรอบ)
                                     │
-                                    └── default ──► response ──────────┤
-                                                                       │
-                                              memory_compressor ◄──────┘
+                                    └── default ──► response ────────────────┤
+                                                                             │
+                                              memory_compressor ◄────────────┘
                                                        │
                                                        ▼
                                                       END
 ```
 
-**Router-Planner — วาง plan ทั้งก้อนก่อนรัน + ตัดสินใจว่าจะเรียกตัวเองอีกรอบไหม**
+**Router-Planner — วาง plan รอบแรก + ตัดสินใจว่างานนี้ต้องค้นข้อมูลก่อนไหม**
 - LLM อ่านคำสั่ง user + Knowledge Graph + history แล้วตอบเป็น JSON ชุดเดียว: `{steps: [...], needs_next_round: bool}`
-- **`needs_next_round=true`** เมื่อมี step ที่ต้องค้น/ดึงข้อมูล แล้วต้องใช้ผลไปตัดสินใจ step ถัดไป (เช่น "ดูราคา BTC ถ้าเกิน 100k เปิดไฟ" → รอบ 1 ค้น, รอบ 2 ตัดสินใจ)
+- **`needs_next_round=true`** เมื่อมี step ที่ต้องค้น/ดึงข้อมูล แล้วต้องใช้ผลไปตัดสินใจ step ถัดไป (เช่น "ดูราคา BTC ถ้าเกิน 100k เปิดไฟ" → รอบ 1 ค้นราคา, ปล่อย evaluator ตัดสินใจรอบถัดไป)
 - ถ้าข้อมูลไม่พอจะวาง plan → ตั้ง `need_clarify` ให้ clarify node ถามผู้ใช้
 - บังคับ JSON schema ผ่าน `withStructuredOutput` กัน LLM ลืม field
 
 **Plan-Executor — รัน step ตาม plan + retry**
 - รัน step แบบ sequential ตามลำดับ
 - แต่ละ step มี **retry สูงสุด 3 ครั้ง** ถ้า skill คืน `ok=false` (กัน network glitch / mqtt timeout)
-- ถ้าครบ 3 ครั้งยัง fail → step ที่เหลือยังทำต่อ แต่ flag `has_failed_step` จะตัดวงจร multi-router ส่งไป response แจ้ง user แทนการเข้า synthesizer
+- ถ้าครบ 3 ครั้งยัง fail → step ที่เหลือยังทำต่อ แต่ flag `has_failed_step` จะตัดวงจร multi-round ส่งไป response แจ้ง user แทนการเข้า evaluator
 - map `step.type` → skill ใน `src/utils/mainagent/skills/`:
 
   | Skill | หน้าที่ |
@@ -153,12 +163,17 @@ hub/
 
 - callback `onStepStart` / `onStepResult` ออก UI → Tool Pill เปลี่ยนสถานะ pending → running → ok/fail แบบ real-time
 
-**Synthesizer — Evaluator + Blindfold handoff**
-- เปิดทำงานเมื่อ router-planner รอบที่แล้วบอกว่า `needs_next_round=true` และ executor ไม่มี fail
-- หน้าที่: ประเมินเงื่อนไขจาก user request เทียบกับข้อมูลที่ค้นมา แล้วพ่น **"คำสั่งปฏิบัติการสั้น ๆ"** เช่น "เปิดไฟหน้าบ้าน" หรือ "เงื่อนไขไม่ตรง ไม่ต้องทำอะไร"
-- คำสั่งนี้ถูก inject เป็น `HumanMessage` ส่งกลับเข้า router-planner รอบใหม่ — **โดยตัด user message เดิมทิ้ง** (Blindfold pattern)
-- ผลคือ router รอบ 2 มองเห็นแต่คำสั่งตรง ๆ ไม่เห็นเรื่อง "หาข้อมูลหุ้น" เดิม → ไม่ติด tool-use bias ที่จะเลือก realtime_data ซ้ำ
-- ระหว่างทำงาน ยิง `onInterimStatus("กำลังตัดสินใจขั้นถัดไป")` ให้ UI โชว์ chip คั่นระหว่าง 2 Tool Pills
+**Evaluator — ประเมินเงื่อนไข + plan step ถัดไป (loop กลับเข้าตัวเองได้)**
+- เปิดทำงานเมื่อ router-planner หรือ evaluator รอบก่อนตั้ง `needs_next_round=true` และ executor ไม่มี fail
+- รับเข้า: user request ล่าสุด + `completed` (ผลของทุก step ที่สะสมข้ามรอบ) + KG สด (อ่านจาก `devicesRef.current`) + tools ที่ใช้ได้
+- **ตัด chat history เก่าทิ้ง** — เห็นแค่คำสั่งล่าสุด กันสับสนกับ turn ก่อน
+- พ่น JSON schema เดียวกับ router: `{steps: [...], needs_next_round: bool}` — เพราะ schema ตรงกัน เลย loop กลับเข้า `plan_executor → evaluator` ผ่าน `routeAfterExecutor` เดิมได้เลย
+- ตัดสินใจ 2 อย่างพร้อมกันใน 1 LLM call:
+  - **เงื่อนไขที่กำลังตรวจเข้าไหม** → ถ้าเข้า plan step สั่งงาน, ถ้าไม่เข้า/ข้อมูลพัง พ่น `steps=[]`
+  - **ยังเหลือเงื่อนไขอื่นที่ user ตั้งไว้ต้องเช็คอีกไหม** → ถ้ามี ใส่ step ค้นข้อมูลถัดไป + `needs_next_round=true`
+- รองรับ task ซ้อนหลายชั้น (เช่น "ถ้า BTC เกิน 100k เช็คพยากรณ์ฝน ถ้าฝนไม่ตกเปิดไฟสนาม") โดยใช้โครงเดิม — แต่ถูก safety cap ที่ **max 3 รอบ** กันโมเดลวนไม่จบ
+- ระหว่างทำงาน ยิง `onInterimStatus("กำลังตัดสินใจขั้นถัดไป")` ให้ UI โชว์ chip คั่นระหว่าง Tool Pills
+- **ทำไมไม่ใช้ synthesizer + router-2 เหมือนเดิม**: pattern เก่าให้ LLM 2 ตัวคุยกันด้วยภาษาธรรมชาติ ทำให้ตัวรับ (router-2) ต้องอ่านประโยคแล้วเดาว่าหมายถึงอุปกรณ์ตัวไหน → หลอนบ่อย ยุบเป็น 1 LLM call ที่พ่น JSON ตรง ตัดจุดหลอนทิ้งและลด latency 1 hop
 
 **Response — สรุปผลให้ user**
 - รับผลของทุก step ที่รันไปทั้งหมด (สะสมข้าม rounds) + KG ปัจจุบัน → stream คำตอบเป็นภาษาธรรมชาติ
