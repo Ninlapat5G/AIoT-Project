@@ -45,7 +45,7 @@ export function useChat({
     setLiveStatuses([])
 
     abortControllerRef.current = new AbortController()
-    const planMsgId = 'p-' + Date.now()
+    let currentPlanId = null
 
     try {
       const { reply, lastCommand, wait_retry, pending_clarify } = await runAgent({
@@ -69,16 +69,27 @@ export function useChat({
           const initStatuses = plan.steps.map(() => ({ status: 'pending' }))
           setLiveStatuses(initStatuses)
 
+          currentPlanId = 'p-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)
+          const pid = currentPlanId
           setMessages(prev => [
-            ...prev,
-            { _id: planMsgId, role: 'plan', plan, statuses: initStatuses }
+            ...prev.filter(m => m.role !== 'interim'),
+            { _id: pid, role: 'plan', plan, statuses: initStatuses }
+          ])
+        },
+
+        onInterimStatus: (verb) => {
+          setMessages(prev => [
+            ...prev.filter(m => m.role !== 'interim'),
+            { _id: 'i-' + Date.now(), role: 'interim', text: verb }
           ])
         },
 
         onStepStart: (index) => {
           setLiveStatuses(prev => prev.map((s, i) => i === index ? { ...s, status: 'running' } : s))
+          const pid = currentPlanId
+          if (!pid) return
           setMessages(prev => prev.map(m =>
-            m._id === planMsgId 
+            m._id === pid
               ? { ...m, statuses: m.statuses.map((s, i) => i === index ? { ...s, status: 'running' } : s) }
               : m
           ))
@@ -86,8 +97,10 @@ export function useChat({
 
         onStepResult: (index, result) => {
           setLiveStatuses(prev => prev.map((s, i) => i === index ? { status: result.ok ? 'ok' : 'fail', summary: result.summary || '' } : s))
-          setMessages(prev => prev.map(m => 
-            m._id === planMsgId 
+          const pid = currentPlanId
+          if (!pid) return
+          setMessages(prev => prev.map(m =>
+            m._id === pid
               ? { ...m, statuses: m.statuses.map((s, i) => i === index ? { status: result.ok ? 'ok' : 'fail', summary: result.summary || '' } : s) }
               : m
           ))
@@ -96,22 +109,24 @@ export function useChat({
         onStream: chunk => {
           setThinking(false)
           setMessages(prev => {
-            const last = prev[prev.length - 1]
+            const base = prev.filter(m => m.role !== 'interim')
+            const last = base[base.length - 1]
             if (last?.role === 'ai' && last?.streaming) {
-              return [...prev.slice(0, -1), { ...last, text: last.text + chunk }]
+              return [...base.slice(0, -1), { ...last, text: last.text + chunk }]
             }
-            return [...prev, { _id: 'a-' + Date.now(), role: 'ai', text: chunk, streaming: true }]
+            return [...base, { _id: 'a-' + Date.now(), role: 'ai', text: chunk, streaming: true }]
           })
         },
       })
 
       setMessages(prev => {
-        const last = prev[prev.length - 1]
-        let base = prev
+        const cleaned = prev.filter(m => m.role !== 'interim')
+        const last = cleaned[cleaned.length - 1]
+        let base = cleaned
         let aiMsg = null
         if (last?.role === 'ai' && last?.streaming) {
           aiMsg = { ...last, streaming: false }
-          base = prev.slice(0, -1)
+          base = cleaned.slice(0, -1)
         } else if (reply && last?.role !== 'ai') {
           aiMsg = { _id: 'a-' + Date.now(), role: 'ai', text: reply }
         }
@@ -152,6 +167,7 @@ export function useChat({
       setThinking(false)
       setLivePlan(null)
       setLiveStatuses([])
+      setMessages(prev => prev.filter(m => m.role !== 'interim'))
     }
   }, [settings, devicesRef, baseTopicRef, setDevices, mqttClient, mqttWaitForStream, handleSaveSettings, apiHistory])
 

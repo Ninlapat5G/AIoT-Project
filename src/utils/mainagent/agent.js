@@ -26,10 +26,11 @@ const AgentState = Annotation.Root({
   setDevices:      Annotation(),
   handleSaveSettings: Annotation(),
 
-  onPlanReady:     Annotation(),
-  onStepStart:     Annotation(),
-  onStepResult:    Annotation(),
-  onStream:        Annotation(),
+  onPlanReady:      Annotation(),
+  onStepStart:      Annotation(),
+  onStepResult:     Annotation(),
+  onStream:         Annotation(),
+  onInterimStatus:  Annotation(),
 
   plan:             Annotation({ reducer: (_, n) => n, default: () => null }),
   // completed: append ข้ามรอบของ multi-router ภายใน turn เดียว (reset ใน runAgent ทุก turn)
@@ -125,7 +126,7 @@ export async function runAgent(params) {
     wait_retry,
     pending_clarify,
     maxRouterRounds,
-    onPlanReady, onStepStart, onStepResult, onStream,
+    onPlanReady, onStepStart, onStepResult, onStream, onInterimStatus,
   } = params
 
   const raw = (apiHistory || []).map(m =>
@@ -149,7 +150,7 @@ export async function runAgent(params) {
     mqttClient, mqttWaitForStream,
     devicesRef, baseTopicRef, setDevices, handleSaveSettings,
     lastCommand: lastCommand ?? null,
-    onPlanReady, onStepStart, onStepResult, onStream,
+    onPlanReady, onStepStart, onStepResult, onStream, onInterimStatus,
     chat_summary: '',
     optimizedHistory: [],
 

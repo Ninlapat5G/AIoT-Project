@@ -84,17 +84,21 @@ function buildRoundOnePrompt(settings, lastCommand, kgText, pending_clarify, wai
   return [roleBlock, contextBlock, toolsBlock, decisionBlock, specialBlock].join('\n\n')
 }
 
-function buildRoundTwoPrompt(settings, kgText, router_context) {
+function buildRoundTwoPrompt(settings, kgText) {
   const skillBlock = buildPlanPrompt(settings)
 
-  const roleBlock = `[หน้าที่]
-คุณรับช่วงต่อจากคนก่อนหน้า เขาไปหาข้อมูลมาให้พร้อมสรุปแล้ว ข้อมูลอยู่ข้างล่างนี่
-หน้าที่ของคุณคือ "ทำต่อ" ไม่ใช่ไปค้นเพิ่ม
-อ่านข้อมูลที่เขาส่งให้ → เลือก action ที่ต้องทำ → จบ turn
-ตอบเป็น JSON ก้อนเดียว`
+  // Round 2 = Dumb Executor (Blindfold pattern)
+  // มันมองไม่เห็นคำสั่งดั้งเดิมของ user — เห็นแค่คำสั่งปฏิบัติการตรง ๆ จาก synthesizer
+  // หน้าที่: แปลงคำสั่ง text → JSON step สั่งงานอุปกรณ์ ห้ามคิดนอกกรอบ
 
-  const dataBlock = `[ข้อมูลที่เขาส่งมาให้]
-${router_context}`
+  const roleBlock = `[หน้าที่]
+คุณคือ Executor — อ่าน "คำสั่งปฏิบัติการ" ที่ได้รับ แล้วพ่น JSON step สั่งงานอุปกรณ์ตามนั้น
+ห้ามคิดนอกกรอบ ห้ามทำเกินคำสั่ง — รับคำสั่งมาแบบไหน ทำแบบนั้น
+
+ถ้าคำสั่งเป็นการสั่งงานอุปกรณ์ (เช่น "เปิดไฟห้องนอน") → พ่น JSON step home_control / hub_control / manage_settings ตามที่เหมาะ
+ถ้าคำสั่งเป็นการยกเลิก / ไม่ต้องทำ (เช่น "ไม่ต้องทำอะไร", "เงื่อนไขไม่ตรง") → ตอบ {"steps":[],"needs_next_round":false}
+
+ตอบเป็น JSON ก้อนเดียว "needs_next_round": false เสมอ`
 
   const kgBlock = `[สถานะบ้านตอนนี้]
 ${kgText}`
@@ -102,42 +106,26 @@ ${kgText}`
   const toolsBlock = `[เครื่องมือที่ใช้ได้]
 ${skillBlock}`
 
-  const decisionBlock = `[ตัดสินใจยังไง]
-คนก่อนหน้าสรุปมาให้แล้ว ส่วนใหญ่จะระบุชัดว่า "เข้าเงื่อนไข" หรือ "ไม่เข้าเงื่อนไข" — เชื่อสรุปเขาแล้วทำตามนั้น
-
-▸ สรุปบอก "เข้าเงื่อนไข" → ทำ action ตามที่ user สั่ง
-  ข้อมูล: "หุ้นขึ้น 5.77% จากสัปดาห์ก่อน → เข้าเงื่อนไข ให้เปิดไฟหน้าบ้าน"
-  user เดิม: "ถ้าหุ้นขึ้นเปิดไฟหน้าบ้าน"
-  ตอบ: {"steps":[{"type":"home_control","device":"ไฟหน้าบ้าน","payload":"ON",...}],"needs_next_round":false}
-
-▸ สรุปบอก "ไม่เข้าเงื่อนไข" → ไม่ต้องทำอะไร
-  ข้อมูล: "หุ้นลง 4% → ไม่เข้าเงื่อนไข 'หุ้นขึ้น'"
-  ตอบ: {"steps":[],"needs_next_round":false}
-
-▸ user บอก 2 ฝั่ง (ขึ้นทำแบบนึง ลงทำอีกแบบ) → เลือกฝั่งที่ตรงกับข้อมูล
-  ข้อมูล: "หุ้นลง 4%"
-  user: "ถ้าหุ้นขึ้นเปิดไฟ ถ้าลงปิดไฟ"
-  ตอบ: {"steps":[{"type":"home_control","device":"ไฟหน้าบ้าน","payload":"OFF",...}],"needs_next_round":false}
-
-[ห้ามค้นซ้ำ]
-อย่ายิง realtime_data หรือ step ค้นข้อมูลเรื่องที่คนก่อนหน้าค้นไปแล้ว (เช่น ราคาหุ้น / อากาศ / ข่าว) — เขาสรุปมาให้แล้ว ใช้สรุปเขาเลย
-จะใช้ realtime_data ได้ ก็ต่อเมื่อ user สั่งให้หาข้อมูล "อีกเรื่องหนึ่ง" ที่ยังไม่ได้ค้นเท่านั้น`
-
-  return [roleBlock, dataBlock, kgBlock, toolsBlock, decisionBlock].join('\n\n')
+  return [roleBlock, kgBlock, toolsBlock].join('\n\n')
 }
 
 function buildSystemPrompt(settings, devices, lastCommand, kgText, carryOver) {
   const { router_context, pending_clarify, wait_retry } = carryOver || {}
   if (router_context) {
-    return buildRoundTwoPrompt(settings, kgText, router_context)
+    return buildRoundTwoPrompt(settings, kgText)
   }
   return buildRoundOnePrompt(settings, lastCommand, kgText, pending_clarify, wait_retry)
 }
 
 export async function routerPlannerNode(state) {
-  const { settings, signal, lastCommand } = state
+  const { settings, signal, lastCommand, onInterimStatus } = state
   const devices = (state.deviceList?.current ?? state.deviceList) || []
   const messages = state.messages || []
+
+  const isRoundTwoPlus = !!(state.router_context)
+  if (isRoundTwoPlus) {
+    onInterimStatus?.('กำลังตัดสินใจขั้นถัดไป')
+  }
 
   const kgText = snapshotText({ devices, settings, now: nowString() })
   const carryOver = {
@@ -152,9 +140,19 @@ export async function routerPlannerNode(state) {
     structured: ROUTER_SCHEMA,
   })
 
-  const lastMsg = messages[messages.length - 1]
-  const previousMsgs = messages.slice(0, -1)
-  const msgs = [new SystemMessage(systemPrompt), ...previousMsgs, new HumanMessage(String(lastMsg?.content || ''))]
+  // Blindfold pattern: รอบ 2+ ตัด history + user message เดิมออก ส่งแค่ "คำสั่งปฏิบัติการ"
+  // จาก synthesizer ให้ executor ทำ — ป้องกัน LLM อ่าน user เดิมแล้วติด tool-use bias
+  let msgs
+  if (isRoundTwoPlus) {
+    msgs = [
+      new SystemMessage(systemPrompt),
+      new HumanMessage(String(state.router_context || '')),
+    ]
+  } else {
+    const lastMsg = messages[messages.length - 1]
+    const previousMsgs = messages.slice(0, -1)
+    msgs = [new SystemMessage(systemPrompt), ...previousMsgs, new HumanMessage(String(lastMsg?.content || ''))]
+  }
 
   let plan
   try {

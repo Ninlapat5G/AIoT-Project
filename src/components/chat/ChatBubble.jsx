@@ -20,6 +20,22 @@ const AvatarLogo = () => (
 )
 
 export default function ChatBubble({ msg, assistantName = 'Assistant', showToolDetails = true, labelOfStep }) {
+  // Interim status — chip ลอย ๆ ระหว่างรอ synthesizer/router2 ทำงาน
+  if (msg.role === 'interim') {
+    return (
+      <motion.div
+        className="sh-interim-chip"
+        initial={{ opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -4 }}
+        transition={{ duration: 0.18 }}
+      >
+        <span className="sh-interim-text">{assistantName}{msg.text}</span>
+        <span className="sh-interim-dots"><span /><span /><span /></span>
+      </motion.div>
+    )
+  }
+
   // Plan message — โผล่หลัง turn จบ
   if (msg.role === 'plan') {
     if (showToolDetails) {
