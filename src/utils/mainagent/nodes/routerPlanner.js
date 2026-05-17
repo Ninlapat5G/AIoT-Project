@@ -118,14 +118,12 @@ function buildSystemPrompt(settings, devices, lastCommand, kgText, carryOver) {
 }
 
 export async function routerPlannerNode(state) {
-  const { settings, signal, lastCommand, onInterimStatus } = state
+  const { settings, signal, lastCommand } = state
   const devices = (state.deviceList?.current ?? state.deviceList) || []
   const messages = state.messages || []
 
   const isRoundTwoPlus = !!(state.router_context)
-  if (isRoundTwoPlus) {
-    onInterimStatus?.('กำลังตัดสินใจขั้นถัดไป')
-  }
+  // ไม่ยิง interim status ที่นี่ — ปล่อยให้ narration จาก synthesizer ค้างจน plan ก้อนต่อไปมา
 
   const kgText = snapshotText({ devices, settings, now: nowString() })
   const carryOver = {
