@@ -2,80 +2,85 @@ import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { snapshotText } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
 import { parseJSON } from '../helpers/jsonParser.js'
-import { buildPlanPrompt, buildPlanExamples } from '../skills/index.js'
+import { buildPlanPrompt } from '../skills/index.js'
 
 function buildSystemPrompt(settings, devices, lastCommand, kgText, carryOver) {
   const skillBlock = buildPlanPrompt(settings)
-  const examples = buildPlanExamples(settings)
-
-  const lastCommandBlock = lastCommand
-    ? `\n[คำสั่งอุปกรณ์ล่าสุดในประวัติ (อ้างอิงสำหรับ clarify)]\n${lastCommand}\n`
-    : ''
-
   const { router_context, pending_clarify, wait_retry } = carryOver || {}
 
-  const routerContextBlock = router_context
-    ? `\n[ผลของรอบก่อน (ใน turn เดียวกัน)]\n${router_context}\n— ใช้ข้อมูลนี้ตัดสินใจว่าจะทำต่อหรือไม่ และทำอะไร\n`
-    : ''
+  // ── Section: หน้าที่ ────────────────────────────────────────────────────────
+  const roleBlock = `[หน้าที่ของคุณ]
+อ่านคำสั่งล่าสุดของ user แล้วเลือกเครื่องมือ (step) มาใช้ทำงาน ตอบกลับเป็น JSON ก้อนเดียวเท่านั้น`
 
-  const pendingClarifyBlock = pending_clarify
-    ? `\n[คำถามที่ถามไว้ใน turn ก่อน — รอ user ตอบ]\n${pending_clarify}\n— ถ้า message ใหม่ของ user ดูเหมือนตอบคำถามข้างบน ให้ plan task เดิมตามคำตอบนั้น; ถ้า user เปลี่ยนเรื่อง ให้ทิ้งคำถามนี้แล้ว plan ตามเรื่องใหม่\n`
-    : ''
+  // ── Section: context ของสถานะปัจจุบัน + carry-over ─────────────────────────
+  const contextParts = [`[สถานะบ้านตอนนี้]\n${kgText}`]
 
-  const waitRetryBlock = wait_retry
-    ? `\n[งานที่ทำไม่สำเร็จใน turn ก่อน — รอ user สั่งต่อ]\n${wait_retry}\n— ถ้า user สั่ง "ลองอีกที" / "ทำต่อ" หรือยืนยันให้ทำ ให้ plan งานเหล่านี้; ถ้า user เปลี่ยนเรื่อง ให้ทิ้งและ plan ตามเรื่องใหม่\n`
-    : ''
+  if (lastCommand) {
+    contextParts.push(`[อุปกรณ์ที่เพิ่งสั่งล่าสุด]\n${lastCommand}`)
+  }
+  if (router_context) {
+    contextParts.push(
+      `[ผลของรอบก่อน — turn เดียวกันนี้ คุณเพิ่งทำไปแล้ว]\n${router_context}\n→ ตอนนี้คุณอยู่รอบที่ 2 ตัดสินใจตามข้อมูลนี้ แล้วตั้ง "needs_next_round": false (จบ turn)`
+    )
+  }
+  if (pending_clarify) {
+    contextParts.push(
+      `[คำถามที่คุณถาม user ไว้ใน turn ก่อน — รอคำตอบอยู่]\n${pending_clarify}\n→ ถ้า message ใหม่ของ user เหมือนตอบคำถามนี้ ใช้คำตอบไป plan task เดิม; ถ้า user เปลี่ยนเรื่อง ทิ้งคำถามนี้ทำตามเรื่องใหม่`
+    )
+  }
+  if (wait_retry) {
+    contextParts.push(
+      `[งานที่ทำไม่สำเร็จใน turn ก่อน — รอ user สั่งต่อ]\n${wait_retry}\n→ ถ้า user สั่ง "ลองอีกที" / "ทำต่อ" plan งานพวกนี้; ถ้า user เปลี่ยนเรื่อง ทิ้งทำตามเรื่องใหม่`
+    )
+  }
+  const contextBlock = contextParts.join('\n\n')
 
-  return `${kgText}${lastCommandBlock}${routerContextBlock}${pendingClarifyBlock}${waitRetryBlock}
-ดูคำสั่งล่าสุดของ user แล้วสร้าง plan จาก history + KG
+  // ── Section: เครื่องมือ ────────────────────────────────────────────────────
+  const toolsBlock = `[เครื่องมือที่ใช้ได้]
+${skillBlock}`
 
-[การอ้างอิงคำสั่งก่อนหน้า]
-ถ้า user พูดสั้นๆ เช่น "ปิดเลย" "อันนั้น" "มัน" "ด้วย" "อีกอัน" — ให้ดู history ว่ากำลังพูดถึงอุปกรณ์ใด แล้วสร้าง plan ตามนั้นได้เลย ห้ามถามซ้ำถ้า context ชัดเจนอยู่แล้ว
+  // ── Section: กฎการตัดสินใจหลัก ────────────────────────────────────────────
+  const decisionBlock = `[คิดก่อนวาง plan: รอบเดียวจบ หรือ ต้องดูข้อมูลก่อน?]
+ถามตัวเอง: "ตอนนี้ฉันรู้ผลของทุก step แล้วหรือยัง?"
 
-[กฎสำคัญที่สุด — การวางแผนหลายรอบ]
-ก่อนวาง plan ให้ถามตัวเองก่อน: "ฉันรู้ผลของทุก step แล้วหรือยัง?"
-- รู้แล้ว / ไม่ต้องรอข้อมูล → plan ทุก step ในรอบเดียว, "needs_next_round": false
-- ยังไม่รู้ผล เพราะต้องไปดึงข้อมูลก่อน → plan แค่ step ดึงข้อมูล, "needs_next_round": true
-  (ระบบจะส่งสรุปผลกลับมาให้คุณคิดต่อรอบถัดไป — รอบ 2 คุณจะเห็น [ผลของรอบก่อน] ใน prompt)
+(ก) รู้แล้ว → ใส่ทุก step ในรอบนี้, "needs_next_round": false
+    ตัวอย่าง:
+      User: "เปิดไฟห้องนั่งเล่น"
+      ตอบ: {"steps":[{"type":"home_control","device":"ไฟห้องนั่งเล่น",...}],"needs_next_round":false}
 
-สัญญาณว่าต้อง "needs_next_round": true (เกือบทุกครั้ง):
-- คำสั่งมีคำว่า "ถ้า" / "หาก" / "ขึ้นอยู่กับ" / "เผื่อ" / เงื่อนไขที่ขึ้นกับข้อมูล realtime
-- ต้องดู ราคา / ข่าว / อากาศ / อุณหภูมิ ก่อนถึงตัดสินใจทำ action
-- ผลของ step หนึ่งจะกำหนดว่าจะทำ step ถัดไปหรือไม่ / ทำแบบไหน
+(ข) ยังไม่รู้ ต้องไปดึงข้อมูลก่อนค่อยตัดสินใจ → ใส่แค่ step ที่ดึงข้อมูล, "needs_next_round": true
+    สัญญาณ: คำสั่งมีคำว่า "ถ้า" / "หาก" / "เผื่อ" / "ขึ้นอยู่กับ" หรือต้องดู ราคา/ข่าว/อากาศ ก่อนตัดสินใจ
+    อย่าเดาผลล่วงหน้า — ปล่อยให้รอบ 2 ตัดสินใจตามข้อมูลจริง
+    ตัวอย่าง:
+      User: "ดูราคา BTC ถ้าเกิน 100k USD เปิดไฟห้องนอน"
+      รอบ 1 ตอบ: {"steps":[{"type":"realtime_data","query":"ราคา BTC ตอนนี้ USD"}],"needs_next_round":true}
+      (ห้ามใส่ home_control ในรอบนี้)
 
-ห้ามเด็ดขาด: "เดา" ผลของ realtime_data แล้ว plan home_control ในรอบเดียวกัน — มันผิด!
-ปล่อยให้รอบ 2 ตัดสินใจหลังจากเห็นข้อมูลจริงเสมอ
+      รอบ 2 (จะมี [ผลของรอบก่อน] ใน context) ตัดสินใจอีกที:
+        - เข้าเงื่อนไข → {"steps":[{"type":"home_control",...เปิดไฟห้องนอน...}],"needs_next_round":false}
+        - ไม่เข้า     → {"steps":[],"needs_next_round":false}`
 
-ถ้า [ผลของรอบก่อน] มีแล้ว → คุณอยู่ในรอบ 2 → ตัดสินใจตามข้อมูลจริง + "needs_next_round": false เสมอ
+  // ── Section: เคสพิเศษ ──────────────────────────────────────────────────────
+  const specialBlock = `[เคสอื่น ๆ]
+- user พูดสั้น ("ปิดเลย", "อันนั้น", "มัน", "ด้วย", "อีกอัน") → ดู history หาว่าหมายถึงอุปกรณ์ตัวไหน แล้ว plan ต่อ ไม่ต้องถามซ้ำ
+- ข้อมูลไม่พอจะ plan → ถามก่อน: {"steps":[{"type":"general","response":"คำถามสั้น ๆ"}],"needs_next_round":false}
+- ตัดสินใจไม่ทำอะไรเพิ่ม → {"steps":[],"needs_next_round":false}
+- ถามล้วน (โหมดเดียวกัน) → {"need_clarify":true,"question":"..."}`
 
-[ประเภท step ที่ใส่ใน plan ได้]
-${skillBlock}
+  // ── Section: format ──────────────────────────────────────────────────────
+  const formatBlock = `[รูปแบบคำตอบ]
+ตอบเป็น JSON ก้อนเดียวเท่านั้น
+ห้าม: เกริ่นนำ, markdown, code block, คำอธิบายข้าง JSON, คำว่า "รับทราบ"
+ค่า value ในภาษาไทยได้ตามปกติ`
 
-[คำเตือนเด็ดขาด!] ตอบกลับมาเป็น JSON ตามตัวอย่างเท่านั้น ห้ามมีคำเกริ่นนำ คำอธิบาย หรือคำว่า 'รับทราบ' นอก JSON (ค่า value ภายใน JSON เป็นภาษาไทยได้ตามปกติ)
-
-ตัวอย่าง — เคส "รวดเดียวจบ" (รู้ผลทุก step แล้ว):
-User: "เปิดไฟห้องนั่งเล่น"
-ตอบ: {"steps": [
-  ${examples}
-], "needs_next_round": false}
-
-ตัวอย่าง — เคส conditional (ต้องดึงข้อมูลก่อนตัดสินใจ — สำคัญ! อ่านให้เข้าใจ):
-User: "ดูราคา BTC ถ้าเกิน 100k USD เปิดไฟห้องนอน"
-รอบที่ 1 ตอบ: {"steps": [{"type": "realtime_data", "query": "ราคา BTC ตอนนี้ USD"}], "needs_next_round": true}
-(ห้ามใส่ home_control ในรอบ 1 — ยังไม่รู้ราคา! รอบ 2 ค่อยตัดสินใจ)
-
-เมื่อรอบ 2 มาถึง (จะมี [ผลของรอบก่อน] ใน prompt) ตอบ 1 ใน 2 แบบ:
-- เงื่อนไขเข้า → {"steps": [{"type": "home_control", ...เปิดไฟห้องนอน...}], "needs_next_round": false}
-- เงื่อนไขไม่เข้า → {"steps": [], "needs_next_round": false}
-
-ถ้าตัดสินใจแล้วว่าไม่ต้องทำอะไรเพิ่ม:
-{"steps": [], "needs_next_round": false}
-
-ถ้ามีอะไรยังไม่ชัด ให้ถามผ่าน general ก่อน:
-{"steps": [{"type": "general", "response": "คำถาม clarify"}], "needs_next_round": false}
-
-ถ้าต้องถามล้วน:
-{"need_clarify": true, "question": "..."}`
+  return [
+    roleBlock,
+    contextBlock,
+    toolsBlock,
+    decisionBlock,
+    specialBlock,
+    formatBlock,
+  ].join('\n\n')
 }
 
 export async function routerPlannerNode(state) {
