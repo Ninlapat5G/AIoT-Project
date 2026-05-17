@@ -1,10 +1,3 @@
-// Registry รวม skill ทั้งหมดของ main agent
-//
-// ใช้:
-//   SKILLS[step.type]   → skill object
-//   buildPlanPrompt(settings) → รวม planPrompt ของ skill ที่ enabled อยู่
-//   buildPlanExamples(settings) → รวม example JSON
-
 import { general } from './general.js'
 import { deviceNotFound } from './deviceNotFound.js'
 import { homeControl } from './homeControl.js'
@@ -21,8 +14,7 @@ export const SKILLS = {
   [manageSettings.type]: manageSettings,
 }
 
-// คืน skill ที่ user เปิดอยู่ (general/device_not_found เปิดเสมอ — เป็น meta-step)
-export function enabledSkills(settings) {
+function enabledSkills(settings) {
   const enabledNames = new Set(
     (settings?.skills || []).filter(s => s.enabled).map(s => s.name)
   )
@@ -33,8 +25,4 @@ export function enabledSkills(settings) {
 
 export function buildPlanPrompt(settings) {
   return enabledSkills(settings).map(sk => `### ${sk.type}\n${sk.planPrompt}`).join('\n\n')
-}
-
-export function buildPlanExamples(settings) {
-  return enabledSkills(settings).map(sk => sk.example).filter(Boolean).join(',\n  ')
 }

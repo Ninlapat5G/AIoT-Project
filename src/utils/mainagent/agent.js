@@ -48,13 +48,10 @@ const AgentState = Annotation.Root({
   has_failed_step: Annotation({ reducer: (_, n) => n, default: () => false }),
   failed_steps:    Annotation({ reducer: appendArray, default: () => [] }),
 
-  // carry-over ข้าม turn — ส่งกลับ caller แล้วป้อนเข้ามาใหม่ turn ถัดไป
-  wait_retry:      Annotation({ reducer: (_, n) => n, default: () => '' }),
-  pending_clarify: Annotation({ reducer: (_, n) => n, default: () => '' }),
-
-  // state สำหรับ memory_compressor — เก็บสรุปและ history ที่บีบอัดแล้ว
-  chat_summary:     Annotation({ reducer: (_, n) => n, default: () => '' }),
-  optimizedHistory: Annotation({ reducer: (_, n) => n, default: () => [] }),
+  // carry-over ข้าม turn — 3 bucket ที่ memoryCompressor ผลิต + routerPlanner บริโภค
+  // lastCommand อยู่ข้างบนแล้ว (ใช้ร่วมกัน)
+  chat_summary:    Annotation({ reducer: (_, n) => n, default: () => '' }),
+  pending_answer:  Annotation({ reducer: (_, n) => n, default: () => '' }),
 })
 
 // ── Routing ───────────────────────────────────────────────────────────────────
@@ -128,8 +125,8 @@ export async function runAgent(params) {
     devicesRef, baseTopicRef, setDevices, handleSaveSettings,
     signal,
     lastCommand,
-    wait_retry,
-    pending_clarify,
+    chat_summary,
+    pending_answer,
     maxRouterRounds,
     onPlanReady, onStepStart, onStepResult, onStream, onInterimStatus,
   } = params
@@ -156,8 +153,9 @@ export async function runAgent(params) {
     devicesRef, baseTopicRef, setDevices, handleSaveSettings,
     lastCommand: lastCommand ?? null,
     onPlanReady, onStepStart, onStepResult, onStream, onInterimStatus,
-    chat_summary: '',
-    optimizedHistory: [],
+
+    chat_summary:   chat_summary   ?? '',
+    pending_answer: pending_answer ?? '',
 
     router_round: 0,
     max_router_rounds: maxRouterRounds ?? 3,
@@ -165,9 +163,6 @@ export async function runAgent(params) {
     has_failed_step: false,
     failed_steps: [],
     completed: [],
-
-    wait_retry: wait_retry ?? '',
-    pending_clarify: pending_clarify ?? '',
   })
 
   const lastMsg = finalState.messages?.[finalState.messages.length - 1]
@@ -175,10 +170,9 @@ export async function runAgent(params) {
 
   return {
     reply,
-    lastCommand: finalState.lastCommand ?? null,
-    optimizedHistory: finalState.optimizedHistory ?? [],
-    wait_retry: finalState.wait_retry ?? '',
-    pending_clarify: finalState.pending_clarify ?? '',
+    lastCommand:    finalState.lastCommand    ?? null,
+    chat_summary:   finalState.chat_summary   ?? '',
+    pending_answer: finalState.pending_answer ?? '',
   }
 }
 

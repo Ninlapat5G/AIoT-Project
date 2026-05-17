@@ -18,10 +18,6 @@ export function buildPlanPrompt() {
     .join('\n\n')
 }
 
-export function buildPlanExamples() {
-  return Object.values(SKILLS).map(sk => sk.example).filter(Boolean).join(',\n  ')
-}
-
 // รวม responseGuide ของทุก skill ใน plan — response node เอาไปประกอบเป็น prompt
 export function collectResponseGuides(plan) {
   const types = (plan?.steps || []).map(s => s.type)

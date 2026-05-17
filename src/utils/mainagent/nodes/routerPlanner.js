@@ -41,29 +41,19 @@ const ROUTER_SCHEMA = {
   required: ['steps', 'needs_next_round'],
 }
 
-function buildRoundOnePrompt(settings, lastCommand, kgText, pending_clarify, wait_retry) {
-  const skillBlock = buildPlanPrompt(settings)
-
+function buildPrompt(settings, kgText, lastCommand, chatSummary, pendingAnswer) {
   const roleBlock = `[หน้าที่ของคุณ]
 อ่านคำสั่งล่าสุดของ user แล้วเลือกเครื่องมือ (step) มาใช้ทำงาน ตอบกลับเป็น JSON ก้อนเดียว`
 
   const contextParts = [`[สถานะบ้านตอนนี้]\n${kgText}`]
-  if (lastCommand) {
-    contextParts.push(`[อุปกรณ์ที่เพิ่งสั่งล่าสุด]\n${lastCommand}`)
-  }
-  if (pending_clarify) {
-    contextParts.push(
-      `[คำถามที่คุณถาม user ไว้ใน turn ก่อน — รอคำตอบอยู่]\n${pending_clarify}\n→ ถ้า message ใหม่ของ user เหมือนตอบคำถามนี้ ใช้คำตอบไป plan task เดิม; ถ้า user เปลี่ยนเรื่อง ทิ้งคำถามนี้ทำตามเรื่องใหม่`
-    )
-  }
-  if (wait_retry) {
-    contextParts.push(
-      `[งานที่ทำไม่สำเร็จใน turn ก่อน — รอ user สั่งต่อ]\n${wait_retry}\n→ ถ้า user สั่ง "ลองอีกที" / "ทำต่อ" plan งานพวกนี้; ถ้า user เปลี่ยนเรื่อง ทิ้งทำตามเรื่องใหม่`
-    )
-  }
+  if (chatSummary)   contextParts.push(`[สรุปบทสนทนาก่อนหน้า]\n${chatSummary}`)
+  if (lastCommand)   contextParts.push(`[คำสั่งอุปกรณ์ล่าสุด]\n${lastCommand}`)
+  if (pendingAnswer) contextParts.push(
+    `[รอคำตอบจาก user]\n${pendingAnswer}\n→ ถ้า user ตอบเรื่องนี้ → ใช้คำตอบไป plan; ถ้า user เปลี่ยนเรื่อง → ทิ้งทำตามเรื่องใหม่`
+  )
   const contextBlock = contextParts.join('\n\n')
 
-  const toolsBlock = `[เครื่องมือที่ใช้ได้]\n${skillBlock}`
+  const toolsBlock = `[เครื่องมือที่ใช้ได้]\n${buildPlanPrompt(settings)}`
 
   const decisionBlock = `[คิดก่อนวาง plan: รอบเดียวจบ หรือ ต้องค้นหาข้อมูลก่อนแล้วค่อยทำ?]
 เกณฑ์เดียว:
@@ -92,22 +82,18 @@ function buildRoundOnePrompt(settings, lastCommand, kgText, pending_clarify, wai
   return [roleBlock, contextBlock, toolsBlock, decisionBlock, specialBlock].join('\n\n')
 }
 
-function buildSystemPrompt(settings, devices, lastCommand, kgText, carryOver) {
-  const { pending_clarify, wait_retry } = carryOver || {}
-  return buildRoundOnePrompt(settings, lastCommand, kgText, pending_clarify, wait_retry)
-}
-
 export async function routerPlannerNode(state) {
   const { settings, signal, lastCommand } = state
   const devices = (state.deviceList?.current ?? state.deviceList) || []
   const messages = state.messages || []
 
   const kgText = snapshotText({ devices, settings, now: nowString() })
-  const carryOver = {
-    pending_clarify: state.pending_clarify || '',
-    wait_retry: state.wait_retry || '',
-  }
-  const systemPrompt = buildSystemPrompt(settings, devices, lastCommand, kgText, carryOver)
+  const systemPrompt = buildPrompt(
+    settings, kgText, lastCommand,
+    state.chat_summary || '',
+    state.pending_answer || '',
+  )
+
   const llm = makeLLM(settings, {
     temperature: 0,
     maxTokens: 600,

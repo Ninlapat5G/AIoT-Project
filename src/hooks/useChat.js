@@ -17,15 +17,15 @@ export function useChat({
   const [messages, setMessages]     = useState([])
   const [apiHistory, setApiHistory] = useState([])
   const [thinking, setThinking]     = useState(false)
-  
+
   // เก็บ livePlan ไว้ให้ UI ใช้เช็คปุ่ม Stop (X) แต่เราจะไม่เอามันไปวาดแยกซ้อนทับแล้ว
-  const [livePlan, setLivePlan]     = useState(null)     
-  const [liveStatuses, setLiveStatuses] = useState([])   
+  const [livePlan, setLivePlan]     = useState(null)
+  const [liveStatuses, setLiveStatuses] = useState([])
 
   const abortControllerRef = useRef(null)
-  const lastCommandRef = useRef(null)
-  const waitRetryRef = useRef('')
-  const pendingClarifyRef = useRef('')
+  const lastCommandRef     = useRef(null)
+  const chatSummaryRef     = useRef('')
+  const pendingAnswerRef   = useRef('')
 
   const stopChat = useCallback(() => {
     if (abortControllerRef.current) {
@@ -48,13 +48,13 @@ export function useChat({
     let currentPlanId = null
 
     try {
-      const { reply, lastCommand, wait_retry, pending_clarify } = await runAgent({
+      const { reply, lastCommand, chat_summary, pending_answer } = await runAgent({
         text,
         settings,
         apiHistory,
-        lastCommand: lastCommandRef.current,
-        wait_retry: waitRetryRef.current,
-        pending_clarify: pendingClarifyRef.current,
+        lastCommand:    lastCommandRef.current,
+        chat_summary:   chatSummaryRef.current,
+        pending_answer: pendingAnswerRef.current,
         devicesRef,
         baseTopicRef,
         setDevices,
@@ -137,8 +137,8 @@ export function useChat({
       setLivePlan(null)
       setLiveStatuses([])
       if (lastCommand !== null) lastCommandRef.current = lastCommand
-      waitRetryRef.current = wait_retry ?? ''
-      pendingClarifyRef.current = pending_clarify ?? ''
+      chatSummaryRef.current   = chat_summary   ?? ''
+      pendingAnswerRef.current = pending_answer ?? ''
 
       setApiHistory(prev => [
         ...prev,
@@ -175,9 +175,9 @@ export function useChat({
     stopChat()
     setMessages([])
     setApiHistory([])
-    lastCommandRef.current = null
-    waitRetryRef.current = ''
-    pendingClarifyRef.current = ''
+    lastCommandRef.current     = null
+    chatSummaryRef.current     = ''
+    pendingAnswerRef.current   = ''
   }, [stopChat])
 
   return {
