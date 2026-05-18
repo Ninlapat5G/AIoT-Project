@@ -24,7 +24,7 @@ export async function memoryCompressorNode(state) {
 
   console.log(`  [MemoryCompressor] Running final single-turn summarization...`)
 
-  const summaryResult = await summarizeHistory(messages, settings, signal, kgText, pendingContext)
+  const summaryResult = await summarizeHistory(messages, settings, signal, kgText, pendingContext, state.chat_summary || '')
 
   return {
     chat_summary:  summaryResult.chat_summary,
