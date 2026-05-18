@@ -16,7 +16,7 @@ const mdComponents = {
 }
 
 const AvatarLogo = () => (
-  <img src="/syn_icon.jpg" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+  <img src="/syn_icon.jpg" />
 )
 
 export default function ChatBubble({ msg, assistantName = 'Assistant', showToolDetails = true, labelOfStep }) {
