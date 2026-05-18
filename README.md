@@ -47,8 +47,8 @@ SynaptaOS ใช้ [Typhoon v2.5 (`typhoon-v2.5-30b-a3b-instruct`)](https://ope
 
 | ประเภท | ใช้กับอะไร |
 |---|---|
-| Add Device → digital | อุปกรณ์เปิด/ปิด เช่น ไฟ ปลั๊ก |
-| Add Device → analog | อุปกรณ์ปรับค่า เช่น แอร์ พัดลม หรี่แสง |
+| Add Device → digital | อุปกรณ์ที่รับ ON/OFF เช่น ไฟ ปลั๊ก รีเลย์ |
+| Add Device → analog | อุปกรณ์ที่รับค่าตัวเลข เช่น หรี่แสง (dimmer) |
 | Add Hub | คอมพิวเตอร์ที่ต้องการสั่งงาน remote |
 
 ---
