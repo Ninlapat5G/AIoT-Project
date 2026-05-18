@@ -102,7 +102,6 @@ hub/
 | `hub` | สั่งงาน Hub Agent บนเครื่อง remote |
 | `web_search` | ค้นหาข้อมูลจากอินเทอร์เน็ต |
 | `manage_settings` | อ่าน/แก้ไข settings ผ่านภาษาธรรมชาติ |
-| `query_knowledge_graph` | ดูสถานะอุปกรณ์และ skills ที่เปิดอยู่ |
 
 ---
 
