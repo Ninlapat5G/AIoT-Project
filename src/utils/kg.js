@@ -42,7 +42,7 @@ export function describeDeviceState(device) {
   return 'n/a'
 }
 
-export function snapshotData({ devices, settings, now }) {
+export function data_knowledge({ devices, settings, now }) {
   const visible = visibleDevices(devices, settings)
   const userName = settings?.profile?.displayName || settings?.profile?.userBio || 'User'
   const userBio  = settings?.profile?.userBio || ''
