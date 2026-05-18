@@ -20,18 +20,39 @@ const AvatarLogo = () => (
 )
 
 export default function ChatBubble({ msg, assistantName = 'Assistant', showToolDetails = true, labelOfStep }) {
-  // Interim status — chip ลอย ๆ ระหว่างรอ evaluator ทำงาน
+  // Interim status — evaluator กำลังตัดสินใจ แสดงเป็น bubble เหมือน AI ปกติ
   if (msg.role === 'interim') {
     return (
       <motion.div
-        className="sh-interim-chip"
-        initial={{ opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -4 }}
-        transition={{ duration: 0.18 }}
+        className="sh-msg ai"
+        initial={{ opacity: 0, x: -16, y: 4 }}
+        animate={{ opacity: 1, x: 0, y: 0 }}
+        exit={{ opacity: 0, x: -8 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
       >
-        <span className="sh-interim-text">{assistantName}{msg.text}</span>
-        <span className="sh-interim-dots"><span /><span /><span /></span>
+        <motion.div
+          className="sh-msg-avatar"
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 28, delay: 0.05 }}
+        >
+          <AvatarLogo />
+        </motion.div>
+        <div className="sh-msg-bubble">
+          <div className="sh-msg-who mono">{assistantName.toUpperCase()}</div>
+          <div className="sh-typing">
+            <motion.span
+              className="sh-typing-label"
+              animate={{ opacity: [0.45, 1, 0.45] }}
+              transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+            >
+              {msg.text}
+            </motion.span>
+            <div className="sh-typing-dots">
+              <span /><span /><span />
+            </div>
+          </div>
+        </div>
       </motion.div>
     )
   }
@@ -107,8 +128,16 @@ export function TypingBubble({ assistantName = 'Assistant' }) {
       <div className="sh-msg-bubble">
         <div className="sh-msg-who mono">{assistantName.toUpperCase()}</div>
         <div className="sh-typing">
-          <span className="sh-typing-label">{assistantName} กำลังคิด</span>
-          <span /><span /><span />
+          <motion.span
+            className="sh-typing-label"
+            animate={{ opacity: [0.45, 1, 0.45] }}
+            transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+          >
+            {assistantName} กำลังคิด
+          </motion.span>
+          <div className="sh-typing-dots">
+            <span /><span /><span />
+          </div>
         </div>
       </div>
     </motion.div>

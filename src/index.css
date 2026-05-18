@@ -643,16 +643,16 @@
     @apply text-xs;
     color: var(--ink-dim);
   }
-  .sh-typing span {
+  .sh-typing-dots { @apply flex items-center gap-1; }
+  .sh-typing-dots span {
     @apply w-1.5 h-1.5 rounded-full;
     background: var(--ink-xdim);
     animation: bounce-dot 1.2s ease-in-out infinite;
   }
-  .sh-typing span:nth-child(2) { animation-delay: .15s; }
-  .sh-typing span:nth-child(3) { animation-delay: .30s; }
-  .sh-typing span:nth-child(4) { animation-delay: .45s; }
+  .sh-typing-dots span:nth-child(2) { animation-delay: .15s; }
+  .sh-typing-dots span:nth-child(3) { animation-delay: .30s; }
 
-  /* interim status chip — โชว์ระหว่าง evaluator ทำงาน */
+  /* interim status chip — ไม่ใช้แล้ว (ย้ายไปเป็น AI bubble ใน ChatBubble.jsx) */
   .sh-interim-chip {
     @apply inline-flex items-center gap-2 rounded-full;
     padding: 6px 12px;
