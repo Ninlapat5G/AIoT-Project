@@ -62,10 +62,12 @@ export default function ChatPage({
   };
 
   const hasLivePlan = livePlan?.steps?.length > 0;
-  // tools ทำเสร็จหมดแล้ว แต่ response ยังไม่เริ่ม stream → แสดง "กำลังคิด..."
+  // streaming อยู่แล้ว → ไม่ต้องแสดง thinking bubble
+  const isStreaming = messages.some(m => m.streaming === true)
+  // tools ทำเสร็จหมดแต่ response ยังไม่เริ่ม stream = ช่วง "เงียบ" ที่ต้องแสดง
   const allToolsDone = liveStatuses.length > 0 &&
     liveStatuses.every(s => s.status !== 'pending' && s.status !== 'running');
-  const showThinking = thinking || (hasLivePlan && allToolsDone);
+  const showThinking = !isStreaming && (thinking || (hasLivePlan && allToolsDone));
 
   return (
     <div className="sh-chatpage">
