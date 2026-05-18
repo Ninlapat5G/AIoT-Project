@@ -6,7 +6,7 @@ const SUMMARIZER_PROMPT = `คุณคือระบบบีบอัดค�
 
 [รูปแบบ JSON]
 {
-  "chat_summary": "สรุปบทสนทนาทั่วไป ทักทาย ผลค้นหาเว็บ เขียนเป็น Bullet points สั้น (ว่างได้ถ้าไม่มี)",
+  "chat_summary": "เฉพาะบทสนทนาทั่วไปที่ไม่ใช่คำสั่งอุปกรณ์ เช่น ทักทาย ถามความรู้ ผลค้นหาเว็บ เขียนเป็น Bullet points สั้น (ว่างได้ถ้าไม่มี — ห้ามใส่ข้อมูลที่อยู่ใน last_command หรือ pending_answer ซ้ำ)",
   "last_command": "คำสั่งอุปกรณ์ล่าสุด 1 รายการ เช่น 'เปิดไฟห้องนั่งเล่น (ล่าสุด)' (ว่างได้ถ้าไม่มีการสั่งอุปกรณ์)",
   "pending_answer": "สิ่งที่รอคำตอบชัดเจนจาก user เขียน 1 บรรทัด เช่น 'รอ user ตอบว่าจะตั้งแอร์กี่องศา' หรือ 'งาน home_control ล้มเหลว รอ user สั่งต่อ' (ว่างถ้าไม่มีอะไรค้าง)"
 }
@@ -14,7 +14,8 @@ const SUMMARIZER_PROMPT = `คุณคือระบบบีบอัดค�
 [กฎ]
 1. ตอบ JSON เท่านั้น ใช้ double quote เสมอ
 2. สรุปเป็น fact สั้น ห้ามคัดลอก history ยาวกลับมา
-3. ข้อมูลเป็นภาษาไทย กระชับ ไม่ใส่อารมณ์`
+3. แต่ละ field มีหน้าที่ชัดเจน ห้ามใส่ข้อมูลซ้ำข้ามกัน
+4. ข้อมูลเป็นภาษาไทย กระชับ ไม่ใส่อารมณ์`
 
 export async function summarizeHistory(messages, settings, signal, kgSnapshot = '', pendingContext = '') {
   if (messages.length === 0) return { chat_summary: '', last_command: null, pending_answer: '' }
