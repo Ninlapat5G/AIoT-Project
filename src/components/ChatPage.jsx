@@ -62,6 +62,10 @@ export default function ChatPage({
   };
 
   const hasLivePlan = livePlan?.steps?.length > 0;
+  // tools ทำเสร็จหมดแล้ว แต่ response ยังไม่เริ่ม stream → แสดง "กำลังคิด..."
+  const allToolsDone = liveStatuses.length > 0 &&
+    liveStatuses.every(s => s.status !== 'pending' && s.status !== 'running');
+  const showThinking = thinking || (hasLivePlan && allToolsDone);
 
   return (
     <div className="sh-chatpage">
@@ -112,7 +116,7 @@ export default function ChatPage({
           )}
 
           <AnimatePresence>
-            {thinking && !hasLivePlan && <TypingBubble key="typing" assistantName={assistantName} />}
+            {showThinking && <TypingBubble key="typing" assistantName={assistantName} />}
           </AnimatePresence>
         </div>
 

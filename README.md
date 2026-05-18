@@ -102,96 +102,135 @@ hub/
 
 ## สถาปัตยกรรม
 
-### Frontend Agent (LangGraph Plan-and-Execute + Self-Looping Evaluator)
+### ภาพรวม — ต่อ 1 ข้อความของ user
 
 ```
-ผู้ใช้ พิมพ์/พูด
-       │
-       ▼
-  router_planner
-       │ (พ่น plan + needs_next_round)
-       ▼
-   announce ──► ส่ง plan ให้ UI วาด Tool Pills (ข้ามถ้าเป็น general ล้วน)
-       │
-       ├── needs_clarify ──► clarify ─────────────────────┐
-       ├── all general    ──► chat ────────────────────────┤
-       └── มี step         ──► plan_executor (retry สูงสุด 3 ครั้ง/step)
-                                    │
-                                    ├── มี step fail หลัง retry หมด ──► response ──┤
-                                    │
-                                    ├── needs_next_round + ยังไม่ครบ max (default 3)
-                                    │      ▼
-                                    │   evaluator ◄────────────────────────┐
-                                    │      │ (ดู user + completed สะสม + KG)│
-                                    │      │ พ่น plan + needs_next_round    │
-                                    │      │                                │
-                                    │      ├── steps ว่าง ──► response ─────┤
-                                    │      │                                │
-                                    │      └── มี step ──► announce ──► plan_executor
-                                    │                                       │ (loop กลับ)
-                                    │                                       ▲
-                                    │                       (needs_next_round อีกรอบ)
-                                    │
-                                    └── default ──► response ────────────────┤
+useChat.js  ──►  runAgent()  ──►  LangGraph StateGraph  ──►  ตอบกลับ + บันทึกความจำ
+```
+
+ทุก turn ที่ user พิมพ์ข้อความ ระบบจะรัน graph นี้ตั้งแต่ต้นจนจบ แล้วส่งผลกลับ
+
+---
+
+### ขั้นตอนใน LangGraph
+
+```
+START
+  │
+  ▼
+[router_planner]         ← วางแผนว่าจะทำอะไร
+  │
+  ▼
+[announce]               ← แสดง Tool Pill ในหน้า chat (ถ้ามีงานต้องทำ)
+  │
+  ├─ ถามก่อน    ──► [clarify]       ─────────────────────────────────┐
+  ├─ คุยทั่วไป  ──► [chat]          ─────────────────────────────────┤
+  └─ มีงานต้องทำ ──► [plan_executor] ─ รันทีละ step                   │
+                            │                                         │
+                            ├─ step ล้มเหลว ──► [response] ──────────┤
+                            │                                         │
+                            └─ มีเงื่อนไขรอเช็ค ──► [evaluator]      │
+                                         │                            │
+                                         ├─ เงื่อนไขไม่เข้า ──► [response] ─┤
+                                         └─ เงื่อนไขเข้า ──► [announce]    │
+                                                               └─ [plan_executor] (วนได้สูงสุด 3 รอบ)
                                                                              │
-                                              memory_compressor ◄────────────┘
-                                                       │
-                                                       ▼
-                                                      END
+                                                               [response] ───┘
+                                                                    │
+                                                         [memory_compressor]
+                                                                    │
+                                                                   END
 ```
 
-**Router-Planner — วาง plan รอบแรก + ตัดสินใจว่างานนี้ต้องค้นข้อมูลก่อนไหม**
-- LLM อ่านคำสั่ง user + Knowledge Graph + history แล้วตอบเป็น JSON ชุดเดียว: `{steps: [...], needs_next_round: bool}`
-- **`needs_next_round=true`** เมื่อมี step ที่ต้องค้น/ดึงข้อมูล แล้วต้องใช้ผลไปตัดสินใจ step ถัดไป (เช่น "ดูราคา BTC ถ้าเกิน 100k เปิดไฟ" → รอบ 1 ค้นราคา, ปล่อย evaluator ตัดสินใจรอบถัดไป)
-- ถ้าข้อมูลไม่พอจะวาง plan → ตั้ง `need_clarify` ให้ clarify node ถามผู้ใช้
-- บังคับ JSON schema ผ่าน `withStructuredOutput` กัน LLM ลืม field
+---
 
-**Plan-Executor — รัน step ตาม plan + retry**
-- รัน step แบบ sequential ตามลำดับ
-- แต่ละ step มี **retry สูงสุด 3 ครั้ง** ถ้า skill คืน `ok=false` (กัน network glitch / mqtt timeout)
-- ถ้าครบ 3 ครั้งยัง fail → step ที่เหลือยังทำต่อ แต่ flag `has_failed_step` จะตัดวงจร multi-round ส่งไป response แจ้ง user แทนการเข้า evaluator
-- map `step.type` → skill ใน `src/utils/mainagent/skills/`:
+### แต่ละ Node ทำอะไร
 
-  | Skill | หน้าที่ |
-  |---|---|
-  | `homeControl` | สั่ง MQTT ไปยัง IoT device (digital/analog) |
-  | `hubControl` | ส่ง task ไปยัง Hub Agent (Python ReAct) |
-  | `realtimeData` | ค้นเว็บผ่าน Serper API |
-  | `manageSettings` | อ่าน/แก้ settings ผ่านภาษาธรรมชาติ |
-  | `general` | ตอบคำถาม/คุยเล่นด้วย LLM โดยตรง |
-  | `deviceNotFound` | จัดการเคส plan อ้างถึง device ที่ไม่อยู่ใน KG |
+**`router_planner` — สมองหลัก วางแผนทั้งหมดก่อนลงมือทำ**
 
-- callback `onStepStart` / `onStepResult` ออก UI → Tool Pill เปลี่ยนสถานะ pending → running → ok/fail แบบ real-time
+รับ: ข้อความ user + สถานะอุปกรณ์ทั้งบ้าน (KG) + ความจำจาก turn ก่อนหน้า
+ออก: แผน JSON บอกว่าต้องทำ step อะไรบ้าง
 
-**Evaluator — ประเมินเงื่อนไข + plan step ถัดไป (loop กลับเข้าตัวเองได้)**
-- เปิดทำงานเมื่อ router-planner หรือ evaluator รอบก่อนตั้ง `needs_next_round=true` และ executor ไม่มี fail
-- รับเข้า: user request ล่าสุด + `completed` (ผลของทุก step ที่สะสมข้ามรอบ) + KG สด (อ่านจาก `devicesRef.current`) + tools ที่ใช้ได้
-- **ตัด chat history เก่าทิ้ง** — เห็นแค่คำสั่งล่าสุด กันสับสนกับ turn ก่อน
-- พ่น JSON schema เดียวกับ router: `{steps: [...], needs_next_round: bool}` — เพราะ schema ตรงกัน เลย loop กลับเข้า `plan_executor → evaluator` ผ่าน `routeAfterExecutor` เดิมได้เลย
-- ตัดสินใจ 2 อย่างพร้อมกันใน 1 LLM call:
-  - **เงื่อนไขที่กำลังตรวจเข้าไหม** → ถ้าเข้า plan step สั่งงาน, ถ้าไม่เข้า/ข้อมูลพัง พ่น `steps=[]`
-  - **ยังเหลือเงื่อนไขอื่นที่ user ตั้งไว้ต้องเช็คอีกไหม** → ถ้ามี ใส่ step ค้นข้อมูลถัดไป + `needs_next_round=true`
-- รองรับ task ซ้อนหลายชั้น (เช่น "ถ้า BTC เกิน 100k เช็คพยากรณ์ฝน ถ้าฝนไม่ตกเปิดไฟสนาม") โดยใช้โครงเดิม — แต่ถูก safety cap ที่ **max 3 รอบ** กันโมเดลวนไม่จบ
-- ระหว่างทำงาน ยิง `onInterimStatus("กำลังตัดสินใจขั้นถัดไป")` ให้ UI โชว์ chip คั่นระหว่าง Tool Pills
-- **ทำไมไม่ใช้ synthesizer + router-2 เหมือนเดิม**: pattern เก่าให้ LLM 2 ตัวคุยกันด้วยภาษาธรรมชาติ ทำให้ตัวรับ (router-2) ต้องอ่านประโยคแล้วเดาว่าหมายถึงอุปกรณ์ตัวไหน → หลอนบ่อย ยุบเป็น 1 LLM call ที่พ่น JSON ตรง ตัดจุดหลอนทิ้งและลด latency 1 hop
+ตัวอย่าง:
+- "เปิดไฟห้องนั่งเล่น" → plan ส่ง MQTT ไปเปิดไฟ
+- "ถ้า BTC เกิน 100k เปิดไฟ" → plan ค้นราคาก่อน แล้วบอกว่า "รอผลค้นก่อนตัดสินใจ"
+- "สวัสดี" → ไปคุยทั่วไป ไม่ต้องทำอะไร
 
-**Response — สรุปผลให้ user**
-- รับผลของทุก step ที่รันไปทั้งหมด (สะสมข้าม rounds) + KG ปัจจุบัน → stream คำตอบเป็นภาษาธรรมชาติ
+---
 
-**Memory Compressor — บีบประวัติแชท + carry-over field ก่อนจบ turn**
-- ทุก path (chat / clarify / response) ผ่าน node นี้ก่อน END
-- บีบประวัติสนทนาเป็น `optimizedHistory` ให้ caller (`useChat`) เก็บไว้ใช้ turn ถัดไป — กัน context window ระเบิด
-- คำนวณ **carry-over fields** ส่งกลับ caller ผ่าน ref:
-  - `pending_clarify` — คำถามที่ถาม user ค้างไว้ (จาก clarify node) รอ user ตอบ turn ถัดไป
-  - `wait_retry` — งานที่ทำไม่สำเร็จ รอ user สั่งต่อ ("ลองอีกที" → router-planner รอบหน้าหยิบมา plan ใหม่)
-  - ทั้ง 2 field reset เป็น `''` เมื่อ turn ถัดไปทำสำเร็จ หรือ clear chat
+**`announce` — แสดงผัง Tool Pill ก่อนลงมือ**
+
+ไม่ใช้ AI เลย — แค่ส่งแผนไปให้ UI วาด Tool Pill (ปุ่มสีเล็กๆ บอก user ว่ากำลังจะทำอะไร) ก่อนที่จะเริ่มรัน step จริงๆ
+
+---
+
+**`plan_executor` — ลงมือทำตาม plan ทีละ step**
+
+รัน step ตามลำดับ แต่ละ step เรียก skill ที่เหมาะสม:
+
+| Skill | ทำอะไร |
+|---|---|
+| `home_control` | ส่ง MQTT ไปเปิด/ปิด/ปรับอุปกรณ์ |
+| `hub_control` | ส่งงานไปให้ Hub Agent (Python) บนคอมพิวเตอร์ remote |
+| `realtime_data` | ค้นหาข้อมูล real-time จากอินเทอร์เน็ต (Serper) |
+| `settings` | อ่านหรือเปลี่ยน settings ผ่านภาษาธรรมชาติ |
+| `device_not_found` | แจ้ง user ว่าอุปกรณ์ที่พูดถึงไม่มีในระบบ |
+
+Tool Pill จะอัปเดตสถานะแบบ real-time: pending → กำลังทำ → สำเร็จ/ล้มเหลว
+
+---
+
+**`evaluator` — เช็คเงื่อนไขหลังได้ข้อมูลมาแล้ว**
+
+ใช้เมื่อ user สั่งแบบมีเงื่อนไข เช่น "ถ้า BTC เกิน 100k เปิดไฟ"
+
+รอบ 1: router ค้นราคา BTC → ได้ผลว่า $115k
+รอบ 2: evaluator เช็คว่า 115k > 100k → เงื่อนไขเข้า → สั่งเปิดไฟ
+
+รองรับเงื่อนไขซ้อนหลายชั้น และวนได้สูงสุด 3 รอบต่อ turn
+
+---
+
+**`chat` — ตอบบทสนทนาทั่วไป**
+
+ใช้เมื่อ user ทักทาย ถามความรู้ หรือต้องการข้อมูลเพิ่มก่อนทำงาน — stream คำตอบตามบุคลิกที่ตั้งค่าไว้
+
+---
+
+**`clarify` — ถาม user ก่อนที่จะทำงาน**
+
+ใช้เมื่อข้อมูลไม่ครบ เช่น user บอกว่า "เปิดแอร์" แต่ไม่ได้บอกอุณหภูมิ — node นี้จะถามกลับว่า "จะให้ตั้งกี่องศาดีคะ?"
+
+---
+
+**`response` — รายงานผลให้ user ฟัง**
+
+หลังทุก step เสร็จ node นี้จะ stream สรุปผลเป็นภาษาธรรมชาติ เช่น "เปิดไฟห้องนั่งเล่นให้แล้วค่ะ" — อ่านจากผลสะสมของทุก step จริงๆ ห้ามแต่งขึ้นมาเอง
+
+---
+
+**`memory_compressor` — บีบความจำก่อนจบ turn**
+
+ทุก turn จะจบที่ node นี้เสมอ ทำหน้าที่บีบประวัติบทสนทนาลงเป็น 3 กระเป๋าเล็กๆ เพื่อส่งต่อไปใช้ใน turn ถัดไป:
+
+| กระเป๋า | เก็บอะไร | ทำไมต้องเก็บ |
+|---|---|---|
+| `chat_summary` | สรุปบทสนทนาทั่วไป | ให้ AI "จำ" เรื่องที่คุยไว้ก่อนหน้า |
+| `last_command` | คำสั่งอุปกรณ์ล่าสุด | ให้ "ปิดเลย" / "อันนั้น" ใช้ได้โดยไม่ต้องระบุซ้ำ |
+| `pending_answer` | สิ่งที่ยังรอ user ตอบ | ถ้าถามไปรอบที่แล้ว จะรู้ว่ากำลังรออะไรอยู่ |
+
+กระเป๋าเหล่านี้ใช้แทน history ยาวๆ ประหยัด context และทำให้ AI ไม่สับสน
+
+---
+
+### การไหลของข้อมูล (Skills)
 
 ```
-plan_executor ──► homeControl  ──► MQTT ──► IoT Devices (digital / analog)
-              ├── hubControl   ──► MQTT ──► Hub Agent (Python)
-              │                                └── ReAct loop (os_exec + web_search)
-              ├── realtimeData ──► Serper API
-              └── manageSettings ──► local Settings store
+plan_executor ──► home_control  ──► MQTT ──► IoT Devices (ไฟ/แอร์/พัดลม ฯลฯ)
+              ├── hub_control   ──► MQTT ──► Hub Agent (Python)
+              │                                └── ReAct loop (รัน command + web search)
+              ├── realtime_data ──► Serper API (ค้นเว็บ)
+              └── settings      ──► Settings store (local)
 ```
 
 > หมายเหตุ: architecture เวอร์ชันก่อนหน้า (ReAct + Reflect + Guard) อยู่ที่ branch [`old_architecture`](../../tree/old_architecture) สำหรับอ้างอิง

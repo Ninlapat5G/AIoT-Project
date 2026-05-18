@@ -107,6 +107,7 @@ export function TypingBubble({ assistantName = 'Assistant' }) {
       <div className="sh-msg-bubble">
         <div className="sh-msg-who mono">{assistantName.toUpperCase()}</div>
         <div className="sh-typing">
+          <span className="sh-typing-label">{assistantName} กำลังคิด</span>
           <span /><span /><span />
         </div>
       </div>

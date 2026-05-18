@@ -604,7 +604,7 @@
   .sh-msg { @apply flex gap-2.5 items-end shrink-0; }
   .sh-msg.user { @apply justify-end; }
   .sh-msg-avatar {
-    @apply w-7 h-7 rounded-xl shrink-0 flex items-center justify-center;
+    @apply w-10 h-10 rounded-xl shrink-0 flex items-center justify-center;
     background: oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.14);
     color: var(--accent);
     border: 1px solid oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.35);
@@ -638,7 +638,11 @@
   .sh-msg-text strong { font-weight: 600; }
   .sh-msg-text h1, .sh-msg-text h2, .sh-msg-text h3 { font-weight: 600; margin-bottom: 4px; }
 
-  .sh-typing { @apply flex gap-1 py-0.5; }
+  .sh-typing { @apply flex items-center gap-1.5 py-0.5; }
+  .sh-typing-label {
+    @apply text-xs;
+    color: var(--ink-dim);
+  }
   .sh-typing span {
     @apply w-1.5 h-1.5 rounded-full;
     background: var(--ink-xdim);
@@ -646,6 +650,7 @@
   }
   .sh-typing span:nth-child(2) { animation-delay: .15s; }
   .sh-typing span:nth-child(3) { animation-delay: .30s; }
+  .sh-typing span:nth-child(4) { animation-delay: .45s; }
 
   /* interim status chip — โชว์ระหว่าง evaluator ทำงาน */
   .sh-interim-chip {
