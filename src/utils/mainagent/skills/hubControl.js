@@ -9,14 +9,12 @@ export const hubControl = {
   type: 'hub_control',
   requiresSkill: 'hub',
 
-  planPrompt: `hub_control — ส่ง task ไปให้ hub device (เครื่องคอมพิวเตอร์/Pi ที่มี agent)
+  planPrompt: `[hub_control]
+ใช้สำหรับ: ส่ง task ให้ hub device (คอมพิวเตอร์/Pi ที่มี agent ของตัวเอง)
+เงื่อนไข:
 - ใช้กับ device type "hub" เท่านั้น
-- task เป็นภาษาธรรมชาติ ตรงตามที่ user สั่งเลย (hub agent จะตีความเอง)
-- ตัวอย่างงานที่ส่ง hub: shutdown, restart, เช็ค CPU, เปิดแอป, ค้นไฟล์, รันคำสั่ง
-
-ห้าม:
-- ใช้ hub_control กับ device ที่ไม่ใช่ hub (ใช้ home_control)
-- web_search ก่อน — hub agent ทำเองได้`,
+- task เป็นภาษาธรรมชาติ ตรงตามที่ user สั่ง (hub agent ตีความเอง)
+- ห้ามใช้กับ device ทั่วไป → ใช้ home_control`,
 
   example: `{"type": "hub_control", "device": "Main Hub", "topic": "hub/main", "task": "เช็ค CPU usage"}`,
 

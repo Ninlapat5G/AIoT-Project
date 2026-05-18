@@ -15,54 +15,37 @@ const ALLOWED_STEP_TYPES = Object.keys(SKILLS)
 function buildPrompt(settings, kgText) {
   const skillBlock = buildPlanPrompt(settings)
 
-  const roleBlock = `[หน้าที่]
-คุณคือ Evaluator — รับคำสั่งของ user + ผลข้อมูลที่ระบบค้นมาได้ → ประเมินเงื่อนไข → พ่น JSON สั่งงาน step ถัดไป
+  const roleBlock = `[บทบาท]
+รับคำสั่ง user + ผลข้อมูลที่ค้นมา → เช็คเงื่อนไข → พ่น JSON step ถัดไป ตอบ JSON เท่านั้น
 
-วิธีคิด (คิดในใจ ห้ามพิมพ์ออกมา):
-1. แกะคำสั่ง user — มีกี่เงื่อนไข, เงื่อนไขแต่ละข้อต้องการข้อมูลอะไร
-2. ดูข้อมูลใน [ผลที่ค้นมา] — มีข้อมูลครบสำหรับเช็คเงื่อนไขที่กำลังตรวจหรือยัง
+วิธีคิด (ห้ามพิมพ์ออกมา):
+1. user สั่งอะไร มีเงื่อนไขกี่ข้อ
+2. [ผลที่ค้นมา] มีข้อมูลครบสำหรับเช็คเงื่อนไขนั้นหรือยัง
 3. ตัดสิน:
-   (ก) เงื่อนไขนี้ "เข้า" และไม่มีเงื่อนไขอื่นรอเช็ค → plan step สั่งงาน (home_control / hub_control / ฯลฯ), needs_next_round=false
-   (ข) เงื่อนไขนี้ "เข้า" แต่ยังมีเงื่อนไขอื่นต้องเช็คก่อนสั่งงาน → plan step ค้นข้อมูลของเงื่อนไขถัดไป, needs_next_round=true
-   (ค) เงื่อนไขนี้ "ไม่เข้า" / ข้อมูลไม่พอ / ข้อมูล error → steps=[], needs_next_round=false (จบที่นี่ ให้ระบบไปแจ้ง user)`
+   • เงื่อนไขเข้า ไม่มีอะไรเหลือ → plan step สั่งงาน, needs_next_round=false
+   • เงื่อนไขเข้า แต่ยังมีเงื่อนไขถัดไป → plan step ค้นข้อมูล, needs_next_round=true
+   • เงื่อนไขไม่เข้า / ข้อมูล error → steps=[], needs_next_round=false`
 
   const examplesBlock = `[ตัวอย่าง]
 
-▸ เงื่อนไขเข้า + ไม่เหลืออะไรเช็ค → สั่งงานเลย
+▸ เงื่อนไขเข้า → สั่งงานเลย
   user: "ถ้าหุ้น NVDA ขึ้นเปิดไฟหน้าบ้าน"
   completed: ["NVDA = +5.77%"]
   → {"steps":[{"type":"home_control","device":"ไฟหน้าบ้าน",...,"payload":"ON"}],"needs_next_round":false}
 
-▸ If-Else
-  user: "ถ้าหุ้นขึ้นเปิดไฟ ถ้าลงปิดไฟ"
-  completed: ["หุ้น = -4%"]
-  → {"steps":[{"type":"home_control","device":"ไฟหน้าบ้าน",...,"payload":"OFF"}],"needs_next_round":false}
-
-▸ เงื่อนไขซ้อน — เข้าเงื่อนไขแรก ยังเหลือเงื่อนไขสอง
+▸ เงื่อนไขซ้อน — ยังต้องค้นข้อมูลอีกรอบ
   user: "ถ้า BTC เกิน 100k เช็คพยากรณ์ฝน ถ้าฝนไม่ตกเปิดไฟสนาม"
   completed: ["BTC = $115k"]
-  → {"steps":[{"type":"realtime_data","query":"พยากรณ์ฝนกรุงเทพพรุ่งนี้"}],"needs_next_round":true}
-  (เพราะเงื่อนไขแรกเข้าแล้ว แต่เงื่อนไขสองยังต้องค้นพยากรณ์ฝน)
+  → {"steps":[{"type":"realtime_data","query":"พยากรณ์ฝนกรุงเทพ"}],"needs_next_round":true}
 
-▸ ครบทุกเงื่อนไข
-  user: "ถ้า BTC เกิน 100k เช็คพยากรณ์ฝน ถ้าฝนไม่ตกเปิดไฟสนาม"
-  completed: ["BTC = $115k", "พยากรณ์: ฝนไม่ตก"]
-  → {"steps":[{"type":"home_control","device":"ไฟสนาม",...,"payload":"ON"}],"needs_next_round":false}
-
-▸ ไม่เข้าเงื่อนไข
+▸ ไม่เข้าเงื่อนไข / ข้อมูล error
   user: "ถ้า BTC เกิน 100k เปิดไฟ"
   completed: ["BTC = $80k"]
-  → {"steps":[],"needs_next_round":false}
-
-▸ ข้อมูล error / ไม่พอ
-  user: "ถ้าฝนตกบอกด้วย"
-  completed: ["✗ web_search: API key หมด"]
   → {"steps":[],"needs_next_round":false}`
 
   const rulesBlock = `[กฎ]
-- ระบุ device ที่มีอยู่จริงใน [สถานะบ้านตอนนี้] เท่านั้น ห้ามเดาชื่อ
-- steps ที่พ่นต้อง match กับ [เครื่องมือที่ใช้ได้] ห้ามคิดเครื่องมือใหม่
-- needs_next_round=true ต่อเมื่อ "ใส่ step ค้นข้อมูล + ต้องเอาผลไปตัดสินใจอีกรอบ" เท่านั้น ปกติ false`
+- ใช้เฉพาะ device ที่มีใน [สถานะบ้านตอนนี้] ห้ามเดาชื่อ
+- needs_next_round=true ต่อเมื่อใส่ step ค้นข้อมูลที่ต้องเอาผลมาตัดสินใจต่อเท่านั้น`
 
   const kgBlock = `[สถานะบ้านตอนนี้]
 ${kgText}`

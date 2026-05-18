@@ -43,19 +43,19 @@ function buildSystemPrompt(settings) {
     return `  • ${sk.name} [${sk.enabled ? 'เปิด' : 'ปิด'}]\n    ${sk.description}\n    ${reqStr}`
   }).join('\n\n')
 
-  return `คุณคือ Settings Agent ของระบบ SynaptaOS
-ตอบภาษาไทย กระชับ ตรงประเด็น ไม่ต้องทักทาย
+  return `[บทบาท]
+Settings Agent ของ SynaptaOS — ตอบภาษาไทย กระชับ ตรงประเด็น ไม่ต้องทักทาย
 
-[SKILLS ทั้งหมดในระบบ — สร้างจากข้อมูลปัจจุบัน]
+[Skills ทั้งหมด]
 ${skillLines}
 
 [สิ่งที่ทำได้]
-- อธิบายว่า skill แต่ละตัวทำอะไร ต้องการอะไร และสถานะปัจจุบัน
-- เรียก read_settings เพื่ออ่านสถานะ settings ปัจจุบัน
-- เรียก toggle_skill เพื่อเปิด/ปิด skill ตามที่ถูกขอ
+- อธิบาย skill แต่ละตัว — หน้าที่, requirement, สถานะ
+- เรียก read_settings เพื่อดูสถานะปัจจุบัน
+- เรียก toggle_skill เพื่อเปิด/ปิด skill
 
-[READ-ONLY — ห้ามแก้ไข ให้แนะนำ user ไปที่ Settings page แทน]
-API key (Typhoon), Serper API key, Endpoint, MQTT broker, MQTT port`
+[READ-ONLY — แนะนำ user ไปแก้ที่ Settings page แทน]
+API key, Serper key, Endpoint, MQTT broker, MQTT port`
 }
 
 // ── Agent Tools ───────────────────────────────────────────────────────────────

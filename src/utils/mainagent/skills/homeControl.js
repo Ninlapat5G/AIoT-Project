@@ -11,18 +11,15 @@ export const homeControl = {
   type: 'home_control',
   requiresSkill: 'mqtt_publish',
 
-  planPrompt: `home_control — เปิด/ปิด/ปรับ device ในบ้าน
-- ระบุ device ที่ตรงกับชื่อใน KG → ใช้ topic จาก KG เท่านั้น
-- "ทุก X" → ใส่ครบทุกตัวที่ match ใน KG (1 step ต่อ 1 device)
+  planPrompt: `[home_control]
+ใช้สำหรับ: เปิด/ปิด/ปรับ device ในบ้านผ่าน MQTT
+เงื่อนไข:
+- ใช้ topic จาก KG เท่านั้น ห้ามเดา
+- "ทุก X" → 1 step ต่อ 1 device
 - digital → payload "ON" หรือ "OFF"
-- analog (เช่น แอร์/หรี่ไฟ) บอกตัวเลขชัดเจน เช่น "ตั้ง 25 องศา" → payload "25"
-- analog บอกเพิ่ม/ลด เช่น "ลด 3" "เพิ่ม 2" → คำนวณจาก state ปัจจุบันใน KG แล้วส่ง absolute value
-- analog กลับค่าเดิม → ใช้ initial จาก KG ถ้ามี
-
-ห้าม:
-- ใส่ device ที่ไม่อยู่ใน KG (ใช้ device_not_found แทน)
-- ใช้ home_control กับ device ประเภท hub (ใช้ hub_control แทน)
-- ใส่ home_control เมื่อข้อมูลยังไม่ครบ (ใช้ general ถามก่อน)`,
+- analog → payload เป็นตัวเลข absolute (คำนวณจาก state ใน KG ถ้าบอกเพิ่ม/ลด)
+- ห้ามใช้กับ hub device → ใช้ hub_control แทน
+- ถ้า device ไม่มีใน KG → ใช้ device_not_found`,
 
   example: `{"type": "home_control", "device": "ไฟห้องนั่งเล่น", "topic": "living-room/liv-lamp", "payload": "OFF"}`,
 

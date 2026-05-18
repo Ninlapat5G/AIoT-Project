@@ -1,11 +1,12 @@
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { makeLLM } from './llmFactory'
 
-const DETECT_NAME_PROMPT = `You are a name extractor.
-Extract the AI assistant's own name from the given system prompt.
-Return JSON: {"name": "AssistantName"} if the AI is explicitly given a name, or {"name": null} if no name is found.
-Only extract a name that is clearly the AI's identity (e.g. "Your name is X", "You are X", "เธอชื่อ X", "ชื่อว่า X", "ชื่อ X").
-Do NOT extract human names, user names, or general role descriptions.`
+const DETECT_NAME_PROMPT = `[บทบาท]
+ดึงชื่อของ AI assistant จาก system prompt ที่ได้รับ
+ตอบเป็น JSON: {"name": "ชื่อ"} ถ้าพบชื่อ หรือ {"name": null} ถ้าไม่พบ
+
+ดึงเฉพาะชื่อที่บอกว่าเป็นตัวตนของ AI ชัดเจน เช่น "ชื่อว่า X", "เธอชื่อ X", "You are X", "Your name is X"
+ห้ามดึงชื่อคน ชื่อ user หรือคำบรรยายบทบาท`
 
 export async function detectAssistantName({ settings, systemPrompt, signal }) {
   const llm = makeLLM(settings, {

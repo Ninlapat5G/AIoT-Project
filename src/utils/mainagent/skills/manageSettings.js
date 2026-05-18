@@ -9,14 +9,9 @@ export const manageSettings = {
   type: 'settings',
   requiresSkill: 'manage_settings',
 
-  planPrompt: `settings — จัดการเรื่อง skill / tool / การตั้งค่าระบบ
-ใช้เมื่อ user:
-- ถามว่า tool/skill ไหนทำงานยังไง ต้องการอะไร ใช้งานไม่ได้ทำไม
-- ขอให้เปิด/ปิด skill
-- ถามสถานะ API key, model, MQTT settings (read-only)
-
-ใส่ field "query" เป็นคำถาม/คำสั่งเดิมของ user ที่เกี่ยวข้องกับ settings
-(sub-agent จะตีความและจัดการเอง)`,
+  planPrompt: `[settings]
+ใช้สำหรับ: ถามเรื่อง skill/tool, เปิด/ปิด skill, ถามสถานะ API key หรือการตั้งค่าระบบ
+เงื่อนไข: ใส่ "query" เป็นคำถาม/คำสั่งของ user ตรงๆ (sub-agent ตีความเอง)`,
 
   example: `{"type": "settings", "query": "ปิด skill web_search"}`,
 

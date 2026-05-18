@@ -7,57 +7,47 @@ import { buildPlanPrompt, SKILLS } from '../skills/index.js'
 const ALLOWED_STEP_TYPES = Object.keys(SKILLS)
 
 function buildPrompt(settings, kgText, lastCommand, chatSummary, pendingAnswer) {
-  const roleBlock = `[หน้าที่ของคุณ]
-ดูคำสั่ง user แล้วเลือก step ที่ถูกต้อง ตอบเป็น JSON เท่านั้น ห้ามพิมพ์ข้อความอื่นนอกจาก JSON`
+  const roleBlock = `[บทบาท]
+ดูคำสั่ง user แล้ววาง plan เป็น JSON ตอบ JSON เท่านั้น ห้ามพิมพ์ข้อความอื่น`
 
-  const examplesBlock = `[ตัวอย่างทุกเคส — จำรูปแบบ JSON นี้]
+  const examplesBlock = `[ตัวอย่าง — จำรูปแบบ JSON นี้]
 
-▸ บทสนทนาทั่วไป / ถามความรู้ / ถามเวลา / ถามสถานะที่ตอบได้จาก KG เลย:
-  "สวัสดี"                    → {"steps":[{"type":"general"}],"needs_next_round":false}
-  "ตอนนี้กี่โมง"               → {"steps":[{"type":"general"}],"needs_next_round":false}
-  "อุณหภูมิห้องตอนนี้เท่าไหร่"  → {"steps":[{"type":"general"}],"needs_next_round":false}
-  "ไฟห้องนั่งเล่นเปิดอยู่ไหม"  → {"steps":[{"type":"general"}],"needs_next_round":false}
+▸ สนทนาทั่วไป / ถามความรู้ / ถามเวลา / ถามสถานะที่ตอบได้จาก KG:
+  "สวัสดี"                   → {"steps":[{"type":"general"}],"needs_next_round":false}
+  "ตอนนี้กี่โมง"              → {"steps":[{"type":"general"}],"needs_next_round":false}
+  "ไฟห้องนั่งเล่นเปิดอยู่ไหม" → {"steps":[{"type":"general"}],"needs_next_round":false}
+  "ไข้หวัดเกิดจากอะไร"        → {"steps":[{"type":"general"}],"needs_next_round":false}
 
-▸ สั่งอุปกรณ์ (digital ON/OFF):
+▸ สั่งอุปกรณ์ (digital):
   "เปิดไฟห้องนั่งเล่น" → {"steps":[{"type":"home_control","device":"ไฟห้องนั่งเล่น","topic":"living-room/lamp","payload":"ON"}],"needs_next_round":false}
-  "ปิดพัดลม"          → {"steps":[{"type":"home_control","device":"พัดลม","topic":"fan/main","payload":"OFF"}],"needs_next_round":false}
 
-▸ สั่งอุปกรณ์ (analog ตัวเลข):
-  "ตั้งแอร์ 25 องศา"  → {"steps":[{"type":"home_control","device":"แอร์ห้องนอน","topic":"bedroom/ac","payload":"25"}],"needs_next_round":false}
-  "หรี่ไฟลง 20"       → {"steps":[{"type":"home_control","device":"ไฟหรี่","topic":"dim/main","payload":"20"}],"needs_next_round":false}
+▸ สั่งอุปกรณ์ (analog):
+  "ตั้งแอร์ 25 องศา" → {"steps":[{"type":"home_control","device":"แอร์ห้องนอน","topic":"bedroom/ac","payload":"25"}],"needs_next_round":false}
 
-▸ สั่งหลายอุปกรณ์พร้อมกัน:
-  "ปิดไฟทุกห้อง" → {"steps":[{"type":"home_control","device":"ไฟห้องนั่งเล่น","topic":"...","payload":"OFF"},{"type":"home_control","device":"ไฟห้องนอน","topic":"...","payload":"OFF"}],"needs_next_round":false}
+▸ สั่ง hub:
+  "shutdown คอม" → {"steps":[{"type":"hub_control","device":"Main Hub","topic":"hub/main","task":"shutdown"}],"needs_next_round":false}
 
-▸ สั่ง hub (คอมพิวเตอร์/Pi ที่มี agent):
-  "shutdown คอม"     → {"steps":[{"type":"hub_control","device":"Main Hub","topic":"hub/main","task":"shutdown"}],"needs_next_round":false}
-  "เช็ค CPU usage"   → {"steps":[{"type":"hub_control","device":"Main Hub","topic":"hub/main","task":"เช็ค CPU usage"}],"needs_next_round":false}
+▸ ค้นข้อมูล real-time (ราคา/ข่าว/สภาพอากาศ/เหตุการณ์ปัจจุบัน):
+  "ราคา BTC วันนี้" → {"steps":[{"type":"realtime_data","query":"ราคา BTC วันนี้"}],"needs_next_round":false}
+  "ค้นหาให้หน่อย xxx" → {"steps":[{"type":"realtime_data","query":"xxx"}],"needs_next_round":false}
 
-▸ ค้นข้อมูล real-time หรือ user สั่งให้ค้นโดยตรง (ราคา/ข่าว/สภาพอากาศ/เหตุการณ์ปัจจุบัน):
-  "ราคา BTC วันนี้เท่าไหร่"   → {"steps":[{"type":"realtime_data","query":"ราคา BTC วันนี้"}],"needs_next_round":false}
-  "ข่าวหุ้น NVDA ล่าสุด"      → {"steps":[{"type":"realtime_data","query":"ข่าวหุ้น NVDA ล่าสุด"}],"needs_next_round":false}
-  "ค้นหาให้หน่อย xxx"         → {"steps":[{"type":"realtime_data","query":"xxx"}],"needs_next_round":false}
-  ห้าม: ความรู้ทั่วไปที่ไม่ต้อง real-time → ใช้ general แทน
-  เช่น "ไข้หวัดเกิดจากอะไร" / "เมืองหลวงฝรั่งเศสคือ" → {"steps":[{"type":"general"}],"needs_next_round":false}
-
-▸ ค้นข้อมูลก่อน แล้วค่อยตัดสินใจสั่งอุปกรณ์ (ต้องรอผล):
+▸ เงื่อนไข — ต้องค้นก่อนแล้วค่อยตัดสินใจ:
   "ถ้า BTC เกิน 100k เปิดไฟ" → {"steps":[{"type":"realtime_data","query":"ราคา BTC ล่าสุด USD"}],"needs_next_round":true}
-  (ห้ามใส่ home_control ในรอบนี้ — รอบ 2 จะตัดสินใจจากผลค้นจริง)
+  (ห้ามใส่ home_control รอบนี้ — รอบหน้าจะตัดสินใจจากผลจริง)
 
-▸ อุปกรณ์ที่ user พูดถึงไม่มีใน KG:
+▸ อุปกรณ์ไม่มีใน KG:
   "เปิดทีวี" (ไม่มีในระบบ) → {"steps":[{"type":"device_not_found","device":"ทีวี"}],"needs_next_round":false}
 
-▸ จัดการ settings / เปิด-ปิด skill:
-  "เปิด web search"           → {"steps":[{"type":"settings","query":"เปิด skill web search"}],"needs_next_round":false}
-  "web search ใช้งานยังไง"    → {"steps":[{"type":"settings","query":"web search ใช้งานยังไง"}],"needs_next_round":false}
+▸ จัดการ settings:
+  "เปิด web search" → {"steps":[{"type":"settings","query":"เปิด skill web search"}],"needs_next_round":false}
 
-▸ ข้อมูลไม่พอจะสั่งได้ (ถามก่อน):
-  "เปิดแอร์" (ไม่บอกอุณหภูมิ) → {"steps":[{"type":"general","response":"จะให้ตั้งกี่องศาดีคะ?"}],"needs_next_round":false}
+▸ ข้อมูลไม่ครบ — ถามก่อน:
+  "เปิดแอร์" (ไม่บอกองศา) → {"steps":[{"type":"general","response":"จะให้ตั้งกี่องศาดีคะ?"}],"needs_next_round":false}
 
-▸ user พูดสั้นอ้างถึงของเดิม — ดู history หาว่าหมายถึงอะไรแล้ว plan ต่อเลย ไม่ต้องถาม:
-  "ปิดเลย" / "อันนั้น" / "ด้วย"  → plan จาก context ที่มีอยู่
+▸ user พูดสั้นอ้างถึงของเดิม — ดู history แล้ว plan ต่อเลย ไม่ต้องถาม:
+  "ปิดเลย" / "อันนั้น" / "ด้วย" → plan จาก context ที่มีอยู่
 
-▸ ถาม user ตรงๆ (ไม่มี step):
+▸ ต้องถาม user ก่อน (ไม่มี step):
   "ช่วยได้ไหม" → {"need_clarify":true,"question":"ต้องการให้ช่วยเรื่องอะไรคะ?"}`
 
   const contextParts = [`[สถานะบ้านตอนนี้]\n${kgText}`]

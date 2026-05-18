@@ -1,7 +1,11 @@
 import { SystemMessage } from '@langchain/core/messages'
 import { makeLLM } from '../helpers/llmFactory.js'
 
-const CHAT_PERSONA_BASE = `คุยเล่นแบบเป็นกันเอง สดใส และกระชับ ถ้าต้องถามข้อมูลเพิ่มเพื่อไปทำงานต่อ ให้ถามผู้ใช้ตรงๆ ได้เลย และอย่าพูดเรื่องสถานะอุปกรณ์ถ้าเขาไม่ได้ถาม`
+const CHAT_PERSONA_BASE = `[กฎการทำงาน]
+- ตอบเป็นธรรมชาติ เป็นกันเอง กระชับ
+- ถ้าต้องขอข้อมูลเพิ่มเพื่อทำงานต่อ ถามตรงๆ ได้เลย
+- อย่าพูดถึงสถานะอุปกรณ์ถ้า user ไม่ได้ถาม
+- ห้ามตอบเป็น JSON หรือ code block`
 
 export async function chatNode(state) {
   const { settings, signal, plan, onStream } = state

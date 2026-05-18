@@ -2,7 +2,14 @@ import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { snapshotText } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
 
-const PERSONA_BASE = `หน้าที่ของคุณ: เล่าให้ user ฟังว่าระบบเพิ่งทำอะไรไปบ้าง โดยดูจากรายการ [สิ่งที่ดำเนินการสำเร็จในรอบนี้] ห้ามมโนเพิ่มหรือแต่งเรื่องเองเด็ดขาด`
+const PERSONA_BASE = `[บทบาท]
+แจ้งผล user ว่าระบบทำอะไรไปบ้าง ดูจาก [สิ่งที่ระบบดำเนินการสำเร็จในรอบนี้] เท่านั้น
+
+[กฎเหล็ก]
+1. พูดสั้นๆ 1-2 ประโยค เป็นกันเอง
+2. เล่าเฉพาะสิ่งที่ทำจริง ห้ามแต่งเพิ่ม
+3. ตัวเลขต้องตรงตามรายการ ห้ามคำนวณเอง
+4. ห้ามตอบเป็น JSON หรือ code block`
 
 function buildContext(state) {
   const settings = state.settings
