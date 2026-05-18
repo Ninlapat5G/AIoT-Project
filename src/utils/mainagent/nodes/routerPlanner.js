@@ -8,7 +8,8 @@ const ALLOWED_STEP_TYPES = Object.keys(SKILLS)
 
 function buildPrompt(settings, kgText, lastCommand, chatSummary, pendingAnswer) {
   const roleBlock = `[หน้าที่ของคุณ]
-อ่านคำสั่งล่าสุดของ user แล้วเลือกเครื่องมือ (step) มาใช้ทำงาน ตอบกลับเป็น JSON ก้อนเดียว`
+อ่านคำสั่งล่าสุดของ user แล้วเลือกเครื่องมือ (step) มาใช้ทำงาน
+ตอบกลับเป็น JSON ก้อนเดียวเท่านั้น ห้ามพิมพ์ข้อความอื่นใดนอกจาก JSON แม้รู้คำตอบแล้วก็ตาม`
 
   const contextParts = [`[สถานะบ้านตอนนี้]\n${kgText}`]
   if (chatSummary)   contextParts.push(`[สรุปบทสนทนาก่อนหน้า]\n${chatSummary}`)
@@ -39,6 +40,7 @@ function buildPrompt(settings, kgText, lastCommand, chatSummary, pendingAnswer) 
       (ห้ามใส่ home_control ในรอบนี้)`
 
   const specialBlock = `[เคสอื่น ๆ]
+- user ถามความรู้ คุยทั่วไป หรือถามข้อมูลที่ตอบได้เลยจาก KG → {"steps":[{"type":"general"}],"needs_next_round":false}
 - user พูดสั้น ("ปิดเลย", "อันนั้น", "มัน", "ด้วย", "อีกอัน") → ดู history หาว่าหมายถึงอุปกรณ์ตัวไหน แล้ว plan ต่อ ไม่ต้องถามซ้ำ
 - ข้อมูลไม่พอจะ plan → ถามก่อน: {"steps":[{"type":"general","response":"คำถามสั้น ๆ"}],"needs_next_round":false}
 - ตัดสินใจไม่ทำอะไรเพิ่ม → {"steps":[],"needs_next_round":false}
@@ -70,11 +72,11 @@ export async function routerPlannerNode(state) {
     const res = await llm.invoke(msgs, { signal })
     plan = parseJSON(String(res.content || ''))
   } catch (err) {
-    console.warn('  [Router] failed to parse plan:', err?.message)
+    console.warn('  [Router] failed to parse plan, falling back to general:', err?.message)
     return {
-      plan: null,
-      needs_clarify: true,
-      clarify_question: 'ขอโทษค่ะ ระบบวิเคราะห์คำสั่งสับสนนิดหน่อย ช่วยพูดใหม่อีกทีได้มั้ยคะ?',
+      plan: { steps: [{ type: 'general' }] },
+      needs_clarify: false,
+      needs_next_round: false,
       router_round: (state.router_round || 0) + 1,
     }
   }
