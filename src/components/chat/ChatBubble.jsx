@@ -133,7 +133,7 @@ export function TypingBubble({ assistantName = 'Assistant' }) {
             animate={{ opacity: [0.45, 1, 0.45] }}
             transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
           >
-            {assistantName} กำลังคิด
+            กำลังคิด
           </motion.span>
           <div className="sh-typing-dots">
             <span /><span /><span />
