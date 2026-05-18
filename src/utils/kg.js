@@ -133,7 +133,7 @@ export function snapshotJson({ devices, settings, now }) {
         type:     d.type,
         state:    describeDeviceState(d),
         topic:    d.topic,
-        tool:     toolForDevice(d),
+        tool:     DEVICE_TYPE_TO_SKILLS[d.type]?.[0] || null,
       })),
     enabled_skills: enabledSkills,
     total: visible.length,

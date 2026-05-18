@@ -125,10 +125,9 @@ export async function routerPlannerNode(state) {
   }
 
   let needsNextRound = !!plan?.needs_next_round
-  const rawNeedsNextRound = plan?.needs_next_round
-  if (nextRound >= maxRounds) needsNextRound = false  // รอบสุดท้าย — บังคับจบ ไม่ chain
+  if (nextRound >= maxRounds) needsNextRound = false
 
-  console.log(`  [Router #${nextRound}] plan → ${JSON.stringify(steps.map(s => s.type))} | needs_next_round=${needsNextRound} (raw=${JSON.stringify(rawNeedsNextRound)})`)
+  console.log(`  [Router #${nextRound}] plan → ${JSON.stringify(steps.map(s => s.type))} | needs_next_round=${needsNextRound} (raw=${JSON.stringify(plan?.needs_next_round)})`)
 
   return {
     plan: { steps },

@@ -126,10 +126,9 @@ ${completedBlock}`
   }
 
   let needsNextRound = !!plan?.needs_next_round
-  const rawNeedsNextRound = plan?.needs_next_round
-  if (nextRound >= maxRounds) needsNextRound = false  // safety cap
+  if (nextRound >= maxRounds) needsNextRound = false
 
-  console.log(`  [Evaluator #${nextRound}] plan → ${JSON.stringify(steps.map(s => s.type))} | needs_next_round=${needsNextRound} (raw=${JSON.stringify(rawNeedsNextRound)})`)
+  console.log(`  [Evaluator #${nextRound}] plan → ${JSON.stringify(steps.map(s => s.type))} | needs_next_round=${needsNextRound} (raw=${JSON.stringify(plan?.needs_next_round)})`)
 
   return {
     plan: { steps },

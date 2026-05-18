@@ -12,7 +12,7 @@ export function useSettings() {
     const saved = loadSettings()
     if (!saved) return DEFAULT_SETTINGS
 
-    // Merge skills: only keep skills that exist in DEFAULT_SETTINGS (removes deprecated ones like os_command)
+    // Merge skills: only keep skills that exist in DEFAULT_SETTINGS (filters out removed skills)
     const defaultByName = Object.fromEntries(DEFAULT_SETTINGS.skills.map(s => [s.name, s]))
     const savedNames = new Set((saved.skills || []).map(s => s.name))
     const mergedSkills = [
