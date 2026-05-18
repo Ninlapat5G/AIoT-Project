@@ -33,9 +33,12 @@ function buildPrompt(settings, kgText, lastCommand, chatSummary, pendingAnswer) 
   "shutdown คอม"     → {"steps":[{"type":"hub_control","device":"Main Hub","topic":"hub/main","task":"shutdown"}],"needs_next_round":false}
   "เช็ค CPU usage"   → {"steps":[{"type":"hub_control","device":"Main Hub","topic":"hub/main","task":"เช็ค CPU usage"}],"needs_next_round":false}
 
-▸ ค้นข้อมูลออนไลน์แล้วตอบเลย (ไม่ต้องสั่งอุปกรณ์ต่อ):
-  "ราคา BTC วันนี้"         → {"steps":[{"type":"realtime_data","query":"ราคา BTC วันนี้"}],"needs_next_round":false}
-  "พยากรณ์อากาศพรุ่งนี้"    → {"steps":[{"type":"realtime_data","query":"พยากรณ์อากาศกรุงเทพ พรุ่งนี้"}],"needs_next_round":false}
+▸ ค้นข้อมูล real-time หรือ user สั่งให้ค้นโดยตรง (ราคา/ข่าว/สภาพอากาศ/เหตุการณ์ปัจจุบัน):
+  "ราคา BTC วันนี้เท่าไหร่"   → {"steps":[{"type":"realtime_data","query":"ราคา BTC วันนี้"}],"needs_next_round":false}
+  "ข่าวหุ้น NVDA ล่าสุด"      → {"steps":[{"type":"realtime_data","query":"ข่าวหุ้น NVDA ล่าสุด"}],"needs_next_round":false}
+  "ค้นหาให้หน่อย xxx"         → {"steps":[{"type":"realtime_data","query":"xxx"}],"needs_next_round":false}
+  ห้าม: ความรู้ทั่วไปที่ไม่ต้อง real-time → ใช้ general แทน
+  เช่น "ไข้หวัดเกิดจากอะไร" / "เมืองหลวงฝรั่งเศสคือ" → {"steps":[{"type":"general"}],"needs_next_round":false}
 
 ▸ ค้นข้อมูลก่อน แล้วค่อยตัดสินใจสั่งอุปกรณ์ (ต้องรอผล):
   "ถ้า BTC เกิน 100k เปิดไฟ" → {"steps":[{"type":"realtime_data","query":"ราคา BTC ล่าสุด USD"}],"needs_next_round":true}
