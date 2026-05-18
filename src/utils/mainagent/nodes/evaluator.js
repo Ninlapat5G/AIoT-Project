@@ -5,7 +5,7 @@
 // พ่น: JSON schema เดียวกับ router → loop กลับเข้าตัวเองได้ผ่าน routeAfterExecutor เดิม
 
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
-import { snapshotText, findDeviceByName } from '../../kg.js'
+import { snapshotData, findDeviceByName } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
 import { parseJSON } from '../helpers/jsonParser.js'
 import { buildPlanPrompt, SKILLS } from '../skills/index.js'
@@ -74,7 +74,7 @@ export async function evaluatorNode(state) {
 
   if (!userText) console.warn('  [Evaluator] userText empty — เงื่อนไข user หาย')
 
-  const kgText = snapshotText({ devices, settings, now: nowString() })
+  const kgText = snapshotData({ devices, settings, now: nowString() })
   const systemPrompt = buildPrompt(settings, kgText)
 
   const completedBlock = (completed?.length)
