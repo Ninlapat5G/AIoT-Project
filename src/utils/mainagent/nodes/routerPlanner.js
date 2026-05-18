@@ -8,8 +8,54 @@ const ALLOWED_STEP_TYPES = Object.keys(SKILLS)
 
 function buildPrompt(settings, kgText, lastCommand, chatSummary, pendingAnswer) {
   const roleBlock = `[หน้าที่ของคุณ]
-อ่านคำสั่งล่าสุดของ user แล้วเลือกเครื่องมือ (step) มาใช้ทำงาน
-ตอบกลับเป็น JSON ก้อนเดียวเท่านั้น ห้ามพิมพ์ข้อความอื่นใดนอกจาก JSON แม้รู้คำตอบแล้วก็ตาม`
+ดูคำสั่ง user แล้วเลือก step ที่ถูกต้อง ตอบเป็น JSON เท่านั้น ห้ามพิมพ์ข้อความอื่นนอกจาก JSON`
+
+  const examplesBlock = `[ตัวอย่างทุกเคส — จำรูปแบบ JSON นี้]
+
+▸ บทสนทนาทั่วไป / ถามความรู้ / ถามเวลา / ถามสถานะที่ตอบได้จาก KG เลย:
+  "สวัสดี"                    → {"steps":[{"type":"general"}],"needs_next_round":false}
+  "ตอนนี้กี่โมง"               → {"steps":[{"type":"general"}],"needs_next_round":false}
+  "อุณหภูมิห้องตอนนี้เท่าไหร่"  → {"steps":[{"type":"general"}],"needs_next_round":false}
+  "ไฟห้องนั่งเล่นเปิดอยู่ไหม"  → {"steps":[{"type":"general"}],"needs_next_round":false}
+
+▸ สั่งอุปกรณ์ (digital ON/OFF):
+  "เปิดไฟห้องนั่งเล่น" → {"steps":[{"type":"home_control","device":"ไฟห้องนั่งเล่น","topic":"living-room/lamp","payload":"ON"}],"needs_next_round":false}
+  "ปิดพัดลม"          → {"steps":[{"type":"home_control","device":"พัดลม","topic":"fan/main","payload":"OFF"}],"needs_next_round":false}
+
+▸ สั่งอุปกรณ์ (analog ตัวเลข):
+  "ตั้งแอร์ 25 องศา"  → {"steps":[{"type":"home_control","device":"แอร์ห้องนอน","topic":"bedroom/ac","payload":"25"}],"needs_next_round":false}
+  "หรี่ไฟลง 20"       → {"steps":[{"type":"home_control","device":"ไฟหรี่","topic":"dim/main","payload":"20"}],"needs_next_round":false}
+
+▸ สั่งหลายอุปกรณ์พร้อมกัน:
+  "ปิดไฟทุกห้อง" → {"steps":[{"type":"home_control","device":"ไฟห้องนั่งเล่น","topic":"...","payload":"OFF"},{"type":"home_control","device":"ไฟห้องนอน","topic":"...","payload":"OFF"}],"needs_next_round":false}
+
+▸ สั่ง hub (คอมพิวเตอร์/Pi ที่มี agent):
+  "shutdown คอม"     → {"steps":[{"type":"hub_control","device":"Main Hub","topic":"hub/main","task":"shutdown"}],"needs_next_round":false}
+  "เช็ค CPU usage"   → {"steps":[{"type":"hub_control","device":"Main Hub","topic":"hub/main","task":"เช็ค CPU usage"}],"needs_next_round":false}
+
+▸ ค้นข้อมูลออนไลน์แล้วตอบเลย (ไม่ต้องสั่งอุปกรณ์ต่อ):
+  "ราคา BTC วันนี้"         → {"steps":[{"type":"realtime_data","query":"ราคา BTC วันนี้"}],"needs_next_round":false}
+  "พยากรณ์อากาศพรุ่งนี้"    → {"steps":[{"type":"realtime_data","query":"พยากรณ์อากาศกรุงเทพ พรุ่งนี้"}],"needs_next_round":false}
+
+▸ ค้นข้อมูลก่อน แล้วค่อยตัดสินใจสั่งอุปกรณ์ (ต้องรอผล):
+  "ถ้า BTC เกิน 100k เปิดไฟ" → {"steps":[{"type":"realtime_data","query":"ราคา BTC ล่าสุด USD"}],"needs_next_round":true}
+  (ห้ามใส่ home_control ในรอบนี้ — รอบ 2 จะตัดสินใจจากผลค้นจริง)
+
+▸ อุปกรณ์ที่ user พูดถึงไม่มีใน KG:
+  "เปิดทีวี" (ไม่มีในระบบ) → {"steps":[{"type":"device_not_found","device":"ทีวี"}],"needs_next_round":false}
+
+▸ จัดการ settings / เปิด-ปิด skill:
+  "เปิด web search"           → {"steps":[{"type":"settings","query":"เปิด skill web search"}],"needs_next_round":false}
+  "web search ใช้งานยังไง"    → {"steps":[{"type":"settings","query":"web search ใช้งานยังไง"}],"needs_next_round":false}
+
+▸ ข้อมูลไม่พอจะสั่งได้ (ถามก่อน):
+  "เปิดแอร์" (ไม่บอกอุณหภูมิ) → {"steps":[{"type":"general","response":"จะให้ตั้งกี่องศาดีคะ?"}],"needs_next_round":false}
+
+▸ user พูดสั้นอ้างถึงของเดิม — ดู history หาว่าหมายถึงอะไรแล้ว plan ต่อเลย ไม่ต้องถาม:
+  "ปิดเลย" / "อันนั้น" / "ด้วย"  → plan จาก context ที่มีอยู่
+
+▸ ถาม user ตรงๆ (ไม่มี step):
+  "ช่วยได้ไหม" → {"need_clarify":true,"question":"ต้องการให้ช่วยเรื่องอะไรคะ?"}`
 
   const contextParts = [`[สถานะบ้านตอนนี้]\n${kgText}`]
   if (chatSummary)   contextParts.push(`[สรุปบทสนทนาก่อนหน้า]\n${chatSummary}`)
@@ -19,34 +65,9 @@ function buildPrompt(settings, kgText, lastCommand, chatSummary, pendingAnswer) 
   )
   const contextBlock = contextParts.join('\n\n')
 
-  const toolsBlock = `[เครื่องมือที่ใช้ได้]\n${buildPlanPrompt(settings)}`
+  const toolsBlock = `[รายละเอียดเครื่องมือ]\n${buildPlanPrompt(settings)}`
 
-  const decisionBlock = `[คิดก่อนวาง plan: รอบเดียวจบ หรือ ต้องค้นหาข้อมูลก่อนแล้วค่อยทำ?]
-เกณฑ์เดียว:
-"งานนี้มี step ที่ต้องค้นหา/ดึงข้อมูล แล้วเอาผลของมันไปตัดสินใจ step ถัดไป ไหม?"
-
-(ก) ไม่มี — รู้ทุกอย่างจาก KG ปัจจุบันแล้ว → ใส่ทุก step ในรอบนี้, "needs_next_round": false
-    ตัวอย่าง:
-      User: "เปิดไฟห้องนั่งเล่น"
-      ตอบ: {"steps":[{"type":"home_control","device":"ไฟห้องนั่งเล่น",...}],"needs_next_round":false}
-
-(ข) มี — ต้องค้นหาข้อมูลก่อน แล้วค่อยเอาผลไปทำขั้นต่อไป → รอบนี้ใส่แค่ step ค้นหา, "needs_next_round": true
-    อย่าเดาผลล่วงหน้าแล้ว plan step ถัดไปในรอบเดียวกัน
-    ปล่อยให้รอบ 2 (ซึ่งจะได้ผลค้นจริงมาดู) เป็นคนตัดสินใจ
-    ตัวอย่าง:
-      User: "ดูราคา BTC ถ้าเกิน 100k USD เปิดไฟห้องนอน"
-      → มี step ค้นราคา BTC ที่ผลของมันใช้ตัดสินใจว่าจะเปิดไฟไหม → เข้าเคส (ข)
-      ตอบ: {"steps":[{"type":"realtime_data","query":"ราคา BTC ตอนนี้ USD"}],"needs_next_round":true}
-      (ห้ามใส่ home_control ในรอบนี้)`
-
-  const specialBlock = `[เคสอื่น ๆ]
-- user ถามความรู้ คุยทั่วไป หรือถามข้อมูลที่ตอบได้เลยจาก KG → {"steps":[{"type":"general"}],"needs_next_round":false}
-- user พูดสั้น ("ปิดเลย", "อันนั้น", "มัน", "ด้วย", "อีกอัน") → ดู history หาว่าหมายถึงอุปกรณ์ตัวไหน แล้ว plan ต่อ ไม่ต้องถามซ้ำ
-- ข้อมูลไม่พอจะ plan → ถามก่อน: {"steps":[{"type":"general","response":"คำถามสั้น ๆ"}],"needs_next_round":false}
-- ตัดสินใจไม่ทำอะไรเพิ่ม → {"steps":[],"needs_next_round":false}
-- ถามล้วน (โหมดเดียวกัน) → {"need_clarify":true,"question":"..."}`
-
-  return [roleBlock, contextBlock, toolsBlock, decisionBlock, specialBlock].join('\n\n')
+  return [roleBlock, examplesBlock, contextBlock, toolsBlock].join('\n\n')
 }
 
 export async function routerPlannerNode(state) {
