@@ -1,45 +1,10 @@
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { snapshotText, findDeviceByName } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
+import { parseJSON } from '../helpers/jsonParser.js'
 import { buildPlanPrompt, SKILLS } from '../skills/index.js'
 
 const ALLOWED_STEP_TYPES = Object.keys(SKILLS)
-
-// JSON schema บังคับให้ LLM ต้อง commit needs_next_round ทุกครั้ง — กัน Typhoon ลืมใส่ field
-const ROUTER_SCHEMA = {
-  type: 'object',
-  properties: {
-    steps: {
-      type: 'array',
-      description: 'รายการ step ที่ต้องทำในรอบนี้ — อาจเป็น array ว่างถ้าตัดสินใจไม่ทำอะไร',
-      items: {
-        type: 'object',
-        additionalProperties: true,
-        properties: {
-          type: {
-            type: 'string',
-            enum: ALLOWED_STEP_TYPES,
-            description: 'ค่าที่อนุญาตเท่านั้น — ห้ามใช้ค่าอื่น (รวมถึงห้ามใช้คำว่า mqtt_publish หรือชื่อ capability)',
-          },
-        },
-        required: ['type'],
-      },
-    },
-    needs_next_round: {
-      type: 'boolean',
-      description: 'true เฉพาะกรณี: รอบนี้มี step ดึงข้อมูล แล้วต้องเอาผลไปตัดสินใจ step ถัดไปในรอบต่อมา ปกติให้ false',
-    },
-    need_clarify: {
-      type: 'boolean',
-      description: 'true ถ้าจะถาม user ล้วน ๆ ไม่ทำอะไร (ใช้แทน steps)',
-    },
-    question: {
-      type: 'string',
-      description: 'คำถาม clarify (ใช้คู่กับ need_clarify=true)',
-    },
-  },
-  required: ['steps', 'needs_next_round'],
-}
 
 function buildPrompt(settings, kgText, lastCommand, chatSummary, pendingAnswer) {
   const roleBlock = `[หน้าที่ของคุณ]
@@ -94,11 +59,7 @@ export async function routerPlannerNode(state) {
     state.pending_answer || '',
   )
 
-  const llm = makeLLM(settings, {
-    temperature: 0,
-    maxTokens: 600,
-    structured: ROUTER_SCHEMA,
-  })
+  const llm = makeLLM(settings, { temperature: 0, maxTokens: 600 })
 
   const lastMsg = messages[messages.length - 1]
   const previousMsgs = messages.slice(0, -1)
@@ -106,9 +67,10 @@ export async function routerPlannerNode(state) {
 
   let plan
   try {
-    plan = await llm.invoke(msgs, { signal })
+    const res = await llm.invoke(msgs, { signal })
+    plan = parseJSON(String(res.content || ''))
   } catch (err) {
-    console.warn('  [Router] structured-output failed:', err?.message)
+    console.warn('  [Router] failed to parse plan:', err?.message)
     return {
       plan: null,
       needs_clarify: true,

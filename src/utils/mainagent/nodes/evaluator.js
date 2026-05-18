@@ -7,36 +7,10 @@
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { snapshotText, findDeviceByName } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
+import { parseJSON } from '../helpers/jsonParser.js'
 import { buildPlanPrompt, SKILLS } from '../skills/index.js'
 
 const ALLOWED_STEP_TYPES = Object.keys(SKILLS)
-
-const EVALUATOR_SCHEMA = {
-  type: 'object',
-  properties: {
-    steps: {
-      type: 'array',
-      description: 'step ที่จะรันในรอบนี้ — ว่างถ้าตัดสินว่า "เงื่อนไขไม่ตรง" / ไม่มีอะไรต้องทำต่อ',
-      items: {
-        type: 'object',
-        additionalProperties: true,
-        properties: {
-          type: {
-            type: 'string',
-            enum: ALLOWED_STEP_TYPES,
-            description: 'ค่าที่อนุญาตเท่านั้น — ห้ามใช้ค่าอื่น (รวมถึงห้ามใช้คำว่า mqtt_publish หรือชื่อ capability)',
-          },
-        },
-        required: ['type'],
-      },
-    },
-    needs_next_round: {
-      type: 'boolean',
-      description: 'true เฉพาะกรณี: รอบนี้ใส่ step ค้นข้อมูล แล้วต้องเอาผลไปตัดสินใจในรอบต่อมา (ยังเหลือเงื่อนไขในคำสั่ง user ที่ยังไม่ได้เช็ค)',
-    },
-  },
-  required: ['steps', 'needs_next_round'],
-}
 
 function buildPrompt(settings, kgText) {
   const skillBlock = buildPlanPrompt(settings)
@@ -130,23 +104,20 @@ ${userText}
 [ผลที่ค้นมา]
 ${completedBlock}`
 
-  const llm = makeLLM(settings, {
-    temperature: 0,
-    maxTokens: 600,
-    structured: EVALUATOR_SCHEMA,
-  })
+  const llm = makeLLM(settings, { temperature: 0, maxTokens: 600 })
 
   const nextRound = (state.router_round || 0) + 1
   const maxRounds = state.max_router_rounds || 3
 
   let plan
   try {
-    plan = await llm.invoke(
+    const res = await llm.invoke(
       [new SystemMessage(systemPrompt), new HumanMessage(input)],
       { signal }
     )
+    plan = parseJSON(String(res.content || ''))
   } catch (err) {
-    console.warn('  [Evaluator] structured-output failed:', err?.message)
+    console.warn('  [Evaluator] failed to parse plan:', err?.message)
     return {
       plan: { steps: [] },
       needs_next_round: false,
