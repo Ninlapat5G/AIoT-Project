@@ -28,8 +28,8 @@ function parseTags(text) {
   }
 }
 
-export async function summarizeHistory(messages, settings, signal, kgSnapshot = '', pendingContext = '', prevChatSummary = '') {
-  if (messages.length === 0) return { chat_summary: prevChatSummary, last_command: null, pending_answer: '' }
+export async function summarizeHistory(messages, settings, signal, kgSnapshot = '', pendingContext = '', prevChatSummary = '', prevPendingAnswer = '') {
+  if (messages.length === 0) return { chat_summary: prevChatSummary, last_command: null, pending_answer: prevPendingAnswer }
 
   const historyText = messages.map(msg => {
     if (msg instanceof HumanMessage) return `User: ${msg.content}`
@@ -53,6 +53,6 @@ export async function summarizeHistory(messages, settings, signal, kgSnapshot = 
     return parseTags(String(res.content || ''))
   } catch (err) {
     console.warn('[Summarizer] failed:', err?.message)
-    return { chat_summary: prevChatSummary, last_command: null, pending_answer: '' }
+    return { chat_summary: prevChatSummary, last_command: null, pending_answer: prevPendingAnswer }
   }
 }

@@ -27,64 +27,82 @@ SynaptaOS ใช้ [Typhoon v2.5](https://opentyphoon.ai) โดย SCBX เป
 
 ### 1. API Key (จำเป็น)
 
-ไปที่หน้า **Settings → Section 02 Language Model**:
+ไปที่หน้า **Settings → Section 02 Language Model** แล้วกรอกข้อมูลนี้:
 
-| ค่า | ตัวอย่าง |
-|---|---|
-| API Endpoint | `https://api.opentyphoon.ai/v1` |
-| API Key | รับได้จากลิงก์ด้านบน |
-| Model | `typhoon-v2.5-30b-a3b-instruct` |
+| ค่า | ตัวอย่าง | คืออะไร |
+|---|---|---|
+| API Endpoint | `https://api.opentyphoon.ai/v1` | ที่อยู่ของ AI ที่ใช้ |
+| API Key | รับได้จากลิงก์ด้านบน | รหัสผ่านสำหรับใช้ AI |
+| Model | `typhoon-v2.5-30b-a3b-instruct` | รุ่นของ AI ที่ต้องการใช้ |
 
-### 2. MQTT Broker
+### 2. MQTT Broker (สำหรับควบคุม IoT)
 
-**Settings → Section 05** — ค่าเริ่มต้นใช้ HiveMQ public broker ได้เลย ไม่ต้องตั้งอะไรเพิ่ม
+**Settings → Section 05** — ค่าเริ่มต้นในระบบใช้ HiveMQ public broker ได้เลย ไม่ต้องตั้งอะไรเพิ่ม
+
+> MQTT คือ "ช่องทางสื่อสาร" ระหว่างแอปกับอุปกรณ์ไฟฟ้าในบ้าน เปรียบเหมือนวิทยุที่ทุกอุปกรณ์รับ-ส่งสัญญาณผ่านช่องเดียวกัน
 
 ### 3. เพิ่มอุปกรณ์
 
 ไปที่หน้า **Devices** → กด Add:
 
-| ประเภท | Device Type | หน้าที่ |
-|---|---|---|
-| Add Device | digital / analog | อุปกรณ์ IoT ทั่วไป |
-| Add Hub | hub | คอมพิวเตอร์ remote (ReAct Agent) |
+| ประเภท | ใช้กับอะไร |
+|---|---|
+| Add Device → digital | อุปกรณ์เปิด/ปิด เช่น ไฟ ปลั๊ก |
+| Add Device → analog | อุปกรณ์ปรับค่า เช่น แอร์ พัดลม หรี่แสง |
+| Add Hub | คอมพิวเตอร์ที่ต้องการสั่งงาน remote |
 
 ---
 
-## Hub Agent — ติดตั้งบนเครื่อง remote
+## Hub Agent — ติดตั้งบนเครื่องที่อยากควบคุม
 
-Hub Agent คือโปรแกรม Python ที่รันบนเครื่องที่ต้องการควบคุม:
+Hub Agent คือโปรแกรมที่รันบนเครื่องที่ต้องการควบคุม เมื่อ AI สั่งมา โปรแกรมนี้จะรับคำสั่งและทำตาม
+
+### วิธีติดตั้ง (แบบง่าย — แนะนำ)
+
+1. เปิดโฟลเดอร์ `hub/`
+2. รัน `python hub/build_gui.py`
+3. กรอก API Key, MQTT settings ใน GUI ที่เปิดขึ้นมา
+4. กด **Save Settings** แล้วกด **Build .exe**
+5. รอสักครู่ — จะได้ไฟล์ `hub/dist/SynaptaHubAgent.exe`
+6. ย้าย `.exe` และ `.env` ในโฟลเดอร์เดียวกันไปใส่เครื่องที่ต้องการควบคุม
+7. ดับเบิลคลิก `SynaptaHubAgent.exe` — เปิดทิ้งไว้
+
+> `.env` คือไฟล์เก็บ API Key และการตั้งค่า ถ้าอยากเปลี่ยน key ในภายหลัง แก้ไฟล์นี้แล้วเปิดโปรแกรมใหม่ ไม่ต้อง build ซ้ำ
+
+### วิธีติดตั้ง (แบบ manual — สำหรับนักพัฒนา)
 
 1. คัดลอก `hub/.env.example` → `hub/.env` แล้วกรอกค่า
 2. `pip install -r hub/requirements.txt`
 3. `python hub/agent.py`
-4. เพิ่ม Hub device ใน Devices ให้ MQTT topics ตรงกับ `.env`
 
-Hub Agent จะ: รับ task → ReAct loop (รัน command → ดู output → ตัดสินใจต่อ จนเสร็จ) → ส่งผลกลับ
+### โครงสร้างไฟล์ใน hub/
 
-**โครงสร้าง hub/**
 ```
 hub/
-├── agent.py       # MQTT loop
-├── runner.py      # ReAct loop
+├── agent.py          # ตัวโปรแกรมหลัก — รับคำสั่งผ่าน MQTT
+├── runner.py         # ReAct loop — วิเคราะห์และรันคำสั่งทีละขั้น
+├── kg.py             # เก็บข้อมูลสถานะเครื่อง (RAM, Disk, ประวัติคำสั่ง)
+├── build_gui.py      # GUI สำหรับตั้งค่าและ build เป็น .exe
 ├── tools/
-│   ├── os_exec.py    # รัน command (รองรับ cd, streaming, cancel)
-│   └── web_search.py # ค้นเว็บ
-└── .env
+│   ├── os_exec.py    # รัน command บนเครื่อง
+│   ├── web_search.py # ค้นเว็บ
+│   └── query_kg.py   # อ่านสถานะเครื่อง
+└── .env              # การตั้งค่า (API Key, MQTT)
 ```
 
 เพิ่ม tool ใหม่: สร้าง `tools/<name>.py` แล้วเพิ่มใน `tools/__init__.py` — เสร็จ
 
 ---
 
-## Skills
+## Skills (ความสามารถของ AI)
 
-| Skill | หน้าที่ |
+| Skill | ทำอะไร |
 |---|---|
-| `mqtt_publish` | ส่ง payload ไปยัง device (สถานะ device อ่านจาก KG ที่ sync กับ MQTT state topic อยู่แล้ว) |
-| `hub` | สั่งงาน Hub Agent (ReAct loop, streams output) |
-| `web_search` | ค้นหาผ่าน Serper API |
+| `mqtt_publish` | ส่งคำสั่งไปยังอุปกรณ์ในบ้าน |
+| `hub` | สั่งงาน Hub Agent บนเครื่อง remote |
+| `web_search` | ค้นหาข้อมูลจากอินเทอร์เน็ต |
 | `manage_settings` | อ่าน/แก้ไข settings ผ่านภาษาธรรมชาติ |
-| `query_knowledge_graph` | ดึงสถานะ devices และ skills ที่ active ณ ขณะนั้น |
+| `query_knowledge_graph` | ดูสถานะอุปกรณ์และ skills ที่เปิดอยู่ |
 
 ---
 
@@ -95,7 +113,7 @@ hub/
 | UI | React 18 + Vite 5 + Tailwind CSS |
 | AI / Agent | LangGraph Plan-and-Execute + Typhoon v2.5 |
 | IoT | MQTT over WebSocket (mqtt.js) |
-| Hub Agent | Python + OpenAI-compatible ReAct loop + paho-mqtt |
+| Hub Agent | Python + ReAct loop + paho-mqtt |
 | Deploy | Vercel (static) |
 
 ---
@@ -156,6 +174,8 @@ START
 - "ถ้า BTC เกิน 100k เปิดไฟ" → plan ค้นราคาก่อน แล้วบอกว่า "รอผลค้นก่อนตัดสินใจ"
 - "สวัสดี" → ไปคุยทั่วไป ไม่ต้องทำอะไร
 
+ถ้า LLM ตอบ JSON ผิด format → fallback เป็น general step อัตโนมัติ โดยไม่ crash
+
 ---
 
 **`announce` — แสดงผัง Tool Pill ก่อนลงมือ**
@@ -171,7 +191,7 @@ START
 | Skill | ทำอะไร |
 |---|---|
 | `home_control` | ส่ง MQTT ไปเปิด/ปิด/ปรับอุปกรณ์ |
-| `hub_control` | ส่งงานไปให้ Hub Agent (Python) บนคอมพิวเตอร์ remote |
+| `hub_control` | ส่งงานไปให้ Hub Agent บนเครื่อง remote |
 | `realtime_data` | ค้นหาข้อมูล real-time จากอินเทอร์เน็ต (Serper) |
 | `settings` | อ่านหรือเปลี่ยน settings ผ่านภาษาธรรมชาติ |
 | `device_not_found` | แจ้ง user ว่าอุปกรณ์ที่พูดถึงไม่มีในระบบ |
@@ -188,6 +208,7 @@ Tool Pill จะอัปเดตสถานะแบบ real-time: pending �
 รอบ 2: evaluator เช็คว่า 115k > 100k → เงื่อนไขเข้า → สั่งเปิดไฟ
 
 รองรับเงื่อนไขซ้อนหลายชั้น และวนได้สูงสุด 3 รอบต่อ turn
+ระหว่างที่ evaluator กำลังตัดสินใจ — UI จะแสดง bubble "กำลังคิด" ให้ user เห็นว่าระบบยังทำงานอยู่
 
 ---
 
@@ -221,6 +242,20 @@ Tool Pill จะอัปเดตสถานะแบบ real-time: pending �
 
 กระเป๋าเหล่านี้ใช้แทน history ยาวๆ ประหยัด context และทำให้ AI ไม่สับสน
 
+ถ้า LLM ตอน compress เกิด error — ค่า `pending_answer` จะถูกเก็บจากรอบก่อนหน้าไว้ก่อน ไม่ถูกลบทิ้ง เพื่อไม่ให้ AI ลืม context ที่ค้างอยู่
+
+---
+
+### UI — สิ่งที่ user เห็นระหว่าง AI ทำงาน
+
+| ช่วงเวลา | UI แสดง |
+|---|---|
+| ส่งข้อความแล้ว รอ router วางแผน | bubble "กำลังคิด" |
+| router วางแผนเสร็จ step กำลังรัน | Tool Pill แสดงสถานะแต่ละ step |
+| step ทุกอันเสร็จ รอ response stream | bubble "กำลังคิด" |
+| evaluator กำลังตัดสินใจ | bubble พร้อม text บอกว่ากำลังตัดสินใจอะไร |
+| response เริ่ม stream | bubble หายไป ข้อความ AI ปรากฏทีละคำ |
+
 ---
 
 ### การไหลของข้อมูล (Skills)
@@ -234,4 +269,3 @@ plan_executor ──► home_control  ──► MQTT ──► IoT Devices (ไ�
 ```
 
 > หมายเหตุ: architecture เวอร์ชันก่อนหน้า (ReAct + Reflect + Guard) อยู่ที่ branch [`old_architecture`](../../tree/old_architecture) สำหรับอ้างอิง
-
