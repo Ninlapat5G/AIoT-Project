@@ -1,5 +1,5 @@
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
-import { data_knowledge, findDeviceByName } from '../../kg.js'
+import { knowledge_data, findDeviceByName } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
 import { parseJSON } from '../helpers/jsonParser.js'
 import { buildPlanPrompt, SKILLS } from '../skills/index.js'
@@ -68,7 +68,7 @@ export async function routerPlannerNode(state) {
   const devices = (state.deviceList?.current ?? state.deviceList) || []
   const messages = state.messages || []
 
-  const kgText = data_knowledge({ devices, settings, now: nowString() })
+  const kgText = knowledge_data({ devices, settings, now: nowString() })
   const systemPrompt = buildPrompt(
     settings, kgText, lastCommand,
     state.chat_summary || '',

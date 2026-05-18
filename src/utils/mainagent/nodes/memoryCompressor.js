@@ -1,4 +1,4 @@
-import { data_knowledge } from '../../kg.js'
+import { knowledge_data } from '../../kg.js'
 import { nowString } from '../helpers/llmFactory.js'
 import { summarizeHistory } from '../helpers/historySummarizer.js'
 
@@ -19,7 +19,7 @@ function buildPendingContext(state) {
 export async function memoryCompressorNode(state) {
   const { messages, settings, signal, deviceList } = state
   const devices = (deviceList?.current ?? deviceList) || []
-  const kgText = data_knowledge({ devices, settings, now: nowString() })
+  const kgText = knowledge_data({ devices, settings, now: nowString() })
   const pendingContext = buildPendingContext(state)
 
   console.log(`  [MemoryCompressor] Running final single-turn summarization...`)

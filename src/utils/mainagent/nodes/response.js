@@ -1,5 +1,5 @@
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
-import { data_knowledge } from '../../kg.js'
+import { knowledge_data } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
 
 const PERSONA_BASE = `[บทบาท]
@@ -27,7 +27,7 @@ function buildContext(state) {
 
   return `
 [สถานะอุปกรณ์ปัจจุบัน]
-${data_knowledge({ devices, settings, now: nowString() })}
+${knowledge_data({ devices, settings, now: nowString() })}
 
 [สิ่งที่ระบบดำเนินการสำเร็จในรอบนี้ — ค่าเหล่านี้คือผลลัพธ์สุดท้ายหลังจากทำเสร็จแล้ว]
 ${completedStr}
