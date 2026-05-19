@@ -64,6 +64,8 @@ function buildPrompt(settings, kgText, lastCommand, chatSummary, pendingAnswer) 
 }
 
 export async function routerPlannerNode(state) {
+  const t0 = Date.now()
+  console.log('  [Router] start')
   const { settings, signal, lastCommand } = state
   const devices = (state.deviceList?.current ?? state.deviceList) || []
   const messages = state.messages || []
@@ -108,7 +110,7 @@ export async function routerPlannerNode(state) {
   const maxRounds = state.max_router_rounds || 3
 
   if (plan?.need_clarify) {
-    console.log(`  [Router] need_clarify → ${plan.question}`)
+    console.log(`  [Router] need_clarify → ${plan.question} (${Date.now() - t0}ms)`)
     return {
       plan,
       needs_clarify: true,
@@ -136,7 +138,7 @@ export async function routerPlannerNode(state) {
   let needsNextRound = !!plan?.needs_next_round
   if (nextRound >= maxRounds) needsNextRound = false
 
-  console.log(`  [Router #${nextRound}] plan → ${JSON.stringify(steps.map(s => s.type))} | needs_next_round=${needsNextRound} (raw=${JSON.stringify(plan?.needs_next_round)})`)
+  console.log(`  [Router #${nextRound}] plan → ${JSON.stringify(steps.map(s => s.type))} | needs_next_round=${needsNextRound} (${Date.now() - t0}ms)`)
 
   return {
     plan: { steps },

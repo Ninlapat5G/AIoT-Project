@@ -131,6 +131,8 @@ export async function runAgent(params) {
     onPlanReady, onStepStart, onStepResult, onStream, onInterimStatus,
   } = params
 
+  console.log(`\n[Agent] ← "${text?.slice(0, 120)}${(text?.length ?? 0) > 120 ? '...' : ''}"`)
+
   const raw = (apiHistory || []).map(m =>
     m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content)
   )

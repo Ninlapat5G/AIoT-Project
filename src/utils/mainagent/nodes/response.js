@@ -40,6 +40,8 @@ ${errorSection}
 }
 
 export async function responseNode(state) {
+  const t0 = Date.now()
+  console.log('  [Response] start')
   const { settings, signal, onStream } = state
   const messages = state.messages || []
 
@@ -70,7 +72,7 @@ export async function responseNode(state) {
   }
 
   const text = String(finalMsg?.content || '')
-  console.log(`  [Response] → ${text.slice(0, 120)}${text.length > 120 ? '...' : ''}`)
+  console.log(`  [Response] → ${text.slice(0, 120)}${text.length > 120 ? '...' : ''} (${Date.now() - t0}ms)`)
 
   return { messages: [finalMsg] }
 }

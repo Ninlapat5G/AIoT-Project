@@ -57,6 +57,8 @@ ${skillBlock}`
 }
 
 export async function evaluatorNode(state) {
+  const t0 = Date.now()
+  console.log('  [Evaluator] start')
   const { settings, signal, completed, messages, onInterimStatus } = state
   const devices = (state.deviceList?.current ?? state.deviceList) || []
 
@@ -134,7 +136,7 @@ ${completedBlock}`
   let needsNextRound = !!plan?.needs_next_round
   if (nextRound >= maxRounds) needsNextRound = false
 
-  console.log(`  [Evaluator #${nextRound}] plan → ${JSON.stringify(steps.map(s => s.type))} | needs_next_round=${needsNextRound} (raw=${JSON.stringify(plan?.needs_next_round)})`)
+  console.log(`  [Evaluator #${nextRound}] plan → ${JSON.stringify(steps.map(s => s.type))} | needs_next_round=${needsNextRound} (${Date.now() - t0}ms)`)
 
   return {
     plan: { steps },

@@ -5,10 +5,12 @@
 import { AIMessage } from '@langchain/core/messages'
 
 export async function clarifyNode(state) {
+  const t0 = Date.now()
+  console.log('  [Clarify] start')
   const { clarify_question, onStream } = state
   const question = clarify_question || 'ช่วยบอกรายละเอียดเพิ่มเติมได้มั้ยคะ?'
 
-  console.log(`  [Clarify] → ${question}`)
+  console.log(`  [Clarify] → ${question} (${Date.now() - t0}ms)`)
 
   // stream ทีเดียว ให้ UI เห็นเป็นข้อความเดียวกัน
   onStream?.(question)

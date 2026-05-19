@@ -8,6 +8,8 @@ const CHAT_PERSONA_BASE = `[กฎการทำงาน]
 - ห้ามตอบเป็น JSON หรือ code block`
 
 export async function chatNode(state) {
+  const t0 = Date.now()
+  console.log('  [Chat] start')
   const { settings, signal, plan, onStream } = state
   const messages = state.messages || []
 
@@ -33,7 +35,7 @@ export async function chatNode(state) {
   }
 
   const text = String(finalMsg?.content || '')
-  console.log(`  [Chat] → ${text.slice(0, 120)}${text.length > 120 ? '...' : ''}`)
+  console.log(`  [Chat] → ${text.slice(0, 120)}${text.length > 120 ? '...' : ''} (${Date.now() - t0}ms)`)
 
   return { messages: [finalMsg] }
 }

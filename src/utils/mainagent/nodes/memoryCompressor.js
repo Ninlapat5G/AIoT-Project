@@ -17,15 +17,18 @@ function buildPendingContext(state) {
 }
 
 export async function memoryCompressorNode(state) {
+  const t0 = Date.now()
+  console.log('  [MemoryCompressor] start')
   const { messages, settings, signal, deviceList } = state
   const devices = (deviceList?.current ?? deviceList) || []
   const kgText = knowledge_data({ devices, settings, now: nowString() })
   const pendingContext = buildPendingContext(state)
 
-  console.log(`  [MemoryCompressor] Running final single-turn summarization...`)
+  console.log('  [MemoryCompressor] summarizing...')
 
   const summaryResult = await summarizeHistory(messages, settings, signal, kgText, pendingContext, state.chat_summary || '', state.pending_answer || '')
 
+  console.log(`  [MemoryCompressor] done ${Date.now() - t0}ms`)
   return {
     chat_summary:  summaryResult.chat_summary,
     lastCommand:   summaryResult.last_command,
