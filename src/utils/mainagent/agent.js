@@ -144,26 +144,39 @@ export async function runAgent(params) {
     allowPartial: false,
   })
 
-  const finalState = await compiled.invoke({
-    messages: previousMessages,
-    settings,
-    deviceList: deviceList ?? devicesRef,
-    signal,
-    mqttClient, mqttWaitForStream,
-    devicesRef, baseTopicRef, setDevices, handleSaveSettings,
-    lastCommand: lastCommand ?? null,
-    onPlanReady, onStepStart, onStepResult, onStream, onInterimStatus,
+  let finalState
+  try {
+    finalState = await compiled.invoke({
+      messages: previousMessages,
+      settings,
+      deviceList: deviceList ?? devicesRef,
+      signal,
+      mqttClient, mqttWaitForStream,
+      devicesRef, baseTopicRef, setDevices, handleSaveSettings,
+      lastCommand: lastCommand ?? null,
+      onPlanReady, onStepStart, onStepResult, onStream, onInterimStatus,
 
-    chat_summary:   chat_summary   ?? '',
-    pending_answer: pending_answer ?? '',
+      chat_summary:   chat_summary   ?? '',
+      pending_answer: pending_answer ?? '',
 
-    router_round: 0,
-    max_router_rounds: maxRouterRounds ?? 3,
-    needs_next_round: false,
-    has_failed_step: false,
-    failed_steps: [],
-    completed: [],
-  })
+      router_round: 0,
+      max_router_rounds: maxRouterRounds ?? 3,
+      needs_next_round: false,
+      has_failed_step: false,
+      failed_steps: [],
+      completed: [],
+    })
+  } catch (err) {
+    console.error('[Agent] fatal error:', err)
+    const errorReply = 'ขอโทษนะคะ เกิดข้อผิดพลาดชั่วคราว กรุณาลองใหม่อีกครั้งค่ะ'
+    onStream?.(errorReply)
+    return {
+      reply: errorReply,
+      lastCommand:    lastCommand    ?? null,
+      chat_summary:   chat_summary   ?? '',
+      pending_answer: pending_answer ?? '',
+    }
+  }
 
   const lastMsg = finalState.messages?.[finalState.messages.length - 1]
   const reply = lastMsg?.content || ''

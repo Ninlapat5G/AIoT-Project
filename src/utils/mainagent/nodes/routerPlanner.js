@@ -1,4 +1,4 @@
-import { SystemMessage, HumanMessage } from '@langchain/core/messages'
+import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
 import { knowledge_data, findDeviceByName } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
 import { parseJSON } from '../helpers/jsonParser.js'
@@ -82,16 +82,25 @@ export async function routerPlannerNode(state) {
   const msgs = [new SystemMessage(systemPrompt), ...previousMsgs, new HumanMessage(String(lastMsg?.content || ''))]
 
   let plan
-  try {
-    const res = await llm.invoke(msgs, { signal })
-    plan = parseJSON(String(res.content || ''))
-  } catch (err) {
-    console.warn('  [Router] failed to parse plan, falling back to general:', err?.message)
-    return {
-      plan: { steps: [{ type: 'general' }] },
-      needs_clarify: false,
-      needs_next_round: false,
-      router_round: (state.router_round || 0) + 1,
+  let retryExtras = []
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    let rawContent = ''
+    try {
+      const res = await llm.invoke([...msgs, ...retryExtras], { signal })
+      rawContent = String(res.content || '')
+      plan = parseJSON(rawContent)
+      break
+    } catch (err) {
+      console.warn(`  [Router] attempt ${attempt}/2 failed to parse JSON: ${err?.message}`)
+      if (attempt < 2) {
+        retryExtras = [
+          ...retryExtras,
+          new AIMessage(rawContent),
+          new HumanMessage('ตอบ JSON เท่านั้น ห้ามพิมพ์ข้อความอื่น'),
+        ]
+      } else {
+        throw err
+      }
     }
   }
 

@@ -4,7 +4,7 @@
 // รับ: user request ล่าสุด + completed (สะสม) + KG สด + tools
 // พ่น: JSON schema เดียวกับ router → loop กลับเข้าตัวเองได้ผ่าน routeAfterExecutor เดิม
 
-import { SystemMessage, HumanMessage } from '@langchain/core/messages'
+import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
 import { knowledge_data, findDeviceByName } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
 import { parseJSON } from '../helpers/jsonParser.js'
@@ -92,21 +92,27 @@ ${completedBlock}`
   const nextRound = (state.router_round || 0) + 1
   const maxRounds = state.max_router_rounds || 3
 
+  const baseMsgs = [new SystemMessage(systemPrompt), new HumanMessage(input)]
   let plan
-  try {
-    const res = await llm.invoke(
-      [new SystemMessage(systemPrompt), new HumanMessage(input)],
-      { signal }
-    )
-    plan = parseJSON(String(res.content || ''))
-  } catch (err) {
-    console.warn('  [Evaluator] failed to parse plan:', err?.message)
-    return {
-      plan: { steps: [] },
-      needs_next_round: false,
-      router_round: nextRound,
-      failed_steps: [],
-      has_failed_step: false,
+  let retryExtras = []
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    let rawContent = ''
+    try {
+      const res = await llm.invoke([...baseMsgs, ...retryExtras], { signal })
+      rawContent = String(res.content || '')
+      plan = parseJSON(rawContent)
+      break
+    } catch (err) {
+      console.warn(`  [Evaluator] attempt ${attempt}/2 failed to parse JSON: ${err?.message}`)
+      if (attempt < 2) {
+        retryExtras = [
+          ...retryExtras,
+          new AIMessage(rawContent),
+          new HumanMessage('ตอบ JSON เท่านั้น ห้ามพิมพ์ข้อความอื่น'),
+        ]
+      } else {
+        throw err
+      }
     }
   }
 
