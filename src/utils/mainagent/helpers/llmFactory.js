@@ -1,7 +1,7 @@
 import { ChatOpenAI } from '@langchain/openai'
 import { DEFAULT_API_KEY } from '../../../config/default_key'
 
-export function makeLLM(settings, { temperature = 0.1, maxTokens, structured } = {}) {
+export function makeLLM(settings, { temperature = 0.1, maxTokens, structured, responseFormat } = {}) {
   const apiKey = settings.apiKey || DEFAULT_API_KEY
   let llm = new ChatOpenAI({
     apiKey,
@@ -9,6 +9,7 @@ export function makeLLM(settings, { temperature = 0.1, maxTokens, structured } =
     modelName: settings.model,
     temperature,
     ...(maxTokens ? { maxTokens } : {}),
+    ...(responseFormat ? { modelKwargs: { response_format: responseFormat } } : {}),
   })
   if (structured) llm = llm.withStructuredOutput(structured)
   return llm

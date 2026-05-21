@@ -4,9 +4,6 @@ import { summarizeHistory } from '../helpers/historySummarizer.js'
 
 function buildPendingContext(state) {
   const parts = []
-  if (state.needs_clarify && state.clarify_question) {
-    parts.push(`- assistant ถาม user ว่า: "${state.clarify_question}"`)
-  }
   if (state.failed_steps?.length) {
     for (const f of state.failed_steps) {
       const dev = f.step?.device ? ` (${f.step.device})` : ''

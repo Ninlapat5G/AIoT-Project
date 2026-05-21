@@ -14,6 +14,7 @@ const SUMMARIZER_PROMPT = `สรุปบทสนทนา ตอบด้ว�
 
 [PENDING_ANSWER]
 สิ่งที่รอคำตอบจาก user 1 บรรทัด เช่น: รอ user ตอบว่าจะตั้งแอร์กี่องศา
+ถ้ามี [PREV_PENDING_ANSWER] และ user ยังไม่ได้ตอบในรอบนี้ ให้ carry forward
 *ถ้าไม่มีอะไรค้าง ให้เว้นว่างไว้*`
 
 function parseTags(text) {
@@ -38,10 +39,11 @@ export async function summarizeHistory(messages, settings, signal, kgSnapshot = 
   }).filter(Boolean).join('\n')
 
   const parts = []
-  if (prevChatSummary) parts.push(`[PREV_CHAT_SUMMARY]\n${prevChatSummary}`)
-  if (kgSnapshot)      parts.push(`[สถานะอุปกรณ์ปัจจุบัน]\n${kgSnapshot}`)
+  if (prevChatSummary)   parts.push(`[PREV_CHAT_SUMMARY]\n${prevChatSummary}`)
+  if (prevPendingAnswer) parts.push(`[PREV_PENDING_ANSWER]\n${prevPendingAnswer}`)
+  if (kgSnapshot)        parts.push(`[สถานะอุปกรณ์ปัจจุบัน]\n${kgSnapshot}`)
   parts.push(`[บทสนทนารอบนี้]\n${historyText}`)
-  if (pendingContext)  parts.push(`[หมายเหตุระบบ — ใช้ช่วย PENDING_ANSWER]\n${pendingContext}`)
+  if (pendingContext)    parts.push(`[หมายเหตุระบบ — ใช้ช่วย PENDING_ANSWER]\n${pendingContext}`)
   const inputText = parts.join('\n\n')
 
   try {

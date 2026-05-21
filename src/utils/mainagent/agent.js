@@ -3,7 +3,6 @@ import { HumanMessage, AIMessage, trimMessages } from '@langchain/core/messages'
 
 import { routerPlannerNode } from './nodes/routerPlanner.js'
 import { planExecutorNode }  from './nodes/planExecutor.js'
-import { clarifyNode }       from './nodes/clarify.js'
 import { chatNode }          from './nodes/chat.js'
 import { responseNode }      from './nodes/response.js'
 import { evaluatorNode }     from './nodes/evaluator.js'
@@ -35,14 +34,11 @@ const AgentState = Annotation.Root({
   plan:             Annotation({ reducer: (_, n) => n, default: () => null }),
   // completed: append ข้ามรอบของ multi-router ภายใน turn เดียว (reset ใน runAgent ทุก turn)
   completed:        Annotation({ reducer: appendArray, default: () => [] }),
-  needs_clarify:    Annotation({ reducer: (_, n) => n, default: () => false }),
-  clarify_question: Annotation({ reducer: (_, n) => n, default: () => '' }),
   lastCommand:      Annotation({ reducer: (_, n) => n, default: () => null }),
 
   // multi-router state
-  router_round:       Annotation({ reducer: (_, n) => n, default: () => 0 }),
-  max_router_rounds:  Annotation({ reducer: (_, n) => n, default: () => 3 }),
-  needs_next_round:   Annotation({ reducer: (_, n) => n, default: () => false }),
+  router_round:     Annotation({ reducer: (_, n) => n, default: () => 0 }),
+  needs_next_round: Annotation({ reducer: (_, n) => n, default: () => false }),
 
   // executor failure tracking
   has_failed_step: Annotation({ reducer: (_, n) => n, default: () => false }),
@@ -57,31 +53,27 @@ const AgentState = Annotation.Root({
 // ── Routing ───────────────────────────────────────────────────────────────────
 
 function routeAfterRouter(state) {
-  if (state.needs_clarify) return 'clarify'
   const steps = state.plan?.steps || []
-  if (steps.length > 0 && steps.every(s => s.type === 'general')) return 'chat'
-  if (steps.length === 0) return state.needs_next_round ? 'evaluator' : 'response'
+  if (steps.length === 0) return 'response'
+  if (steps.every(s => s.type === 'general')) return 'chat'
   return 'plan_executor'
 }
 
 function routeAfterExecutor(state) {
-  if (state.has_failed_step) return 'response'  // ตัดวงจร multi-router — แจ้ง user
-  if (state.needs_next_round && state.router_round < state.max_router_rounds) {
-    return 'evaluator'
-  }
+  if (state.has_failed_step) return 'response'
+  if (state.needs_next_round) return 'evaluator'
   return 'response'
 }
 
 function routeAfterEvaluator(state) {
   const steps = state.plan?.steps || []
-  if (steps.length === 0) return 'response'  // เงื่อนไขไม่ตรง / ไม่มีอะไรต้องทำ → จบ
-  return 'announce'  // มี step → ไปแสดง Tool Pill แล้วรัน
+  if (steps.length === 0) return 'response'
+  return 'announce'
 }
 
 async function announcePlan(state) {
-  const { plan, needs_clarify, onPlanReady } = state
-  if (!needs_clarify && plan?.steps?.length) {
-    // ข้ามการแจ้ง plan ถ้ามีแต่ step ประเภท general — ผู้ใช้ไม่ต้องเห็น Tool Pill เปล่า
+  const { plan, onPlanReady } = state
+  if (plan?.steps?.length) {
     const isOnlyGeneral = plan.steps.every(s => s.type === 'general')
     if (!isOnlyGeneral) {
       onPlanReady?.(plan)
@@ -93,25 +85,21 @@ async function announcePlan(state) {
 // ── Graph ─────────────────────────────────────────────────────────────────────
 
 const workflow = new StateGraph(AgentState)
-  .addNode('router_planner',    routerPlannerNode)
-  .addNode('announce',          announcePlan)
-  .addNode('plan_executor',     planExecutorNode)
-  .addNode('clarify',           clarifyNode)
-  .addNode('chat',              chatNode)
-  .addNode('response',          responseNode)
-  .addNode('evaluator',         evaluatorNode)
-  .addNode('memory_compressor', memoryCompressorNode)
+  .addNode('router_planner', routerPlannerNode)
+  .addNode('announce',       announcePlan)
+  .addNode('plan_executor',  planExecutorNode)
+  .addNode('chat',           chatNode)
+  .addNode('response',       responseNode)
+  .addNode('evaluator',      evaluatorNode)
   .addEdge(START, 'router_planner')
   .addEdge('router_planner', 'announce')
   .addConditionalEdges('announce', routeAfterRouter)
   .addConditionalEdges('plan_executor', routeAfterExecutor)
   .addConditionalEdges('evaluator', routeAfterEvaluator)
 
-  // ทุก path ก่อนจบจะผ่าน memory_compressor เพื่อบีบประวัติแชทไว้ใช้รอบถัดไป
-  .addEdge('clarify',           'memory_compressor')
-  .addEdge('chat',              'memory_compressor')
-  .addEdge('response',          'memory_compressor')
-  .addEdge('memory_compressor', END)
+  // graph จบทันทีที่ตอบ user เสร็จ — memory รัน background หลัง graph
+  .addEdge('chat',     END)
+  .addEdge('response', END)
 
 const compiled = workflow.compile()
 
@@ -127,8 +115,7 @@ export async function runAgent(params) {
     lastCommand,
     chat_summary,
     pending_answer,
-    maxRouterRounds,
-    onPlanReady, onStepStart, onStepResult, onStream, onInterimStatus,
+    onPlanReady, onStepStart, onStepResult, onStream, onInterimStatus, onComplete,
   } = params
 
   console.log(`\n[Agent] ← "${text?.slice(0, 120)}${(text?.length ?? 0) > 120 ? '...' : ''}"`)
@@ -162,7 +149,6 @@ export async function runAgent(params) {
       pending_answer: pending_answer ?? '',
 
       router_round: 0,
-      max_router_rounds: maxRouterRounds ?? 3,
       needs_next_round: false,
       has_failed_step: false,
       failed_steps: [],
@@ -172,6 +158,7 @@ export async function runAgent(params) {
     console.error('[Agent] fatal error:', err)
     const errorReply = 'ขอโทษนะคะ เกิดข้อผิดพลาดชั่วคราว กรุณาลองใหม่อีกครั้งค่ะ'
     onStream?.(errorReply)
+    onComplete?.()
     return {
       reply: errorReply,
       lastCommand:    lastCommand    ?? null,
@@ -183,11 +170,17 @@ export async function runAgent(params) {
   const lastMsg = finalState.messages?.[finalState.messages.length - 1]
   const reply = lastMsg?.content || ''
 
+  // graph จบแล้ว — แจ้ง UI ให้ finalize message ก่อน
+  onComplete?.()
+
+  // รัน memory หลังตอบ user เสร็จ (ไม่บล็อก visual)
+  const memResult = await memoryCompressorNode(finalState)
+
   return {
     reply,
-    lastCommand:    finalState.lastCommand    ?? null,
-    chat_summary:   finalState.chat_summary   ?? '',
-    pending_answer: finalState.pending_answer ?? '',
+    lastCommand:    memResult.lastCommand    ?? finalState.lastCommand    ?? null,
+    chat_summary:   memResult.chat_summary   ?? finalState.chat_summary   ?? '',
+    pending_answer: memResult.pending_answer ?? finalState.pending_answer ?? '',
   }
 }
 

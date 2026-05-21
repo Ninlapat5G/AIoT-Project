@@ -17,7 +17,8 @@ export const homeControl = {
 - ใช้ topic จาก KG เท่านั้น ห้ามเดา
 - "ทุก X" → 1 step ต่อ 1 device
 - digital → payload "ON" หรือ "OFF"
-- analog → payload เป็นตัวเลข absolute (คำนวณจาก state ใน KG ถ้าบอกเพิ่ม/ลด)
+- analog → payload เป็นตัวเลข absolute (คำนวณจาก state ใน KG ถ้าบอกเพิ่ม/ลด เช่น "เพิ่ม 5")
+- analog ที่ user ไม่ระบุค่าเป้าหมาย → ห้ามเดาหรือใช้ค่าจาก KG เป็น default ให้ใช้ general ถามก่อน
 - ห้ามใช้กับ hub device → ใช้ hub_control แทน
 - ถ้า device ไม่มีใน KG → ใช้ device_not_found`,
 

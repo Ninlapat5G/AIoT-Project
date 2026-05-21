@@ -37,5 +37,6 @@ export async function chatNode(state) {
   const text = String(finalMsg?.content || '')
   console.log(`  [Chat] → ${text.slice(0, 120)}${text.length > 120 ? '...' : ''} (${Date.now() - t0}ms)`)
 
-  return { messages: [finalMsg] }
+  // ถ้า router ให้ถามกลับ user → ตั้ง pending_answer ทันที ไม่รอ summarizer อนุมาน
+  return { messages: [finalMsg], ...(hint ? { pending_answer: hint } : {}) }
 }

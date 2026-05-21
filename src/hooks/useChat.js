@@ -117,25 +117,33 @@ export function useChat({
             return [...base, { _id: 'a-' + Date.now(), role: 'ai', text: chunk, streaming: true }]
           })
         },
+
+        // graph ตอบ user เสร็จแล้ว — finalize message ทันที ก่อน memory จะรัน
+        onComplete: () => {
+          setMessages(prev => {
+            const cleaned = prev.filter(m => m.role !== 'interim')
+            const last = cleaned[cleaned.length - 1]
+            if (last?.role === 'ai' && last?.streaming) {
+              return [...cleaned.slice(0, -1), { ...last, streaming: false }]
+            }
+            return cleaned
+          })
+          setLivePlan(null)
+          setLiveStatuses([])
+        },
       })
 
-      setMessages(prev => {
-        const cleaned = prev.filter(m => m.role !== 'interim')
-        const last = cleaned[cleaned.length - 1]
-        let base = cleaned
-        let aiMsg = null
-        if (last?.role === 'ai' && last?.streaming) {
-          aiMsg = { ...last, streaming: false }
-          base = cleaned.slice(0, -1)
-        } else if (reply && last?.role !== 'ai') {
-          aiMsg = { _id: 'a-' + Date.now(), role: 'ai', text: reply }
-        }
+      // onComplete ทำ finalize + clear livePlan ไปแล้ว
+      // แต่ถ้า streaming ไม่เกิด (เช่น error ก่อน stream) ให้ fallback ใส่ reply ด้วย
+      if (reply) {
+        setMessages(prev => {
+          const last = prev[prev.length - 1]
+          if (last?.role === 'ai') return prev   // onComplete จัดไปแล้ว
+          return [...prev.filter(m => m.role !== 'interim'),
+                  { _id: 'a-' + Date.now(), role: 'ai', text: reply }]
+        })
+      }
 
-        return [...base, ...(aiMsg ? [aiMsg] : [])]
-      })
-
-      setLivePlan(null)
-      setLiveStatuses([])
       if (lastCommand !== null) lastCommandRef.current = lastCommand
       chatSummaryRef.current   = chat_summary   ?? ''
       pendingAnswerRef.current = pending_answer ?? ''

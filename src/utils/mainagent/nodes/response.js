@@ -3,13 +3,7 @@ import { knowledge_data } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
 
 const PERSONA_BASE = `[บทบาท]
-แจ้งผล user ว่าระบบทำอะไรไปบ้าง ดูจาก [สิ่งที่ระบบดำเนินการสำเร็จในรอบนี้] เท่านั้น
-
-[กฎเหล็ก]
-1. พูดสั้นๆ 1-2 ประโยค เป็นกันเอง
-2. เล่าเฉพาะสิ่งที่ทำจริง ห้ามแต่งเพิ่ม
-3. ตัวเลขต้องตรงตามรายการ ห้ามคำนวณเอง
-4. ห้ามตอบเป็น JSON หรือ code block`
+แจ้งผล user ว่าระบบทำอะไรไปบ้าง ดูจาก [สิ่งที่ระบบดำเนินการสำเร็จในรอบนี้] เท่านั้น`
 
 function buildContext(state) {
   const settings = state.settings

@@ -1,66 +1,39 @@
-import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
+import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { knowledge_data, findDeviceByName } from '../../kg.js'
 import { makeLLM, nowString } from '../helpers/llmFactory.js'
 import { parseJSON } from '../helpers/jsonParser.js'
-import { buildPlanPrompt, SKILLS } from '../skills/index.js'
-
-const ALLOWED_STEP_TYPES = Object.keys(SKILLS)
+import { buildPlanPrompt } from '../skills/index.js'
 
 function buildPrompt(settings, kgText, lastCommand, chatSummary, pendingAnswer) {
-  const roleBlock = `[บทบาท]
-ดูคำสั่ง user แล้ววาง plan เป็น JSON ตอบ JSON เท่านั้น ห้ามพิมพ์ข้อความอื่น`
+  const examplesBlock = `[วาง plan จากคำสั่ง user → ตอบเป็น JSON]
+[หมายเหตุ: <...> คือ placeholder — ต้องใช้ชื่อและ topic จาก KG จริงๆ เท่านั้น]
+"สวัสดี" / ถามทั่วไป / ถามสถานะจาก KG  → {"steps":[{"type":"general"}],"needs_next_round":false}
+"เปิด/ปิด device ที่มีใน KG"             → {"steps":[{"type":"home_control","device":"<ชื่อใน KG>","topic":"<topic ใน KG>","payload":"ON"}],"needs_next_round":false}
+"ตั้งค่า analog device พร้อมระบุค่า"     → {"steps":[{"type":"home_control","device":"<ชื่อใน KG>","topic":"<topic ใน KG>","payload":"25"}],"needs_next_round":false}
+"สั่ง hub ทำ task"                        → {"steps":[{"type":"hub_control","device":"<hub ใน KG>","topic":"<topic ใน KG>","task":"shutdown"}],"needs_next_round":false}
+"ดูข้อมูล real-time"                      → {"steps":[{"type":"realtime_data","query":"ราคา BTC วันนี้"}],"needs_next_round":false}
+"ถ้า [เงื่อนไข real-time] ทำ X"          → {"steps":[{"type":"realtime_data","query":"ราคา BTC ล่าสุด"}],"needs_next_round":true}
+"device ที่ไม่มีใน KG"                   → {"steps":[{"type":"device_not_found","device":"<ชื่อที่ user บอก>"}],"needs_next_round":false}
+"เปิด/ปิด skill หรือตั้งค่าระบบ"         → {"steps":[{"type":"settings","query":"เปิด skill web search"}],"needs_next_round":false}
+"เปิด analog device แต่ไม่บอกค่า"        → {"steps":[{"type":"general","response":"จะตั้งกี่[หน่วย]ดีคะ?"}],"needs_next_round":false}
+"ไม่รู้ว่าต้องการอะไร"                    → {"steps":[{"type":"general","response":"ต้องการให้ช่วยเรื่องอะไรคะ?"}],"needs_next_round":false}`
 
-  const examplesBlock = `[ตัวอย่าง — จำรูปแบบ JSON นี้]
-
-▸ สนทนาทั่วไป / ถามความรู้ / ถามเวลา / ถามสถานะที่ตอบได้จาก KG:
-  "สวัสดี"                   → {"steps":[{"type":"general"}],"needs_next_round":false}
-  "ตอนนี้กี่โมง"              → {"steps":[{"type":"general"}],"needs_next_round":false}
-  "ไฟห้องนั่งเล่นเปิดอยู่ไหม" → {"steps":[{"type":"general"}],"needs_next_round":false}
-  "ไข้หวัดเกิดจากอะไร"        → {"steps":[{"type":"general"}],"needs_next_round":false}
-
-▸ สั่งอุปกรณ์ (digital):
-  "เปิดไฟห้องนั่งเล่น" → {"steps":[{"type":"home_control","device":"ไฟห้องนั่งเล่น","topic":"living-room/lamp","payload":"ON"}],"needs_next_round":false}
-
-▸ สั่งอุปกรณ์ (analog):
-  "ตั้งแอร์ 25 องศา" → {"steps":[{"type":"home_control","device":"แอร์ห้องนอน","topic":"bedroom/ac","payload":"25"}],"needs_next_round":false}
-
-▸ สั่ง hub:
-  "shutdown คอม" → {"steps":[{"type":"hub_control","device":"Main Hub","topic":"hub/main","task":"shutdown"}],"needs_next_round":false}
-
-▸ ค้นข้อมูล real-time (ราคา/ข่าว/สภาพอากาศ/เหตุการณ์ปัจจุบัน):
-  "ราคา BTC วันนี้" → {"steps":[{"type":"realtime_data","query":"ราคา BTC วันนี้"}],"needs_next_round":false}
-  "ค้นหาให้หน่อย xxx" → {"steps":[{"type":"realtime_data","query":"xxx"}],"needs_next_round":false}
-
-▸ เงื่อนไข — ต้องค้นก่อนแล้วค่อยตัดสินใจ:
-  "ถ้า BTC เกิน 100k เปิดไฟ" → {"steps":[{"type":"realtime_data","query":"ราคา BTC ล่าสุด USD"}],"needs_next_round":true}
-  (ห้ามใส่ home_control รอบนี้ — รอบหน้าจะตัดสินใจจากผลจริง)
-
-▸ อุปกรณ์ไม่มีใน KG:
-  "เปิดทีวี" (ไม่มีในระบบ) → {"steps":[{"type":"device_not_found","device":"ทีวี"}],"needs_next_round":false}
-
-▸ จัดการ settings:
-  "เปิด web search" → {"steps":[{"type":"settings","query":"เปิด skill web search"}],"needs_next_round":false}
-
-▸ ข้อมูลไม่ครบ — ถามก่อน:
-  "เปิดแอร์" (ไม่บอกองศา) → {"steps":[{"type":"general","response":"จะให้ตั้งกี่องศาดีคะ?"}],"needs_next_round":false}
-
-▸ user พูดสั้นอ้างถึงของเดิม — ดู history แล้ว plan ต่อเลย ไม่ต้องถาม:
-  "ปิดเลย" / "อันนั้น" / "ด้วย" → plan จาก context ที่มีอยู่
-
-▸ ต้องถาม user ก่อน (ไม่มี step):
-  "ช่วยได้ไหม" → {"need_clarify":true,"question":"ต้องการให้ช่วยเรื่องอะไรคะ?"}`
+  const rulesBlock = `[กฎ]
+- ใช้เฉพาะ device ที่มีใน [สถานะบ้านตอนนี้] ห้ามเดาชื่อ
+- user พูดสั้นอ้างถึงของเดิม → ดู history แล้ว plan ต่อเลย ไม่ต้องถาม
+- เงื่อนไขที่ยังไม่รู้ผล → ค้นข้อมูลก่อน ตั้ง needs_next_round=true`
 
   const contextParts = [`[สถานะบ้านตอนนี้]\n${kgText}`]
   if (chatSummary)   contextParts.push(`[สรุปบทสนทนาก่อนหน้า]\n${chatSummary}`)
   if (lastCommand)   contextParts.push(`[คำสั่งอุปกรณ์ล่าสุด]\n${lastCommand}`)
-  if (pendingAnswer) contextParts.push(
-    `[รอคำตอบจาก user]\n${pendingAnswer}\n→ ถ้า user ตอบเรื่องนี้ → ใช้คำตอบไป plan; ถ้า user เปลี่ยนเรื่อง → ทิ้งทำตามเรื่องใหม่`
-  )
-  const contextBlock = contextParts.join('\n\n')
+  if (pendingAnswer) contextParts.push(`[รอคำตอบจาก user]\n${pendingAnswer}\n→ ถ้า user ตอบเรื่องนี้ ใช้คำตอบนั้น plan; ถ้า user เปลี่ยนเรื่อง ทิ้งทำตามเรื่องใหม่`)
 
-  const toolsBlock = `[รายละเอียดเครื่องมือ]\n${buildPlanPrompt(settings)}`
-
-  return [roleBlock, examplesBlock, contextBlock, toolsBlock].join('\n\n')
+  return [
+    examplesBlock,
+    rulesBlock,
+    contextParts.join('\n\n'),
+    `[รายละเอียดเครื่องมือ]\n${buildPlanPrompt(settings)}`,
+  ].join('\n\n')
 }
 
 export async function routerPlannerNode(state) {
@@ -77,47 +50,16 @@ export async function routerPlannerNode(state) {
     state.pending_answer || '',
   )
 
-  const llm = makeLLM(settings, { temperature: 0, maxTokens: 600 })
+  const llm = makeLLM(settings, { temperature: 0, maxTokens: 600, responseFormat: { type: 'json_object' } })
 
   const lastMsg = messages[messages.length - 1]
   const previousMsgs = messages.slice(0, -1)
   const msgs = [new SystemMessage(systemPrompt), ...previousMsgs, new HumanMessage(String(lastMsg?.content || ''))]
 
-  let plan
-  let retryExtras = []
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    let rawContent = ''
-    try {
-      const res = await llm.invoke([...msgs, ...retryExtras], { signal })
-      rawContent = String(res.content || '')
-      plan = parseJSON(rawContent)
-      break
-    } catch (err) {
-      console.warn(`  [Router] attempt ${attempt}/2 failed to parse JSON: ${err?.message}`)
-      if (attempt < 2) {
-        retryExtras = [
-          ...retryExtras,
-          new AIMessage(rawContent),
-          new HumanMessage('ตอบ JSON เท่านั้น ห้ามพิมพ์ข้อความอื่น'),
-        ]
-      } else {
-        throw err
-      }
-    }
-  }
+  const res = await llm.invoke(msgs, { signal })
+  const plan = parseJSON(String(res.content || ''))
 
   const nextRound = (state.router_round || 0) + 1
-  const maxRounds = state.max_router_rounds || 3
-
-  if (plan?.need_clarify) {
-    console.log(`  [Router] need_clarify → ${plan.question} (${Date.now() - t0}ms)`)
-    return {
-      plan,
-      needs_clarify: true,
-      clarify_question: plan.question || 'ช่วยบอกรายละเอียดเพิ่มเติมได้มั้ยคะ?',
-      router_round: nextRound,
-    }
-  }
 
   // filter step ที่ Typhoon บางทีพ่น null / object ว่าง / ไม่มี type ออกทิ้ง
   const steps = Array.isArray(plan?.steps)
@@ -135,14 +77,12 @@ export async function routerPlannerNode(state) {
     }
   }
 
-  let needsNextRound = !!plan?.needs_next_round
-  if (nextRound >= maxRounds) needsNextRound = false
+  const needsNextRound = !!plan?.needs_next_round
 
   console.log(`  [Router #${nextRound}] plan → ${JSON.stringify(steps.map(s => s.type))} | needs_next_round=${needsNextRound} (${Date.now() - t0}ms)`)
 
   return {
     plan: { steps },
-    needs_clarify: false,
     needs_next_round: needsNextRound,
     router_round: nextRound,
     failed_steps: [],
