@@ -25,7 +25,7 @@ export async function chatNode(state) {
     hint ? `ต้องพูดว่า: ${hint}` : '',
   ].filter(Boolean).join('\n\n')
 
-  const llm = makeLLM(settings, { temperature: 0.3 })
+  const llm = makeLLM(settings, { temperature: 0.2 })
 
   let finalMsg
   const stream = await llm.stream([new SystemMessage(persona), ...messages], { signal })

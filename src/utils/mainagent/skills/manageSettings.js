@@ -13,8 +13,6 @@ export const manageSettings = {
 ใช้สำหรับ: ถามเรื่อง skill/tool, เปิด/ปิด skill, ถามสถานะ API key หรือการตั้งค่าระบบ
 เงื่อนไข: ใส่ "query" เป็นคำถาม/คำสั่งของ user ตรงๆ (sub-agent ตีความเอง)`,
 
-  example: `{"type": "settings", "query": "ปิด skill web_search"}`,
-
   async execute(step, ctx) {
     const { settings, handleSaveSettings, devicesRef, signal } = ctx
     const query = step.query

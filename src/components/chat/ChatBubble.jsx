@@ -39,14 +39,13 @@ export default function ChatBubble({ msg, assistantName = 'Assistant', showToolD
           <AvatarLogo />
         </motion.div>
         <div className="sh-msg-bubble">
-          <div className="sh-msg-who mono">{assistantName.toUpperCase()}</div>
           <div className="sh-typing">
             <motion.span
               className="sh-typing-label"
-              animate={{ opacity: [0.45, 1, 0.45] }}
-              transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+              animate={{ opacity: [0.5, 1, 0.5] }}
+              transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
             >
-              {msg.text}
+              {assistantName} {msg.text}
             </motion.span>
             <div className="sh-typing-dots">
               <span /><span /><span />
@@ -67,12 +66,12 @@ export default function ChatBubble({ msg, assistantName = 'Assistant', showToolD
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         <AnimatePresence>
           {msg.plan.steps.map((step, i) => {
-            const s = msg.statuses?.[i] || { status: 'ok' }
+            const s = msg.statuses?.[i] || { status: 'running' }
             return (
               <StepChip
                 key={i}
                 label={labelOfStep(step)}
-                status={s.status === 'pending' || s.status === 'running' ? 'ok' : s.status}
+                status={s.status === 'ok' || s.status === 'fail' ? s.status : 'running'}
               />
             )
           })}

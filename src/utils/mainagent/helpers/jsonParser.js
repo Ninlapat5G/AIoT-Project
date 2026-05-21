@@ -1,4 +1,5 @@
 // ดัก JSON จาก LLM response — รองรับทั้ง ```json``` block และปีกกาล้วน
+// คืน null เมื่อ parse ไม่ได้ (ไม่ throw) — caller จัดการต่อเองได้
 export function parseJSON(text) {
   const s = String(text || '').trim()
 
@@ -12,5 +13,6 @@ export function parseJSON(text) {
     try { return JSON.parse(bare[0]) } catch { /* fall through */ }
   }
 
-  throw new Error('Cannot parse JSON from LLM response')
+  console.warn('[parseJSON] ไม่พบ JSON ใน response:', s.slice(0, 200))
+  return null
 }

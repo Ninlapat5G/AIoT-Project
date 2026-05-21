@@ -63,9 +63,14 @@ export async function evaluatorNode(state) {
   const input = `[user สั่งอะไรไว้]\n${userText}\n\n[ผลที่ค้นมา]\n${completedBlock}`
 
   const llm = makeLLM(settings, { temperature: 0, maxTokens: 600, responseFormat: { type: 'json_object' } })
+  const msgs = [new SystemMessage(systemPrompt), new HumanMessage(input)]
 
-  const res = await llm.invoke([new SystemMessage(systemPrompt), new HumanMessage(input)], { signal })
-  const plan = parseJSON(String(res.content || ''))
+  let plan = null
+  for (let attempt = 0; attempt < 2 && !plan; attempt++) {
+    const res = await llm.invoke(msgs, { signal })
+    plan = parseJSON(String(res.content || ''))
+    if (!plan) console.warn(`  [Evaluator] parse fail (attempt ${attempt + 1}) — ${attempt < 1 ? 'retry' : 'giving up'}`)
+  }
 
   const nextRound = (state.router_round || 0) + 1
 

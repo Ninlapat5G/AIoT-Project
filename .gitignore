@@ -14,6 +14,10 @@ simulate device/
 # Legacy OS control agent (superseded by hub/)
 os_control/
 
+# Separate repos — managed independently
+hub/
+SynaptaNode/
+
 # Old single-file version (superseded by Vite project)
 /app.jsx
 /styles.css

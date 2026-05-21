@@ -4,134 +4,134 @@
 
 # SynaptaOS — Smart Home Dashboard
 
-**Web app ควบคุมบ้านอัจฉริยะที่คุยภาษาไทยได้**<br>
-สั่งเปิดไฟ ปรับหรี่แสง สั่งงานคอมพิวเตอร์ ค้นข้อมูลออนไลน์ ผ่านการพิมพ์หรือพูดตามธรรมชาติ
+**Web Application สำหรับควบคุมบ้านอัจฉริยะด้วยภาษาไทยที่เป็นธรรมชาติ**  
+ผสานระบบสั่งการอุปกรณ์ IoT, ควบคุมคอมพิวเตอร์ระยะไกล และระบบค้นหาข้อมูลออนไลน์ภายนอก จบในสถาปัตยกรรมเดียวผ่านการพิมพ์หรือสั่งการด้วยเสียง
 
 </td>
 </tr></table>
 
 ---
 
-## ทำงานด้วย Typhoon AI
+## Powered by Typhoon AI 🇹🇭
 
-SynaptaOS ใช้ [Typhoon v2.5 (`typhoon-v2.5-30b-a3b-instruct`)](https://opentyphoon.ai) จาก SCBX เป็น AI หลัก — สร้างมาสำหรับภาษาไทยโดยเฉพาะ รองรับการพิมพ์ปนไทย-อังกฤษ และสั่งงานได้แม่นยำ
+โครงสร้างสมองกลหลักของ SynaptaOS ขับเคลื่อนด้วย [Typhoon v2.5 (`typhoon-v2.5-30b-a3b-instruct`)](https://opentyphoon.ai) ซึ่งเป็น Large Language Model (LLM) ประสิทธิภาพสูงสำหรับภาษาไทยโดยเฉพาะจาก SCBX ทำให้ระบบเข้าใจบริบทคำสั่งภาษาพูดทั่วไป รวมถึงการพิมพ์สลับสองภาษา (Thai-English Code-switching) ได้อย่างแม่นยำ
 
-> รับ API Key ฟรีได้ที่: [playground.opentyphoon.ai/settings/api-key](https://playground.opentyphoon.ai/settings/api-key)
-
----
-
-## ทำอะไรได้บ้าง
-
-- **คุยภาษาไทย** — พิมพ์หรือพูด (Chrome/Edge) สั่งงานได้เลย ไม่ต้องจำคำสั่ง
-- **ควบคุม IoT ผ่าน MQTT** — เปิด/ปิด/ปรับค่า แบบ real-time
-- **สั่งคอมพิวเตอร์ remote** — ผ่าน Hub Agent ที่รันบนเครื่องปลายทาง
-- **รองรับหลายประเภทอุปกรณ์** — ON/OFF (digital), ปรับค่าตัวเลข เช่น หรี่แสง (analog), คอมพิวเตอร์ (hub)
-- **ค้นข้อมูลออนไลน์** — ราคาหุ้น พยากรณ์อากาศ ข่าวล่าสุด ผ่าน Serper API
-- **ไม่ต้องมี server** — ทุกอย่างรันในเบราว์เซอร์ deploy บน Vercel ได้เลย
+> 🔑 **API Key Registration:** [playground.opentyphoon.ai/settings/api-key](https://playground.opentyphoon.ai/settings/api-key)
 
 ---
 
-## ตั้งค่าเริ่มต้น
+## Core Features
 
-### 1. API Key (จำเป็น)
+- **Natural Language Interface:** รองรับการพิมพ์และการสั่งงานด้วยเสียง (ผ่าน Chrome/Edge) โดยระบบสามารถตีความคำสั่งภาษาพูดทั่วไปได้โดยไม่จำเป็นต้องจำ Syntax เป๊ะๆ
+- **MQTT Protocol Integration:** ควบคุมและสั่งการอุปกรณ์ IoT แบบ Real-time ผ่านสถาปัตยกรรม MQTT ที่มีความหน่วงต่ำ
+- **Remote Computer Control:** ควบคุมคอมพิวเตอร์เครื่องปลายทางจากระยะไกลผ่าน Hub Agent ในลักษณะ Agent-to-Agent
+- **Hybrid Device Support:** รองรับชนิดอุปกรณ์ที่หลากหลาย ทั้งสาย Digital (ON/OFF), Analog (เช่น Dimmer หรี่แสง) และโครงสร้างเครื่องคอมพิวเตอร์ (Hub)
+- **Live Search Tooling:** ค้นหาและดึงข้อมูลอัปเดตจากภายนอกแบบ Real-time (เช่น ราคาหลักทรัพย์ พยากรณ์อากาศ หรือข่าวสาร) มาวิเคราะห์ร่วมกับคำสั่งผ่าน Serper API
+- **Serverless Architecture:** ทำงานบนฝั่ง Browser ทั้งหมด สามารถ Deploy เป็น Static Site บนแพลตฟอร์มอย่าง Vercel ได้ทันที
 
-ไปที่ **Settings → Section 02 Language Model** แล้วกรอก:
+---
 
-| ค่า | ตัวอย่าง |
+## Getting Started
+
+### 1. API Configuration
+ไปที่หน้า **Settings → Section 02 Language Model** จากนั้นระบุค่าดังนี้:
+
+| Parameter | Value |
 |---|---|
-| API Endpoint | `https://api.opentyphoon.ai/v1` |
-| API Key | รับได้จากลิงก์ด้านบน |
-| Model | `typhoon-v2.5-30b-a3b-instruct` |
+| **API Endpoint** | `https://api.opentyphoon.ai/v1` |
+| **API Key** | (กรอก API Key ที่ได้รับจากแพลตฟอร์ม OpenTyphoon) |
+| **Model** | `typhoon-v2.5-30b-a3b-instruct` |
 
-### 2. MQTT Broker (สำหรับควบคุมอุปกรณ์ IoT)
+### 2. MQTT Broker Setup
+ไปที่หน้า **Settings → Section 05** ค่าเริ่มต้นเป็น HiveMQ Public Broker พร้อมใช้งานได้เลยโดยไม่ต้องตั้งค่าเพิ่มเติม
 
-**Settings → Section 05** — ค่าเริ่มต้นใช้ HiveMQ public broker ได้เลย ไม่ต้องตั้งอะไรเพิ่ม
+### 3. Add Devices
+ไปที่หน้า **Devices** แล้วกดปุ่ม **Add** เพื่อลงทะเบียนอุปกรณ์:
 
-> MQTT คือ "ช่องทางสื่อสาร" ระหว่างแอปกับอุปกรณ์ไฟฟ้า เปรียบเหมือนวิทยุที่ทุกอุปกรณ์ใช้ช่องความถี่เดียวกัน
-
-### 3. เพิ่มอุปกรณ์
-
-ไปที่หน้า **Devices** → กด Add:
-
-| ประเภท | เหมาะกับอะไร |
+| Type | Use Case |
 |---|---|
-| digital | อุปกรณ์ ON/OFF เช่น ไฟ ปลั๊ก รีเลย์ |
-| analog | อุปกรณ์รับค่าตัวเลข เช่น หรี่แสง (dimmer) |
-| hub | คอมพิวเตอร์ที่ต้องการสั่งงาน remote |
+| **digital** | อุปกรณ์ที่มีสถานะแบบทวิภาค (ON/OFF) เช่น หลอดไฟ, ปลั๊กไฟ, รีเลย์ |
+| **analog** | อุปกรณ์ที่ต้องการส่งหรือรับค่าตัวเลขต่อเนื่อง เช่น ไฟหรี่ (Dimmer), ความเร็วพัดลม |
+| **hub** | คอมพิวเตอร์ปลายทางที่ต้องการเปิดสิทธิ์การเข้าถึงเพื่อสั่งการระยะไกล |
 
 ---
 
-## Hub Agent — ติดตั้งบนเครื่องที่อยากควบคุม
+## SynaptaHub — Hub Agent
 
-Hub Agent คือโปรแกรมที่รันบนเครื่องปลายทาง คอยรับคำสั่งจาก AI แล้วดำเนินการให้
+> 📦 **Repository:** [github.com/Ninlapat5G/SynaptaHub-V0](https://github.com/Ninlapat5G/SynaptaHub-V0)
 
-### วิธีติดตั้ง (แบบง่าย — แนะนำ)
+SynaptaHub คือโปรแกรมที่รันเป็น Background Process บนเครื่องที่ต้องการควบคุม คอยรับคำสั่งจาก AI และลงมือทำงานบนเครื่องนั้นผ่าน MQTT
 
-1. เปิดโฟลเดอร์ `hub/`
-2. รัน `python hub/build_gui.py`
-3. กรอก API Key และ MQTT settings ใน GUI ที่เปิดขึ้นมา
-4. กด **Save Settings** → **Build .exe**
-5. รอสักครู่ — จะได้ไฟล์ `hub/dist/SynaptaHubAgent.exe`
-6. ย้าย `.exe` และ `.env` ไปไว้บนเครื่องที่ต้องการควบคุม
-7. ดับเบิลคลิก `SynaptaHubAgent.exe` แล้วเปิดทิ้งไว้
-
-> `.env` คือไฟล์เก็บ API Key ถ้าอยากเปลี่ยน key ทีหลัง แก้ไฟล์นี้แล้วเปิดโปรแกรมใหม่ ไม่ต้อง build ซ้ำ
-
-### วิธีติดตั้ง (สำหรับนักพัฒนา)
+### รันตรง
 
 ```bash
-cp hub/.env.example hub/.env   # แล้วกรอกค่าใน .env
-pip install -r hub/requirements.txt
-python hub/agent.py
+git clone https://github.com/Ninlapat5G/SynaptaHub-V0.git
+cd SynaptaHub-V0
+cp .env.example .env
+pip install -r requirements.txt
+python agent.py
 ```
 
-### โครงสร้างไฟล์ใน hub/
+### Build เป็น .exe (สำหรับ Deploy ไปเครื่องอื่น)
 
-```
-hub/
-├── agent.py          # ตัวโปรแกรมหลัก — รับคำสั่งผ่าน MQTT
-├── runner.py         # ReAct loop — วิเคราะห์และรันคำสั่งทีละขั้น
-├── kg.py             # เก็บข้อมูลสถานะเครื่อง (RAM, Disk, ประวัติคำสั่ง)
-├── build_gui.py      # GUI สำหรับตั้งค่าและ build เป็น .exe
-├── tools/
-│   ├── os_exec.py    # รัน command บนเครื่อง
-│   ├── web_search.py # ค้นเว็บ
-│   └── query_kg.py   # อ่านสถานะเครื่อง
-└── .env              # การตั้งค่า (API Key, MQTT)
+```bash
+pip install -r requirements_builder.txt
+python build_gui.py
 ```
 
-เพิ่ม tool ใหม่: สร้าง `tools/<name>.py` แล้วเพิ่มใน `tools/__init__.py` — เสร็จ
+เปิด GUI กรอก API Key และค่า MQTT แล้วกด **Build** — ได้ `dist/SynaptaHubAgent.exe` พร้อม `.env` ย้ายไปรันบนเครื่องปลายทางได้เลย
 
 ---
 
-## Skills (ความสามารถที่เปิด/ปิดได้)
+## SynaptaNode — ESP32 / Arduino Library
 
-| Skill | ทำอะไร |
+> 📦 **Repository:** [github.com/Ninlapat5G/SynaptaNode-V0](https://github.com/Ninlapat5G/SynaptaNode-V0)
+
+SynaptaNode คือ Arduino Library สำหรับ Flash ลง ESP32 เพื่อให้อุปกรณ์ฮาร์ดแวร์รับคำสั่งจาก SynaptaOS ได้โดยตรงผ่าน MQTT โดยไม่ผ่าน Hub
+
+```cpp
+#include <Synapta.h>
+
+SynaptaDigital lamp("bedroom/lamp");
+
+void setup() {
+    Synapta.wifi("MyWiFi", "password");
+    Synapta.baseTopic("home/smarthome");
+    Synapta.start();
+}
+void loop() { Synapta.loop(); }
+```
+
+---
+
+## Skills
+
+| Skill | Description |
 |---|---|
-| `mqtt_publish` | ส่งคำสั่งไปยังอุปกรณ์ในบ้าน |
-| `hub` | สั่งงาน Hub Agent บนเครื่อง remote |
-| `web_search` | ค้นหาข้อมูลจากอินเทอร์เน็ต |
-| `manage_settings` | อ่าน/แก้ไข settings ผ่านภาษาธรรมชาติ |
+| `mqtt_publish` | ส่งคำสั่งควบคุมไปยังอุปกรณ์ IoT ผ่าน MQTT |
+| `hub` | สั่งการ SynaptaHub บนเครื่องปลายทางผ่าน Agent-to-Agent |
+| `web_search` | ค้นหาและดึงข้อมูล Real-time จากอินเทอร์เน็ต |
+| `manage_settings` | อ่านและแก้ไข Settings ของระบบผ่านภาษาธรรมชาติ |
 
 ---
 
 ## Tech Stack
 
-| ส่วน | เทคโนโลยี |
+| Layer | Technology |
 |---|---|
 | UI | React 18 + Vite 5 + Tailwind CSS |
 | AI / Agent | LangGraph Plan-and-Execute + Typhoon v2.5 |
-| IoT | MQTT over WebSocket (mqtt.js) |
-| Hub Agent | Python + ReAct loop + paho-mqtt |
-| Deploy | Vercel (static) |
+| IoT Communication | MQTT over WebSocket (mqtt.js) |
+| Hub Agent | Python + LangGraph + paho-mqtt |
+| Deployment | Vercel (Static Site) |
 
 ---
 
-## ระบบทำงานยังไง (สถาปัตยกรรม)
+## System Architecture
 
-### ภาพรวม
+### Overview
 
-ทุกครั้งที่ user ส่งข้อความ ระบบจะรัน **AI Graph** หนึ่งรอบตั้งแต่ต้นจนจบ แล้วตอบกลับ
+ทุกครั้งที่ผู้ใช้งานส่งข้อความ ระบบจะประมวลผลผ่าน **AI Graph** หนึ่งรอบตั้งแต่ต้นจนจบ แล้วจึงส่งคำตอบกลับ
 
 ```mermaid
 flowchart TD
@@ -166,24 +166,24 @@ flowchart TD
 
 ---
 
-### แต่ละส่วนทำอะไร
+### Node Descriptions
 
 #### 🧠 Router — วิเคราะห์คำสั่งและวางแผน
 
-รับข้อความ user พร้อมสถานะอุปกรณ์ทั้งบ้าน แล้ววางแผนว่าต้องทำอะไรบ้าง
+รับข้อความจากผู้ใช้งานพร้อมสถานะอุปกรณ์ทั้งหมด แล้ววางแผนลำดับการดำเนินการ
 
-| ตัวอย่างคำสั่ง | ระบบทำอะไร |
+| ตัวอย่างคำสั่ง | การดำเนินการ |
 |---|---|
-| "เปิดไฟห้องนั่งเล่น" | วางแผนส่ง MQTT ไปเปิดไฟทันที |
-| "ถ้า BTC เกิน 100k เปิดไฟ" | วางแผนค้นราคาก่อน แล้วรอผลค้นมาตัดสินใจ |
-| "สวัสดี" | ส่งไปคุยทั่วไป ไม่ต้องทำอะไร |
-| "หรี่ไฟ" (ไม่บอกค่า) | ถามกลับก่อนว่าจะหรี่เท่าไหร่ |
+| "เปิดไฟห้องนั่งเล่น" | วางแผนส่ง MQTT ไปยังอุปกรณ์ทันที |
+| "ถ้า BTC เกิน 100k เปิดไฟ" | วางแผนค้นข้อมูลก่อน แล้วใช้ผลลัพธ์มาตัดสินใจ |
+| "สวัสดี" | ส่งต่อไปยัง Chat Node โดยไม่ดำเนินการใดๆ |
+| "หรี่ไฟ" (ไม่ระบุค่า) | ขอข้อมูลเพิ่มเติมก่อนดำเนินการ |
 
 ---
 
-#### ⚙️ Executor — ลงมือทำตาม plan
+#### ⚙️ Executor — ดำเนินการตาม Plan
 
-รัน step ที่ Router วางแผนไว้ทีละขั้น ระหว่างทำงานจะมี **Tool Pill** แสดงสถานะแต่ละ step ให้เห็น real-time
+รัน Step ที่ Router วางแผนไว้ โดย `home_control` และ `hub_control` รันแบบขนาน (Parallel) ระหว่างการทำงานจะมี **Tool Pill** แสดงสถานะแต่ละ Step แบบ Real-time
 
 ```mermaid
 flowchart LR
@@ -200,67 +200,65 @@ flowchart LR
     PE --> DN[device_not_found\nแจ้งว่าไม่มีอุปกรณ์นี้]:::skill
 
     HC -->|MQTT| IOT[อุปกรณ์ IoT\ndigital / analog]:::ext
-    HUB -->|MQTT| HA[Hub Agent\nบนเครื่อง remote]:::ext
-    HA --> RC[ReAct loop\nรัน command]:::ext
+    HUB -->|MQTT| HA[SynaptaHub\nบนเครื่อง remote]:::ext
+    HA --> RC[ReAct Loop\nรัน Command]:::ext
     RD -->|HTTP| SE[Serper API\nค้นเว็บ]:::ext
-    ST --> SS[Settings store\nเก็บบนเครื่อง]:::ext
+    ST --> SS[Settings Store\nเก็บบนเครื่อง]:::ext
 ```
 
 ---
 
 #### 🔍 Evaluator — ตัดสินใจเมื่อมีเงื่อนไข
 
-ใช้เฉพาะเมื่อ user สั่งแบบมีเงื่อนไข เช่น "ถ้า BTC เกิน 100k เปิดไฟ"
+ใช้งานเฉพาะกรณีที่คำสั่งมีเงื่อนไข เช่น "ถ้า BTC เกิน 100k เปิดไฟ"
 
 ```
 รอบ 1 → Router ค้นราคา BTC → ได้ผล "$115k"
-รอบ 2 → Evaluator เช็ค: 115k > 100k ✓ → สั่งเปิดไฟ
+รอบ 2 → Evaluator ตรวจสอบ: 115k > 100k ✓ → สั่งเปิดไฟ
 ```
 
-รองรับเงื่อนไขซ้อนหลายชั้น วนได้ไม่จำกัดรอบจนกว่าจะตัดสินใจเสร็จ
+รองรับเงื่อนไขซ้อนหลายชั้น วนซ้ำได้จนกว่าการตัดสินใจจะเสร็จสมบูรณ์
 
 ---
 
 #### 💬 Chat — ตอบสนทนาทั่วไป
 
-ใช้เมื่อ user ทักทาย ถามความรู้ หรือระบบต้องถามข้อมูลเพิ่มก่อนทำงาน — stream คำตอบตามบุคลิกที่ตั้งค่าไว้
-
-ถ้า Router กำหนดคำถามไว้ (เช่น "จะตั้งกี่องศาดีคะ?") node นี้จะจำไว้ว่ากำลังรอคำตอบอะไร เพื่อให้รอบถัดไปรู้ว่า user ตอบเรื่องไหน
+ใช้งานเมื่อผู้ใช้ทักทาย ถามข้อมูลทั่วไป หรือเมื่อระบบต้องการข้อมูลเพิ่มเติมก่อนดำเนินการ — Stream คำตอบตามบุคลิกที่กำหนดไว้ใน System Prompt
 
 ---
 
-#### 📝 Response — สรุปผลให้ user ฟัง
+#### 📝 Response — สรุปผลลัพธ์
 
-หลังทุก step ทำเสร็จ node นี้จะ stream สรุปเป็นภาษาธรรมชาติ เช่น "เปิดไฟห้องนั่งเล่นให้แล้วค่ะ" — อ่านจากผลจริงๆ ห้ามแต่งขึ้นมาเอง
+หลังจาก Step ทั้งหมดเสร็จสิ้น Node นี้จะ Stream สรุปผลเป็นภาษาธรรมชาติ โดยอ้างอิงจากผลลัพธ์จริงเท่านั้น
 
 ---
 
-#### 💾 Memory — บันทึกสิ่งสำคัญ (ทำหลังตอบ user แล้ว)
+#### 💾 Memory — บันทึกบริบทการสนทนา
 
-ทำงาน**หลัง**ส่งคำตอบให้ user เรียบร้อยแล้ว — user เห็นข้อความสมบูรณ์ก่อน แล้ว memory ค่อยรันเงียบๆ ทำหน้าที่บีบบทสนทนายาวๆ ให้เหลือแค่ 3 ชิ้นเล็กๆ เพื่อส่งต่อใน turn ถัดไป:
+ทำงานหลังจากส่งคำตอบให้ผู้ใช้เรียบร้อยแล้ว โดยบีบอัดบทสนทนาให้เหลือเพียง 3 ส่วนสำคัญเพื่อส่งต่อในรอบถัดไป:
 
-| สิ่งที่เก็บ | ใช้ทำอะไร |
+| ข้อมูลที่บันทึก | วัตถุประสงค์ |
 |---|---|
-| สรุปบทสนทนา | ให้ AI "จำ" เรื่องที่คุยไว้ก่อนหน้า |
-| คำสั่งอุปกรณ์ล่าสุด | ให้ "ปิดเลย" หรือ "อันนั้น" ใช้ได้โดยไม่ต้องพูดซ้ำ |
-| สิ่งที่รอ user ตอบ | ถ้าถามไปรอบที่แล้ว จะรู้ว่ายังรอคำตอบอะไรอยู่ |
+| สรุปบทสนทนา | ให้ระบบ "จำ" บริบทจากการสนทนาก่อนหน้า |
+| คำสั่งอุปกรณ์ล่าสุด | รองรับการอ้างอิงแบบ Implicit เช่น "ปิดเลย" หรือ "อันนั้น" |
+| ข้อมูลที่รอรับจากผู้ใช้ | ติดตามคำถามที่ค้างอยู่จากรอบก่อนหน้า |
 
 ---
 
-### สิ่งที่เห็นบน UI ระหว่าง AI ทำงาน
+### UI State During Processing
 
-| ช่วงเวลา | UI แสดง |
+| ช่วงเวลา | สิ่งที่แสดงบน UI |
 |---|---|
-| กำลังวางแผน | bubble "กำลังคิด" |
-| plan executor กำลังรัน | Tool Pill แสดงสถานะแต่ละ step |
-| evaluator กำลังตัดสินใจ | bubble บอกว่ากำลังตัดสินใจอะไร |
-| กำลัง stream คำตอบ | bubble หายไป ข้อความปรากฏทีละคำ |
+| กำลังวางแผน | Bubble แสดงสถานะ "กำลังคิด" |
+| Executor กำลังทำงาน | Tool Pill แสดงสถานะแต่ละ Step แบบ Real-time |
+| Evaluator กำลังตัดสินใจ | Bubble แสดงข้อความสถานะ |
+| กำลัง Stream คำตอบ | Bubble หายไป ข้อความปรากฏทีละคำ |
 
 ---
 
-## Onboarding Agent — น้องซิน
+## Onboarding Agent
 
-ระบบต้อนรับ user ใหม่ พา setup API Key ในครั้งแรกที่เปิดแอป ใช้ตัวละคร **"น้องซิน" (Syn)** ที่มีบุคลิกร่าเริง เป็นกันเอง
+ระบบต้อนรับผู้ใช้งานใหม่และนำทาง Setup API Key ในครั้งแรกที่เปิดแอปพลิเคชัน ดำเนินการผ่านตัวละคร **"น้องซิน" (Syn)**
 
 ### Flow
 
@@ -277,15 +275,11 @@ flowchart LR
     RE --> E([รอ user ตอบ]):::start
 ```
 
-Router ที่นี่เป็นแบบ **deterministic** — ตัดสินใจจาก `stage` และ `userName` ล้วนๆ ไม่ใช้ LLM:
+Router ของ Onboarding ตัดสินใจจาก `stage` และ `userName` โดยไม่ใช้ LLM:
 
-| เงื่อนไข | สิ่งที่รัน |
+| เงื่อนไข | การดำเนินการ |
 |---|---|
-| `stage = intro`, ยังไม่รู้ชื่อ | `extract_name` — ดึงชื่อจากข้อความ |
-| `stage = intro`, รู้ชื่อแล้ว | `explain_setup` — เตรียม guide ตั้งค่า |
-| `stage = setup` | `inspect_system` + `explain_setup` — เช็ค API Key + แนะนำขั้นตอน |
-| `stage = farewell` | `farewell` — ส่งท้ายและส่งต่อไป main agent |
-
----
-
-> สถาปัตยกรรมเวอร์ชันเก่า (ReAct + Reflect + Guard) เก็บไว้ที่ branch [`old_architecture`](../../tree/old_architecture) สำหรับอ้างอิง
+| `stage = intro`, ยังไม่ทราบชื่อ | `extract_name` — ดึงชื่อจากข้อความของผู้ใช้ |
+| `stage = intro`, ทราบชื่อแล้ว | `explain_setup` — เตรียม Guide การตั้งค่า |
+| `stage = setup` | `inspect_system` + `explain_setup` — ตรวจสอบ API Key และแนะนำขั้นตอน |
+| `stage = farewell` | `farewell` — ส่งท้ายและส่งต่อไปยัง Main Agent |

@@ -10,13 +10,12 @@ export const hubControl = {
   requiresSkill: 'hub',
 
   planPrompt: `[hub_control]
-ใช้สำหรับ: ส่ง task ให้ hub device (คอมพิวเตอร์/Pi ที่มี agent ของตัวเอง)
+ใช้สำหรับ: task ใดก็ตามที่ต้องให้เครื่องคอมพิวเตอร์ลงมือทำ เช่น เปิดโปรแกรม, เปิดเพลง, เปิด URL, รัน command, จัดการไฟล์, เช็คระบบ
 เงื่อนไข:
 - ใช้กับ device type "hub" เท่านั้น
-- task เป็นภาษาธรรมชาติ ตรงตามที่ user สั่ง (hub agent ตีความเอง)
+- ถ้ามีหลาย hub → ดูจากชื่อหรือ context ว่า user หมายถึงตัวไหน ถ้าไม่ชัดให้ถามก่อน
+- task ส่งเป็นภาษาธรรมชาติตรงตามที่ user สั่ง รวม URL หรือชื่อโปรแกรมไปด้วยเสมอ
 - ห้ามใช้กับ device ทั่วไป → ใช้ home_control`,
-
-  example: `{"type": "hub_control", "device": "Main Hub", "topic": "hub/main", "task": "เช็ค CPU usage"}`,
 
   async execute(step, ctx) {
     const { mqttClient, devicesRef, baseTopicRef, mqttWaitForStream, signal } = ctx

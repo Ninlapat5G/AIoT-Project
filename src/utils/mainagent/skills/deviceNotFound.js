@@ -8,8 +8,6 @@ export const deviceNotFound = {
 ใช้สำหรับ: อุปกรณ์ที่ user พูดถึงแต่ไม่มีใน KG เลย
 เงื่อนไข: ห้ามเดาหรือเปลี่ยนเป็นตัวอื่น ใส่ "device" เป็นชื่อที่ user พูด`,
 
-  example: `{"type": "device_not_found", "device": "ชื่อ device ที่ user พูดถึง"}`,
-
   async execute(step) {
     const name = step.device || 'อุปกรณ์'
     return {

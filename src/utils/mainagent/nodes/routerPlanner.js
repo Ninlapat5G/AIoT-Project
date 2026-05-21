@@ -6,22 +6,29 @@ import { buildPlanPrompt } from '../skills/index.js'
 
 function buildPrompt(settings, kgText, lastCommand, chatSummary, pendingAnswer) {
   const examplesBlock = `[วาง plan จากคำสั่ง user → ตอบเป็น JSON]
-[หมายเหตุ: <...> คือ placeholder — ต้องใช้ชื่อและ topic จาก KG จริงๆ เท่านั้น]
+
+สมมติ KG มี: ไฟห้องนั่งเล่น (topic: home/light/living), แอร์ห้องนอน analog (topic: home/ac/bedroom), office-pc hub (topic: synapta/office-pc)
 "สวัสดี" / ถามทั่วไป / ถามสถานะจาก KG  → {"steps":[{"type":"general"}],"needs_next_round":false}
-"เปิด/ปิด device ที่มีใน KG"             → {"steps":[{"type":"home_control","device":"<ชื่อใน KG>","topic":"<topic ใน KG>","payload":"ON"}],"needs_next_round":false}
-"ตั้งค่า analog device พร้อมระบุค่า"     → {"steps":[{"type":"home_control","device":"<ชื่อใน KG>","topic":"<topic ใน KG>","payload":"25"}],"needs_next_round":false}
-"สั่ง hub ทำ task"                        → {"steps":[{"type":"hub_control","device":"<hub ใน KG>","topic":"<topic ใน KG>","task":"shutdown"}],"needs_next_round":false}
-"ดูข้อมูล real-time"                      → {"steps":[{"type":"realtime_data","query":"ราคา BTC วันนี้"}],"needs_next_round":false}
-"ถ้า [เงื่อนไข real-time] ทำ X"          → {"steps":[{"type":"realtime_data","query":"ราคา BTC ล่าสุด"}],"needs_next_round":true}
-"device ที่ไม่มีใน KG"                   → {"steps":[{"type":"device_not_found","device":"<ชื่อที่ user บอก>"}],"needs_next_round":false}
-"เปิด/ปิด skill หรือตั้งค่าระบบ"         → {"steps":[{"type":"settings","query":"เปิด skill web search"}],"needs_next_round":false}
-"เปิด analog device แต่ไม่บอกค่า"        → {"steps":[{"type":"general","response":"จะตั้งกี่[หน่วย]ดีคะ?"}],"needs_next_round":false}
-"ไม่รู้ว่าต้องการอะไร"                    → {"steps":[{"type":"general","response":"ต้องการให้ช่วยเรื่องอะไรคะ?"}],"needs_next_round":false}`
+"เปิดไฟห้องนั่งเล่น"                    → {"steps":[{"type":"home_control","device":"ไฟห้องนั่งเล่น","topic":"home/light/living","payload":"ON"}],"needs_next_round":false}
+"ตั้งแอร์ 25 องศา"                       → {"steps":[{"type":"home_control","device":"แอร์ห้องนอน","topic":"home/ac/bedroom","payload":"25"}],"needs_next_round":false}
+"เปิดโปรแกรม/เพลง/URL/ไฟล์/คำสั่ง"    → {"steps":[{"type":"hub_control","device":"office-pc","topic":"synapta/office-pc","task":"<คำสั่งเต็มของ user>"}],"needs_next_round":false}
+"user ตอบคำถามที่ hub ถาม"              → {"steps":[{"type":"hub_control","device":"office-pc","topic":"synapta/office-pc","task":"<คำสั่งสมบูรณ์ที่รวม context เดิมเข้าไป>"}],"needs_next_round":false}
+"ดูข้อมูล real-time"                    → {"steps":[{"type":"realtime_data","query":"ราคา BTC วันนี้"}],"needs_next_round":false}
+"ถ้า [เงื่อนไข real-time] ทำ X"        → {"steps":[{"type":"realtime_data","query":"ราคา BTC ล่าสุด"}],"needs_next_round":true}
+"device ที่ไม่มีใน KG เลย"             → {"steps":[{"type":"device_not_found","device":"<ชื่อที่ user บอก>"}],"needs_next_round":false}
+"เปิด/ปิด skill หรือตั้งค่าระบบ"       → {"steps":[{"type":"settings","query":"เปิด skill web search"}],"needs_next_round":false}
+"เปิด analog device แต่ไม่บอกค่า"      → {"steps":[{"type":"general","response":"จะตั้งกี่[หน่วย]ดีคะ?"}],"needs_next_round":false}
+
+⚠️ ตัวอย่างด้านบนใช้ชื่อสมมติ — ในการตอบจริงต้องใช้ชื่อ device และ topic จาก [สถานะบ้านตอนนี้] เท่านั้น ห้ามนำชื่อในตัวอย่างมาใช้`
 
   const rulesBlock = `[กฎ]
 - ใช้เฉพาะ device ที่มีใน [สถานะบ้านตอนนี้] ห้ามเดาชื่อ
 - user พูดสั้นอ้างถึงของเดิม → ดู history แล้ว plan ต่อเลย ไม่ต้องถาม
-- เงื่อนไขที่ยังไม่รู้ผล → ค้นข้อมูลก่อน ตั้ง needs_next_round=true`
+- เงื่อนไขที่ยังไม่รู้ผล → ค้นข้อมูลก่อน ตั้ง needs_next_round=true
+- งานที่เกี่ยวกับคอมพิวเตอร์ทุกอย่าง (เปิดโปรแกรม, URL, ไฟล์, command, ระบบ) → hub_control เสมอ ห้ามใช้ general/settings/realtime_data
+- hub_control task ต้องสมบูรณ์เสมอ — ถ้า user กำลังตอบคำถาม hub ให้ดู history แล้วรวม context เดิมเข้าไปด้วย อย่าส่งแค่คำตอบสั้นๆ ของ user
+- ถาม/เช็คสถานะ device ("...เปิดอยู่ไหม", "ตอนนี้กี่องศา", "ไฟปิดหรือเปล่า") → general เสมอ ข้อมูลอยู่ใน [สถานะบ้านตอนนี้] แล้ว ห้ามใช้ home_control
+- home_control payload ต้องเป็น "ON"/"OFF" (digital) หรือตัวเลข (analog) เท่านั้น — ห้ามใส่ "get", "status", "check" หรือคำถามใดๆ เด็ดขาด`
 
   const contextParts = [`[สถานะบ้านตอนนี้]\n${kgText}`]
   if (chatSummary)   contextParts.push(`[สรุปบทสนทนาก่อนหน้า]\n${chatSummary}`)
@@ -57,7 +64,13 @@ export async function routerPlannerNode(state) {
   const msgs = [new SystemMessage(systemPrompt), ...previousMsgs, new HumanMessage(String(lastMsg?.content || ''))]
 
   const res = await llm.invoke(msgs, { signal })
-  const plan = parseJSON(String(res.content || ''))
+  const lastText = String(res.content || '')
+  let plan = parseJSON(lastText)
+
+  if (!plan) {
+    console.warn('  [Router] parse fail — sending as general response')
+    plan = { steps: [{ type: 'general', response: lastText }] }
+  }
 
   const nextRound = (state.router_round || 0) + 1
 

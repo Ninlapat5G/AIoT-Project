@@ -33,9 +33,17 @@ export function useDevices({ baseTopicRef }) {
 
   useEffect(() => { saveDevices(devices) }, [devices])
 
+  function isValidControlVal(val) {
+    const v = String(val).toLowerCase().trim()
+    if (['on', 'off', '1', '0', 'true', 'false'].includes(v)) return true
+    return !isNaN(parseInt(v, 10))
+  }
+
   // รับ MQTT message แล้ว match กับ device ที่ตรงกัน
   // match ทั้ง stateTopic (/state) และ cmdTopic (/set) เพราะ broker echo กลับ
   const handleMqttMessage = useCallback((topic, val) => {
+    if (!isValidControlVal(val)) return  // ข้าม echo ที่ไม่ใช่ค่าควบคุมจริง
+
     const base = normalizeBase(baseTopicRef.current)
     const incoming = topic.trim()
 

@@ -28,21 +28,23 @@ ${completedStr}
 ${errorSection}
 [กฎเหล็ก]
 - พูดสั้นๆ แค่ 1-2 ประโยคแบบเป็นกันเอง ภาษาไทยธรรมชาติ
-- เล่าเฉพาะสิ่งที่ทำเสร็จแล้วจริงๆ
-- ตัวเลของศาแอร์ต้องเป๊ะตามรายการ ห้ามเอาไปบวกลบเพิ่มเอง
+- เล่าเฉพาะสิ่งที่อยู่ใน [สิ่งที่ระบบดำเนินการสำเร็จในรอบนี้] เท่านั้น ห้ามแต่งข้อมูลหรือเพิ่มรายละเอียดที่ไม่มีในรายการนั้น
+- ค่าตัวเลขต้องเป๊ะตามรายการ ห้ามเอาไปบวกลบเพิ่มเอง
+- ห้ามพูดถึง device หรือ action ที่ไม่ได้อยู่ในรายการ
 - ห้ามตอบกลับมาเป็น JSON หรือ Code block เด็ดขาด`
 }
 
 export async function responseNode(state) {
   const t0 = Date.now()
   console.log('  [Response] start')
-  const { settings, signal, onStream } = state
+  const { settings, signal, onStream, onInterimStatus } = state
+  onInterimStatus?.('กำลังสรุปผล')
   const messages = state.messages || []
 
   const persona = settings.systemPrompt || 'You are a helpful smart home assistant.'
   const ctxText = buildContext(state)
 
-  const llm = makeLLM(settings, { temperature: 0.3 })
+  const llm = makeLLM(settings, { temperature: 0.2 })
 
   // ย้าย ctx ไปแปะท้าย HumanMessage สุดท้าย ให้ rules อยู่ใกล้จุด generate
   const last = messages[messages.length - 1]

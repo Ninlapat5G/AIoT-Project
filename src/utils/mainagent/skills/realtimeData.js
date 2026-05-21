@@ -16,8 +16,6 @@ export const realtimeData = {
 - ห้ามใช้กับความรู้ทั่วไปที่ไม่ต้อง real-time → ใช้ general แทน
 - query ใส่ keyword สั้นๆ ตรงประเด็น เติม "ล่าสุด"/"วันนี้" ถ้าจำเป็น`,
 
-  example: `{"type": "realtime_data", "query": "พยากรณ์อากาศกรุงเทพ วันนี้"}`,
-
   async execute(step, ctx) {
     const { settings, signal } = ctx
     const query = step.query

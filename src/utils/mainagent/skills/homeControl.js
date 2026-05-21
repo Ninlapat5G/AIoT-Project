@@ -7,6 +7,20 @@
 import { findDeviceByTopic } from '../../kg.js'
 import { normalizeBase, buildCmdTopic } from '../../mqttTopic.js'
 
+const QUERY_PAYLOADS = new Set(['get', 'status', 'check', 'query', 'state', 'read', '?', 'info', 'current'])
+
+function isControlPayload(device, payload) {
+  const p = String(payload).toLowerCase().trim()
+  if (QUERY_PAYLOADS.has(p)) return false
+  if (device.type === 'digital') {
+    return ['on', 'off', '1', '0', 'true', 'false'].includes(p)
+  }
+  if (device.type === 'analog') {
+    return !isNaN(parseInt(p, 10))
+  }
+  return false
+}
+
 export const homeControl = {
   type: 'home_control',
   requiresSkill: 'mqtt_publish',
@@ -22,8 +36,6 @@ export const homeControl = {
 - ห้ามใช้กับ hub device → ใช้ hub_control แทน
 - ถ้า device ไม่มีใน KG → ใช้ device_not_found`,
 
-  example: `{"type": "home_control", "device": "ไฟห้องนั่งเล่น", "topic": "living-room/liv-lamp", "payload": "OFF"}`,
-
   async execute(step, ctx) {
     const { mqttClient, devicesRef, baseTopicRef, setDevices } = ctx
     const topic = step.topic
@@ -37,6 +49,17 @@ export const homeControl = {
     if (!device) return { ok: false, summary: `✗ ${step.device || topic}: ไม่พบ device ที่ topic ${topic}` }
     if (device.type === 'hub') {
       return { ok: false, summary: `✗ ${device.name}: เป็น hub device ต้องใช้ hub_control` }
+    }
+
+    if (!isControlPayload(device, payload)) {
+      const stateDesc = device.type === 'digital'
+        ? (device.on ? 'เปิดอยู่ (ON)' : 'ปิดอยู่ (OFF)')
+        : `ค่าปัจจุบัน ${device.value}${device.max != null ? `/${device.max}` : ''}`
+      return {
+        ok: true,
+        summary: `[สถานะ] ${device.name}: ${stateDesc}`,
+        is_query: true,
+      }
     }
 
     const base = normalizeBase(baseTopicRef.current)

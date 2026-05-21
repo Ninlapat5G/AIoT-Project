@@ -643,40 +643,19 @@
   .sh-msg-text strong { font-weight: 600; }
   .sh-msg-text h1, .sh-msg-text h2, .sh-msg-text h3 { font-weight: 600; margin-bottom: 4px; }
 
-  .sh-typing { @apply flex items-center gap-1.5 py-0.5; }
+  .sh-typing { @apply flex items-center gap-2 py-0.5; }
   .sh-typing-label {
-    @apply text-xs;
+    @apply text-sm font-medium;
     color: var(--ink-dim);
   }
-  .sh-typing-dots { @apply flex items-center gap-1; }
+  .sh-typing-dots { @apply flex items-center gap-1.5; }
   .sh-typing-dots span {
-    @apply w-1.5 h-1.5 rounded-full;
+    @apply w-2 h-2 rounded-full;
     background: var(--ink-xdim);
-    animation: bounce-dot 1.2s ease-in-out infinite;
+    animation: wave-dot 1.4s ease-in-out infinite;
   }
-  .sh-typing-dots span:nth-child(2) { animation-delay: .15s; }
-  .sh-typing-dots span:nth-child(3) { animation-delay: .30s; }
-
-  /* interim status chip — ไม่ใช้แล้ว (ย้ายไปเป็น AI bubble ใน ChatBubble.jsx) */
-  .sh-interim-chip {
-    @apply inline-flex items-center gap-2 rounded-full;
-    padding: 6px 12px;
-    background: var(--bg-1);
-    border: 1px dashed oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.35);
-    color: var(--ink-dim);
-    font-size: 13px;
-    width: max-content;
-    max-width: 100%;
-  }
-  .sh-interim-text { white-space: pre-wrap; }
-  .sh-interim-dots { @apply inline-flex gap-1; }
-  .sh-interim-dots span {
-    @apply w-1 h-1 rounded-full;
-    background: var(--ink-xdim);
-    animation: bounce-dot 1.2s ease-in-out infinite;
-  }
-  .sh-interim-dots span:nth-child(2) { animation-delay: .15s; }
-  .sh-interim-dots span:nth-child(3) { animation-delay: .30s; }
+  .sh-typing-dots span:nth-child(2) { animation-delay: .18s; }
+  .sh-typing-dots span:nth-child(3) { animation-delay: .36s; }
 
   /* tool pill */
   .sh-tool {
@@ -1283,6 +1262,12 @@
 @keyframes bounce-dot {
   0%, 100% { transform: translateY(0);    opacity: 0.3; }
   50%       { transform: translateY(-3px); opacity: 1; background: var(--accent); }
+}
+@keyframes wave-dot {
+  0%, 100% { transform: translateY(0) scale(1);    opacity: 0.25; }
+  45%       { transform: translateY(-5px) scale(1.3); opacity: 1;
+              background: var(--accent);
+              box-shadow: 0 0 6px oklch(var(--accent-l) var(--accent-c) var(--accent-h) / 0.6); }
 }
 @keyframes shimmer {
   0%   { left: -40px; }
