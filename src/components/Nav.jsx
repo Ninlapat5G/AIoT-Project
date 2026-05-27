@@ -93,7 +93,7 @@ export default function Nav({
             }
           </div>
           <div className="sh-nav-status-row">
-            <span>QoS</span><span>2 · exactly-once</span>
+            <span>QoS</span><span>1 · at-least-once · MQTT 5</span>
           </div>
         </div>
 

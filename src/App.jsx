@@ -14,7 +14,8 @@ import { useOnboarding } from './hooks/useOnboarding'
 import { loadOnboarding } from './utils/storage'
 
 import Nav, { MobileTopbar, MobileBottomNav } from './components/Nav'
-import DeviceCard, { AddDeviceTile, AddHubTile } from './components/DeviceCard'
+import DeviceCard, { AddTile } from './components/DeviceCard'
+import SimulatorPanel from './components/SimulatorPanel'
 import ChatPage from './components/ChatPage'
 import SettingsPage from './components/SettingsPage'
 import TweaksPanel from './components/TweaksPanel'
@@ -38,6 +39,12 @@ export default function App() {
   const [chatDraft, setChatDraft] = useState('')
   const [mobileNavOpen, setMobileNav] = useState(false)
   const [toast, setToast] = useState(null)
+  const [simulatorOpen, setSimulatorOpen] = useState(false)
+
+  const showToast = useCallback((type, text) => {
+    setToast({ type, text })
+    setTimeout(() => setToast(null), type === 'error' ? 5000 : 3000)
+  }, [])
 
   useEffect(() => { localStorage.setItem('sh-page', page) }, [page])
 
@@ -51,7 +58,16 @@ export default function App() {
   const { settings, handleSaveSettings, baseTopicRef } = useSettings()
 
   // ── Devices ───────────────────────────────────────────────────────────────────
-  const { devices, setDevices, devicesRef, handleMqttMessage, removeDevice } = useDevices({ baseTopicRef })
+  const { devices, setDevices, devicesRef, handleMqttMessage, removeDevice } = useDevices({
+    baseTopicRef,
+    onNodeStatus: useCallback((nodeId, status) => {
+      if (status === 'offline') showToast('error', `Node ${nodeId}: ออฟไลน์`)
+      else showToast('ok', `Node ${nodeId}: ออนไลน์แล้ว`)
+    }, [showToast]),
+    onDevicesAdded: useCallback((manifest, added) => {
+      showToast('ok', `พบอุปกรณ์ใหม่ ${added.length} รายการจาก ${manifest.nodeId}`)
+    }, [showToast]),
+  })
 
   // ── MQTT ──────────────────────────────────────────────────────────────────────
   // Debounce mqtt config so changing broker/port/baseTopic in Settings doesn't
@@ -71,7 +87,7 @@ export default function App() {
   }, [settings.mqtt.broker, settings.mqtt.port, settings.mqtt.baseTopic])
 
   const { client: mqttClient, status: mqttStatus, sensorCache, publish: mqttPublish,
-    waitForMessage: mqttWaitForMessage, waitForStream: mqttWaitForStream } = useMQTT({
+    waitForMessage: mqttWaitForMessage, requestResponse: mqttRequestResponse } = useMQTT({
       broker: mqttCfg.broker,
       port: mqttCfg.port,
       baseTopic: mqttCfg.baseTopic,
@@ -116,7 +132,7 @@ export default function App() {
     if (!mqttClient || !topic) return
     const base = normalizeBase(baseTopicRef.current)
     const fullTopic = buildFullTopic(topic, base)
-    mqttClient.publish(fullTopic, String(payload), { qos: 2 })
+    mqttClient.publish(fullTopic, String(payload), { qos: 1 })
   }, [mqttClient, baseTopicRef])
 
   // ── Device drag-to-reorder ────────────────────────────────────────────────────
@@ -144,7 +160,7 @@ export default function App() {
     baseTopicRef,
     setDevices,
     mqttClient,
-    mqttWaitForStream,
+    mqttRequestResponse,
     handleSaveSettings,
   })
 
@@ -177,19 +193,15 @@ export default function App() {
 
   // ── Offline toast ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    const showToast = (type, text) => {
-      setToast({ type, text })
-      setTimeout(() => setToast(null), type === 'error' ? 5000 : 3000)
-    }
     const onOffline = () => showToast('error', 'ออฟไลน์ — ไม่สามารถควบคุมอุปกรณ์ได้')
-    const onOnline = () => showToast('ok', 'เชื่อมต่ออินเตอร์เน็ตแล้ว')
+    const onOnline  = () => showToast('ok', 'เชื่อมต่ออินเตอร์เน็ตแล้ว')
     window.addEventListener('offline', onOffline)
-    window.addEventListener('online', onOnline)
+    window.addEventListener('online',  onOnline)
     return () => {
       window.removeEventListener('offline', onOffline)
-      window.removeEventListener('online', onOnline)
+      window.removeEventListener('online',  onOnline)
     }
-  }, [])
+  }, [showToast])
 
   const handleClearAll = useCallback(() => { clearAll(); window.location.reload() }, [])
 
@@ -322,20 +334,26 @@ export default function App() {
                         />
                       </div>
                     ))}
-                    <AddDeviceTile
-                      onClick={() => {
+                    <AddTile
+                      devTools={settings.devTools ?? false}
+                      onCreateDevice={() => {
                         const id = 'dev-' + Date.now().toString(36)
                         setDevices(prev => [...prev, {
                           id, name: 'New Device', room: areas[0] || 'Living Room',
                           type: 'digital', on: false, icon: 'bulb',
-                          topic: id,  // user ตั้ง topic เองใน edit form
+                          topic: id,
                           pin: '',
                         }])
                       }}
-                    />
-                    <AddHubTile
-                      defaultArea={areas[0] || 'Living Room'}
-                      onCreate={device => setDevices(prev => [...prev, device])}
+                      onCreateHub={() => {
+                        const id = 'hub-' + Date.now().toString(36)
+                        setDevices(prev => [...prev, {
+                          id, name: 'New Hub', room: areas[0] || 'Living Room',
+                          type: 'hub', icon: 'sparkle',
+                          agentName: '', topic: '',
+                        }])
+                      }}
+                      onSimulate={() => setSimulatorOpen(true)}
                     />
                   </motion.div>
                 </ErrorBoundary>
@@ -398,6 +416,13 @@ export default function App() {
         activeCount={activeCount} deviceCount={devices.length}
       />
       <TweaksPanel open={tweaksOpen} tweaks={tweaks} onChange={patch => setTweaks(t => ({ ...t, ...patch }))} />
+
+      {simulatorOpen && (
+        <SimulatorPanel
+          settings={settings}
+          onClose={() => setSimulatorOpen(false)}
+        />
+      )}
 
       <AnimatePresence>
         {toast && (

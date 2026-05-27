@@ -553,111 +553,79 @@ const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas,
 
 export default DeviceCard
 
-// ── Add Device tile ────────────────────────────────────────────────────────────
+// ── Add tile (รวม Device + Hub + Simulate) ────────────────────────────────────
 
-export function AddDeviceTile({ onClick }) {
-  return (
-    <motion.button
-      className="sh-card sh-add"
-      onClick={onClick}
-      variants={cardVariants}
-      whileHover={{ y: -2, scale: 1.01 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-    >
-      <div className="sh-add-inner">
-        <div className="sh-add-plus"><Icon name="plus" size={22} /></div>
-        <div className="sh-add-label">Add Device</div>
-        <div className="sh-add-sub mono">PAIR · MQTT · ZIGBEE</div>
-      </div>
-    </motion.button>
-  )
-}
+export function AddTile({ devTools, onCreateDevice, onCreateHub, onSimulate }) {
+  const [open, setOpen] = useState(false)
+  const [selected, setSelected] = useState(new Set())
 
-// ── Add Hub tile ──────────────────────────────────────────────────────────────
+  const options = [
+    { key: 'device',   label: '💡 Device',   sub: 'MQTT · ZIGBEE' },
+    { key: 'hub',      label: '🖥 Hub',       sub: 'AI · MQTT' },
+    ...(devTools ? [{ key: 'simulate', label: '⚡ Simulate', sub: 'ESP32 mock' }] : []),
+  ]
 
-export function AddHubTile({ onCreate, defaultArea }) {
-  const [forming, setForming] = useState(false)
-  const [name, setName] = useState('')
-  const [agentName, setAgentName] = useState('')
-  const [topic, setTopic] = useState('')
+  const toggle = key => setSelected(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
 
-  // auto-fill topic จาก agentName
-  useEffect(() => {
-    const a = agentName.trim()
-    setTopic(a ? `hub/${a}` : '')
-  }, [agentName])
-
-  const reset = () => { setForming(false); setName(''); setAgentName(''); setTopic('') }
-
-  const topicErr = topicError(topic)
-
-  const save = () => {
-    const trimName = name.trim()
-    if (!trimName || !agentName.trim() || !topic.trim() || topicErr) return
-    onCreate({
-      id:        'hub-' + Date.now().toString(36),
-      name:      trimName,
-      room:      defaultArea || 'Living Room',
-      type:      'hub',
-      agentName: agentName.trim(),
-      icon:      'sparkle',
-      topic:     topic.trim(),  // /cmd และ /output derive อัตโนมัติในฝั่ง hub tool
-    })
-    reset()
+  const confirm = () => {
+    if (selected.has('device'))   onCreateDevice?.()
+    if (selected.has('hub'))      onCreateHub?.()
+    if (selected.has('simulate')) onSimulate?.()
+    setOpen(false)
+    setSelected(new Set())
   }
 
-  if (forming) {
+  const cancel = () => { setOpen(false); setSelected(new Set()) }
+
+  if (open) {
     return (
       <motion.div
-        className="sh-card sh-card-editing"
+        className="sh-card sh-add"
         initial={{ opacity: 0, scale: 0.97 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.15 }}
+        style={{ cursor: 'default', justifyContent: 'flex-start', padding: '14px 16px', gap: 12 }}
       >
-        <div className="sh-card-edit-head">
-          <span className="sh-card-edit-eye mono">NEW HUB</span>
-          <button className="sh-card-gear" style={{ opacity: 1 }} onClick={reset}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <span className="sh-card-edit-eye mono">ADD NEW</span>
+          <button className="sh-card-gear" style={{ opacity: 1 }} onClick={cancel}>
             <Icon name="close" size={13} />
           </button>
         </div>
-        <div className="sh-card-edit-body">
-          <label className="sh-field">
-            <span className="mono">COMPUTER NAME</span>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="Office PC" autoFocus />
-          </label>
-          <label className="sh-field">
-            <span className="mono">AGENT NAME</span>
-            <input
-              value={agentName}
-              onChange={e => setAgentName(e.target.value)}
-              placeholder="office-pc"
-              className="mono"
-            />
-          </label>
-          <label className="sh-field">
-            <span className="mono">MQTT TOPIC</span>
-            <input
-              value={topic}
-              onChange={e => setTopic(e.target.value)}
-              placeholder="hub/office-pc"
-              style={topicErr ? { borderColor: 'oklch(0.65 0.22 25)' } : {}}
-            />
-            {topicErr && (
-              <span className="mono" style={{ fontSize: 10, color: 'oklch(0.72 0.22 25)' }}>
-                ⚠ {topicErr}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+          {options.map(opt => (
+            <label
+              key={opt.key}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}
+            >
+              <input
+                type="checkbox"
+                checked={selected.has(opt.key)}
+                onChange={() => toggle(opt.key)}
+                style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }}
+              />
+              <span style={{ flex: 1 }}>
+                <span style={{ fontWeight: 500, marginRight: 6 }}>{opt.label}</span>
+                <span className="mono" style={{ fontSize: 10, color: 'var(--ink-xdim)' }}>{opt.sub}</span>
               </span>
-            )}
-          </label>
+            </label>
+          ))}
         </div>
-        <div className="sh-card-edit-foot">
-          <div className="flex-1" />
-          <button className="sh-btn-ghost" onClick={reset}>Cancel</button>
+
+        <div style={{ display: 'flex', gap: 8, width: '100%', marginTop: 4 }}>
+          <button className="sh-btn-ghost" style={{ flex: 1 }} onClick={cancel}>Cancel</button>
           <button
             className="sh-btn-primary"
-            disabled={!name.trim() || !agentName.trim() || !topic.trim() || !!topicErr}
-            onClick={save}
+            style={{ flex: 1 }}
+            disabled={selected.size === 0}
+            onClick={confirm}
           >
-            Add
+            Add Selected
           </button>
         </div>
       </motion.div>
@@ -667,15 +635,15 @@ export function AddHubTile({ onCreate, defaultArea }) {
   return (
     <motion.button
       className="sh-card sh-add"
-      onClick={() => setForming(true)}
+      onClick={() => setOpen(true)}
       variants={cardVariants}
       whileHover={{ y: -2, scale: 1.01 }}
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
     >
       <div className="sh-add-inner">
-        <div className="sh-add-plus"><Icon name="sparkle" size={22} /></div>
-        <div className="sh-add-label">Add Hub</div>
-        <div className="sh-add-sub mono">AI · CrewAI · MQTT</div>
+        <div className="sh-add-plus"><Icon name="plus" size={22} /></div>
+        <div className="sh-add-label">Add New</div>
+        <div className="sh-add-sub mono">DEVICE · HUB{devTools ? ' · SIM' : ''}</div>
       </div>
     </motion.button>
   )

@@ -3,8 +3,6 @@ import { initialDevices } from '../data'
 import { saveDevices, loadDevices } from '../utils/storage'
 import { normalizeBase, buildCmdTopic, buildStateTopic } from '../utils/mqttTopic'
 
-// migration: device เก่าที่มี pubTopic/subTopic แต่ยังไม่มี topic
-// derive topic จาก pubTopic โดยตัด /set suffix ออก
 function migrateDevice(d) {
   if (!d.topic && d.pubTopic) {
     return { ...d, topic: d.pubTopic.replace(/\/set$/, ''), pin: d.pin ?? '' }
@@ -12,18 +10,9 @@ function migrateDevice(d) {
   return d
 }
 
-/**
- * useDevices
- * จัดการ device list + persist ลง localStorage
- * handleMqttMessage sync state เมื่อมี MQTT message เข้า
- *
- * Params:
- *   baseTopicRef – ref จาก useSettings
- *
- * Returns:
- *   devices, setDevices, devicesRef, handleMqttMessage, removeDevice
- */
-export function useDevices({ baseTopicRef }) {
+// onNodeStatus(nodeId, status) — App.jsx ใช้แสดง toast
+// onDevicesAdded(manifest, addedDevices) — App.jsx ใช้แสดง toast "พบอุปกรณ์ใหม่"
+export function useDevices({ baseTopicRef, onNodeStatus, onDevicesAdded }) {
   const [devices, setDevices] = useState(() =>
     (loadDevices() ?? initialDevices).map(migrateDevice)
   )
@@ -33,16 +22,58 @@ export function useDevices({ baseTopicRef }) {
 
   useEffect(() => { saveDevices(devices) }, [devices])
 
+  const onNodeStatusRef = useRef(onNodeStatus)
+  useEffect(() => { onNodeStatusRef.current = onNodeStatus }, [onNodeStatus])
+
+  const onDevicesAddedRef = useRef(onDevicesAdded)
+  useEffect(() => { onDevicesAddedRef.current = onDevicesAdded }, [onDevicesAdded])
+
   function isValidControlVal(val) {
     const v = String(val).toLowerCase().trim()
     if (['on', 'off', '1', '0', 'true', 'false'].includes(v)) return true
     return !isNaN(parseInt(v, 10))
   }
 
-  // รับ MQTT message แล้ว match กับ device ที่ตรงกัน
-  // match ทั้ง stateTopic (/state) และ cmdTopic (/set) เพราะ broker echo กลับ
   const handleMqttMessage = useCallback((topic, val) => {
-    if (!isValidControlVal(val)) return  // ข้าม echo ที่ไม่ใช่ค่าควบคุมจริง
+    // node status: {base}/nodes/{id}/status
+    if (/\/nodes\/[^/]+\/status$/.test(topic)) {
+      const nodeId = topic.split('/nodes/')[1]?.split('/')[0]
+      if (nodeId) onNodeStatusRef.current?.(nodeId, val)
+      return
+    }
+
+    // node manifest: {base}/nodes/{id}/manifest — auto-discovery
+    if (/\/nodes\/[^/]+\/manifest$/.test(topic)) {
+      try {
+        const manifest = JSON.parse(val)
+        if (!manifest) return
+        // setDevices จัดการได้เองโดยตรง — ไม่มี circular dep
+        setDevices(prev => {
+          const toAdd = (manifest.devices || [])
+            .filter(md => md.topic && !prev.some(d => d.topic === md.topic))
+            .map(md => ({
+              id:         `disc-${md.topic.replace(/[^a-z0-9]/gi, '-')}`,
+              name:       md.topic.split('/').pop() || md.topic,
+              room:       'Living Room',
+              type:       md.type === 'analog' ? 'analog' : 'digital',
+              on:         false,
+              icon:       'bulb',
+              topic:      md.topic,
+              pin:        md.pin ?? '',
+              nodeId:     manifest.nodeId,
+              configured: md.configured ?? true,
+              ...(md.type === 'analog' ? { value: 0, max: 255 } : {}),
+            }))
+          if (toAdd.length === 0) return prev
+          // callback เพื่อแสดง toast — ทำหลัง state update
+          setTimeout(() => onDevicesAddedRef.current?.(manifest, toAdd), 0)
+          return [...prev, ...toAdd]
+        })
+      } catch { /* ignore malformed manifest */ }
+      return
+    }
+
+    if (!isValidControlVal(val)) return
 
     const base = normalizeBase(baseTopicRef.current)
     const incoming = topic.trim()

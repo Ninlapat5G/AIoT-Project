@@ -3,7 +3,7 @@
 // step shape: { type: 'hub_control', device, topic, task }
 
 import { findDeviceByTopic } from '../../kg.js'
-import { normalizeBase, buildCmdTopic, buildStateTopic } from '../../mqttTopic.js'
+import { normalizeBase, buildCmdTopic } from '../../mqttTopic.js'
 
 export const hubControl = {
   type: 'hub_control',
@@ -18,12 +18,13 @@ export const hubControl = {
 - ห้ามใช้กับ device ทั่วไป → ใช้ home_control`,
 
   async execute(step, ctx) {
-    const { mqttClient, devicesRef, baseTopicRef, mqttWaitForStream, signal } = ctx
+    const { mqttClient, mqttRequestResponse, devicesRef, baseTopicRef, signal } = ctx
     const { topic, task } = step
 
-    if (!mqttClient)  return { ok: false, summary: `✗ Hub: MQTT ไม่เชื่อมต่อ` }
-    if (!task)        return { ok: false, summary: `✗ Hub: ขาด task ใน step` }
-    if (!topic)       return { ok: false, summary: `✗ Hub: ขาด topic ใน step` }
+    if (!mqttClient)         return { ok: false, summary: `✗ Hub: MQTT ไม่เชื่อมต่อ` }
+    if (!mqttRequestResponse) return { ok: false, summary: `✗ Hub: ไม่มี requestResponse` }
+    if (!task)               return { ok: false, summary: `✗ Hub: ขาด task ใน step` }
+    if (!topic)              return { ok: false, summary: `✗ Hub: ขาด topic ใน step` }
 
     const device = findDeviceByTopic(devicesRef.current || [], topic)
     if (!device || device.type !== 'hub') {
@@ -32,28 +33,24 @@ export const hubControl = {
 
     const base = normalizeBase(baseTopicRef.current)
     const cmdTopic    = buildCmdTopic(device.topic, base).replace(/\/set$/, '/cmd')
-    const outputTopic = buildStateTopic(device.topic, base).replace(/\/state$/, '/output')
     const cancelTopic = buildCmdTopic(device.topic, base).replace(/\/set$/, '/cancel')
 
+    // ถ้า user กด stop → ส่ง cancel ไปที่ hub
     signal?.addEventListener('abort', () => {
       mqttClient.publish(cancelTopic, 'cancel', { qos: 1 })
     }, { once: true })
 
-    const streamPromise = mqttWaitForStream(outputTopic, 60000, {
-      ackMsg: '(mqtt_start)', ackTimeoutMs: 5000,
+    // ส่งคำสั่งพร้อม responseTopic unique — hub จะตอบกลับที่ topic นั้น
+    const { chunks, timedOut, noClient } = await mqttRequestResponse(cmdTopic, task, {
+      idleTimeoutMs: 60000,
+      messageExpiryInterval: 30,
     })
 
-    try {
-      await new Promise((resolve, reject) =>
-        mqttClient.publish(cmdTopic, task, { qos: 2 }, err => err ? reject(err) : resolve())
-      )
-    } catch (err) {
-      return { ok: false, summary: `✗ ${device.name}: ${err.message}` }
+    if (noClient) {
+      return { ok: false, summary: `✗ ${device.name}: MQTT หลุดการเชื่อมต่อ` }
     }
 
-    const { chunks, timedOut, ackTimedOut } = await streamPromise
-
-    if (ackTimedOut) {
+    if (timedOut && chunks.length === 0) {
       return {
         ok: false,
         summary: `✗ ${device.name}: ติดต่อไม่ได้ — hub อาจปิดเครื่องหรือเน็ตหลุด`,
@@ -61,7 +58,7 @@ export const hubControl = {
     }
 
     const output = chunks.join('\n')
-    const note = timedOut ? '\n\n⚠️ ไม่ได้รับ (mqtt_end) — hub อาจขาดการเชื่อมต่อ' : ''
+    const note = timedOut ? '\n\n⚠️ stream หยุดกลางคัน — hub อาจขาดการเชื่อมต่อ' : ''
     return {
       ok: true,
       summary: `${device.name} (${task}): ${output || '(no output)'}${note}`,

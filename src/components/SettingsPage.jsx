@@ -7,7 +7,7 @@ import { saveDevices, loadDevices, saveAreas, loadAreas } from '../utils/storage
 
 const MQTT_STATUS_LABEL = {
   connecting: 'Connecting…',
-  connected: 'BROKER ONLINE · QoS 2 · real-time subscribed',
+  connected: 'BROKER ONLINE · QoS 1 · MQTT 5 · real-time subscribed',
   reconnecting: 'Reconnecting…',
   error: 'Connection Error',
   offline: 'Offline',
@@ -284,7 +284,7 @@ export default function SettingsPage({ settings, onSave, mqttStatus = 'offline',
           <section className="sh-sect">
             <div className="sh-sect-head">
               <div className="sh-sect-num mono">05</div>
-              <div><h3>MQTT Broker</h3><p>Event bus สำหรับรับ/ส่งสัญญาณอุปกรณ์ แบบ real-time · QoS 2</p></div>
+              <div><h3>MQTT Broker</h3><p>Event bus สำหรับรับ/ส่งสัญญาณอุปกรณ์ แบบ real-time · QoS 1 · MQTT 5</p></div>
             </div>
             <div className="sh-grid2">
               <div className="sh-field">
@@ -354,6 +354,29 @@ export default function SettingsPage({ settings, onSave, mqttStatus = 'offline',
             <button className="sh-card-remove" style={{ maxWidth: 220 }} onClick={handleClearAll}>
               Clear all local data
             </button>
+          </section>
+
+          {/* 08 Developer Tools */}
+          <section className="sh-sect">
+            <div className="sh-sect-head">
+              <div className="sh-sect-num mono">08</div>
+              <div>
+                <h3>Developer Tools</h3>
+                <p>เครื่องมือสำหรับทดสอบ MQTT 5 flow โดยไม่ต้องมี hardware จริง</p>
+              </div>
+            </div>
+            <div className="sh-field" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontWeight: 500 }}>IoT Simulator</div>
+                <div style={{ fontSize: 12, color: 'var(--ink-dim)', marginTop: 2 }}>
+                  เพิ่มตัวเลือก Simulate ใน Add tile เพื่อจำลองอุปกรณ์ ESP32
+                </div>
+              </div>
+              <Toggle
+                on={s.devTools ?? false}
+                onChange={v => set('devTools', v)}
+              />
+            </div>
           </section>
         </div>
       </div>

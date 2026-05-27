@@ -18,8 +18,8 @@ const AgentState = Annotation.Root({
   deviceList:      Annotation(),
   signal:          Annotation(),
 
-  mqttClient:      Annotation(),
-  mqttWaitForStream: Annotation(),
+  mqttClient:         Annotation(),
+  mqttRequestResponse: Annotation(),
   devicesRef:      Annotation(),
   baseTopicRef:    Annotation(),
   setDevices:      Annotation(),
@@ -109,7 +109,7 @@ export async function runAgent(params) {
   const {
     text, apiHistory, settings,
     deviceList,
-    mqttClient, mqttWaitForStream,
+    mqttClient, mqttRequestResponse,
     devicesRef, baseTopicRef, setDevices, handleSaveSettings,
     signal,
     lastCommand,
@@ -140,7 +140,7 @@ export async function runAgent(params) {
       settings,
       deviceList: deviceList ?? devicesRef,
       signal,
-      mqttClient, mqttWaitForStream,
+      mqttClient, mqttRequestResponse,
       devicesRef, baseTopicRef, setDevices, handleSaveSettings,
       lastCommand: lastCommand ?? null,
       onPlanReady, onStepStart, onStepResult, onStream, onInterimStatus,

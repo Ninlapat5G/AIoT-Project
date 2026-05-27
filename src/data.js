@@ -24,6 +24,7 @@ export const initialDevices = [
 
 export const DEFAULT_SETTINGS = {
   endpoint: 'https://api.opentyphoon.ai/v1',
+  devTools: false,
   model: 'typhoon-v2.5-30b-a3b-instruct',
   apiKey: '',
   systemPrompt:

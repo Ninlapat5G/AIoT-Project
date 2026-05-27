@@ -12,7 +12,7 @@ function labelOfStep(step) {
 
 export function useChat({
   settings, devicesRef, baseTopicRef, setDevices,
-  mqttClient, mqttWaitForStream, handleSaveSettings,
+  mqttClient, mqttRequestResponse, handleSaveSettings,
 }) {
   const [messages, setMessages]     = useState([])
   const [apiHistory, setApiHistory] = useState([])
@@ -59,7 +59,7 @@ export function useChat({
         baseTopicRef,
         setDevices,
         mqttClient,
-        mqttWaitForStream,
+        mqttRequestResponse,
         handleSaveSettings,
         signal: abortControllerRef.current.signal,
 
@@ -177,7 +177,7 @@ export function useChat({
       setLiveStatuses([])
       setMessages(prev => prev.filter(m => m.role !== 'interim'))
     }
-  }, [settings, devicesRef, baseTopicRef, setDevices, mqttClient, mqttWaitForStream, handleSaveSettings, apiHistory])
+  }, [settings, devicesRef, baseTopicRef, setDevices, mqttClient, mqttRequestResponse, handleSaveSettings, apiHistory])
 
   const clearChat = useCallback(() => {
     stopChat()

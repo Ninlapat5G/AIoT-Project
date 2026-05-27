@@ -85,7 +85,13 @@ export default function CfgSharePanel({ settings, onSave, mqttPublish, mqttWaitF
 
     const payload   = { settings, devices: loadDevices() || [], areas: loadAreas() || [] }
     const encrypted = await encryptCfg(payload, p)
-    mqttPublish(cfgRel(hex), encrypted, { qos: 1, retain: true })
+    mqttPublish(cfgRel(hex), encrypted, {
+      qos: 1, retain: true,
+      properties: {
+        messageExpiryInterval: TTL,
+        responseTopic: full(ackRel(hex)),
+      },
+    })
 
     setPin(p)
     setSecs(TTL)
@@ -94,11 +100,11 @@ export default function CfgSharePanel({ settings, onSave, mqttPublish, mqttWaitF
     timerRef.current = setInterval(() =>
       setSecs(s => { if (s <= 1) { doCancelRef.current?.(hex); return 0 } return s - 1 }), 1000)
 
-    const ack = await mqttWaitForMessage(full(ackRel(hex)), TTL * 1000)
+    const ackResult = await mqttWaitForMessage(full(ackRel(hex)), TTL * 1000)
     if (abortRef.current) return
     clearInterval(timerRef.current)
     mqttPublish(cfgRel(hex), '', { qos: 1, retain: true })
-    if (ack) {
+    if (ackResult?.value) {
       setMode('success')
       setTimeout(() => { if (!abortRef.current) setMode('idle') }, 3000)
     } else {
@@ -143,8 +149,16 @@ export default function CfgSharePanel({ settings, onSave, mqttPublish, mqttWaitF
     try {
       const hex      = await pinToHex(p)
       const cfgFull  = full(cfgRel(hex))
-      let encrypted  = sensorCache?.[cfgFull]
-      if (!encrypted) encrypted = await mqttWaitForMessage(cfgFull, 10_000)
+      let encrypted = sensorCache?.[cfgFull]
+      let ackTarget = full(ackRel(hex))
+
+      if (!encrypted) {
+        const result = await mqttWaitForMessage(cfgFull, 10_000)
+        encrypted = result?.value
+        // ถ้า sender ใส่ responseTopic มาใน MQTT 5 properties ให้ใช้ตามนั้น
+        ackTarget = result?.packet?.properties?.responseTopic ?? ackTarget
+      }
+
       if (!encrypted) throw new Error('ไม่พบ config — ตรวจสอบ PIN หรือลองใหม่')
 
       const data = await decryptCfg(encrypted, p)
@@ -152,7 +166,7 @@ export default function CfgSharePanel({ settings, onSave, mqttPublish, mqttWaitF
       if (data.devices)  saveDevices(data.devices)
       if (data.areas)    saveAreas(data.areas)
 
-      mqttPublish(ackRel(hex), 'ok', { qos: 1 })
+      mqttPublish(ackTarget, 'ok', { qos: 1 })
       setMode('imported')
       setTimeout(() => { if (!abortRef.current) { setMode('idle'); setChars(['', '', '', '', '', '']) } }, 3000)
     } catch (e) {

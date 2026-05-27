@@ -67,7 +67,7 @@ export const homeControl = {
     const prevVal = device.type === 'analog' ? device.value : null
 
     return new Promise(resolve => {
-      mqttClient.publish(fullTopic, payload, { qos: 2 }, err => {
+      mqttClient.publish(fullTopic, payload, { qos: 1 }, err => {
         if (err) {
           resolve({ ok: false, summary: `✗ ${device.name}: ${err.message}` })
           return
