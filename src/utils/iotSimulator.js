@@ -97,7 +97,7 @@ export function createSimulator({ broker, port, baseTopic, name, topic, type, on
         clean: true,
         will: {
           topic: statusTopic,
-          payload: Buffer.from('offline'),
+          payload: 'offline',
           qos: 1,
           retain: true,
         },
