@@ -97,12 +97,9 @@ export function createSimulator({ broker, port, baseTopic, name, topic, type, on
         clean: true,
         will: {
           topic: statusTopic,
-          payload: 'offline',
+          payload: Buffer.from('offline'),
           qos: 1,
           retain: true,
-          properties: {
-            userProperties: { device_id: nodeId, reason: 'power_loss' },
-          },
         },
       }
       // ถ้า broker URL มี port อยู่แล้ว (เช่น wss://host:8884/mqtt) ไม่ต้องส่งซ้ำ
@@ -129,9 +126,9 @@ export function createSimulator({ broker, port, baseTopic, name, topic, type, on
         else if (t === configTopic) handleConfig(payload, packet)
       })
 
-      client.on('offline', () => onStatusChange?.('offline'))
+      client.on('offline', () => { log('broker offline / unreachable'); onStatusChange?.('offline') })
       client.on('error', err => { log(`error: ${err.message}`); onStatusChange?.('error') })
-      client.on('close', () => onStatusChange?.('offline'))
+      client.on('close', () => { log('connection closed'); onStatusChange?.('offline') })
     },
 
     disconnect() {
