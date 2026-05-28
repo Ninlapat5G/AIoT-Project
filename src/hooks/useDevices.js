@@ -28,14 +28,6 @@ export function useDevices({ baseTopicRef, onNodeStatus, onDevicesAdded }) {
   const onDevicesAddedRef = useRef(onDevicesAdded)
   useEffect(() => { onDevicesAddedRef.current = onDevicesAdded }, [onDevicesAdded])
 
-  // สถานะล่าสุดของแต่ละ node (nodeId → 'online'|'offline') — ใช้เด้ง toast เฉพาะตอนเปลี่ยนจริง
-  const nodeStatusRef = useRef({})
-  // ตัวจับเวลาหน่วง toast 'offline' (nodeId → timeoutId) — กันเน็ตกระตุก
-  const offlineTimersRef = useRef({})
-  useEffect(() => () => {
-    Object.values(offlineTimersRef.current).forEach(clearTimeout)
-  }, [])
-
   function isValidControlVal(val) {
     const v = String(val).toLowerCase().trim()
     if (['on', 'off', '1', '0', 'true', 'false'].includes(v)) return true
@@ -45,32 +37,12 @@ export function useDevices({ baseTopicRef, onNodeStatus, onDevicesAdded }) {
   const handleMqttMessage = useCallback((topic, val, packet) => {
     // node status: {base}/nodes/{id}/status
     if (/\/nodes\/[^/]+\/status$/.test(topic)) {
+      // retained snapshot ตอนเพิ่ง subscribe — ข้าม แสดง toast เฉพาะ status เปลี่ยนสด ๆ
+      if (packet?.retain) return
+      // payload ว่าง = ตัดการเชื่อมต่อแบบปกติ (ปิด sim / disconnect) — ล้างสถานะ ไม่ต้องเตือน
+      if (!val.trim()) return
       const nodeId = topic.split('/nodes/')[1]?.split('/')[0]
-      if (!nodeId) return
-
-      // retained snapshot ตอนเพิ่ง subscribe — จำสถานะไว้เฉย ๆ ไม่ต้องเด้ง toast
-      if (packet?.retain) { nodeStatusRef.current[nodeId] = val; return }
-
-      if (val === 'offline') {
-        // หน่วง 3 วิ กันเน็ตกระตุก — ถ้า node กลับมา online ทัน timer จะถูกยกเลิก
-        if (offlineTimersRef.current[nodeId]) return
-        offlineTimersRef.current[nodeId] = setTimeout(() => {
-          delete offlineTimersRef.current[nodeId]
-          if (nodeStatusRef.current[nodeId] === 'offline') return
-          nodeStatusRef.current[nodeId] = 'offline'
-          onNodeStatusRef.current?.(nodeId, 'offline')
-        }, 3000)
-        return
-      }
-
-      // online (หรือสถานะอื่น) — ยกเลิก offline ที่ค้างอยู่ และเด้งเฉพาะตอนสถานะเปลี่ยนจริง
-      if (offlineTimersRef.current[nodeId]) {
-        clearTimeout(offlineTimersRef.current[nodeId])
-        delete offlineTimersRef.current[nodeId]
-      }
-      if (nodeStatusRef.current[nodeId] === val) return
-      nodeStatusRef.current[nodeId] = val
-      onNodeStatusRef.current?.(nodeId, val)
+      if (nodeId) onNodeStatusRef.current?.(nodeId, val)
       return
     }
 

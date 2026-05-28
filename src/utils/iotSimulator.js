@@ -136,7 +136,9 @@ export function createSimulator({ broker, port, baseTopic, name, topic, type, on
 
     disconnect() {
       if (!client) return
-      client.publish(statusTopic, 'offline', { qos: 1, retain: true })
+      // ตัดแบบปกติ (ปิด panel / กด Disconnect) = ล้างสถานะ ไม่ใช่ 'offline'
+      // → เว็บอื่นจะไม่เด้ง popup เตือน (offline จริงสงวนไว้ให้ Will ตอนไฟดับ)
+      client.publish(statusTopic, '', { qos: 1, retain: true })
       client.end()
       client = null
       onStatusChange?.('offline')
