@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 
 import { INITIAL_TWEAKS } from './data'
 import { clearAll, saveTweaks, loadTweaks } from './utils/storage'
-import { normalizeBase, buildFullTopic, buildCmdTopic, buildConfigTopic } from './utils/mqttTopic'
+import { normalizeBase, buildCmdTopic, buildConfigTopic } from './utils/mqttTopic'
 
 import { useMQTT } from './hooks/useMQTT'
 import { useChat } from './hooks/useChat'
@@ -155,15 +155,6 @@ export default function App() {
     }
     removeDevice(id)
   }, [removeDevice, mqttPublish, devicesRef])
-
-  // ── Raw MQTT publish (used by DeviceCard terminal widget) ─────────────────────
-  // terminal ส่ง command ตรงๆ ไปที่ device.topic (ไม่ต่อ /set)
-  const handleRawPublish = useCallback((topic, payload) => {
-    if (!mqttClient || !topic) return
-    const base = normalizeBase(baseTopicRef.current)
-    const fullTopic = buildFullTopic(topic, base)
-    mqttClient.publish(fullTopic, String(payload), { qos: 1 })
-  }, [mqttClient, baseTopicRef])
 
   // ── Device drag-to-reorder ────────────────────────────────────────────────────
   const dragIdRef = useRef(null)
@@ -360,7 +351,6 @@ export default function App() {
                           onUpdate={updateDevice}
                           onRemove={handleRemoveDevice}
                           areas={areas}
-                          onRawPublish={handleRawPublish}
                           devices={devices}
                         />
                       </div>

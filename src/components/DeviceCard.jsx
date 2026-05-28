@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, memo } from 'react'
+import { useState, useEffect, memo } from 'react'
 import { motion, useMotionValue, animate } from 'framer-motion'
 import Icon from './ui/Icon'
 import Toggle from './ui/Toggle'
@@ -180,84 +180,6 @@ const EditCard = memo(function EditCard({ device, onUpdate, onRemove, areas, onC
   )
 })
 
-// ── Edit: Terminal device ──────────────────────────────────────────────────────
-
-function EditTerminalCard({ device, onUpdate, onRemove, areas, onCancel, usedTopics }) {
-  const [draft, setDraft] = useState(device)
-  const set = patch => setDraft(d => ({ ...d, ...patch }))
-
-  const topicErr = topicError(draft.topic) || dupTopicError(draft.topic, usedTopics)
-
-  return (
-    <motion.div
-      className="sh-card sh-card-editing"
-      initial={{ opacity: 0, scale: 0.97 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.15 }}
-    >
-      <div className="sh-card-edit-head">
-        <span className="sh-card-edit-eye mono">EDIT TERMINAL</span>
-        <button className="sh-card-gear" style={{ opacity: 1 }} onClick={onCancel}>
-          <Icon name="close" size={13} />
-        </button>
-      </div>
-      <div className="sh-card-edit-body">
-        <label className="sh-field">
-          <span className="mono">NAME</span>
-          <input value={draft.name} onChange={e => set({ name: e.target.value })} />
-        </label>
-        <label className="sh-field">
-          <span className="mono">AREA</span>
-          <select value={draft.room} onChange={e => set({ room: e.target.value })}>
-            {[...new Set([draft.room, ...(areas || [])])].map(a => (
-              <option key={a}>{a}</option>
-            ))}
-          </select>
-        </label>
-        <label className="sh-field">
-          <span className="mono">OS</span>
-          <div className="sh-seg flex">
-            {['windows', 'mac', 'linux'].map(os => (
-              <button
-                key={os} type="button"
-                className={draft.os === os ? 'on' : ''}
-                onClick={() => set({ os })}
-              >
-                {os}
-              </button>
-            ))}
-          </div>
-        </label>
-        <label className="sh-field">
-          <span className="mono">MQTT TOPIC</span>
-          <input
-            value={draft.topic || ''}
-            onChange={e => set({ topic: e.target.value })}
-            style={topicErr ? { borderColor: 'oklch(0.65 0.22 25)' } : {}}
-          />
-          {topicErr && (
-            <span className="mono" style={{ fontSize: 10, color: 'oklch(0.72 0.22 25)' }}>
-              ⚠ {topicErr}
-            </span>
-          )}
-        </label>
-      </div>
-      <div className="sh-card-edit-foot">
-        <button className="sh-card-remove" onClick={() => onRemove(device.id)}>Remove</button>
-        <div className="flex-1" />
-        <button className="sh-btn-ghost" onClick={onCancel}>Cancel</button>
-        <button
-          className="sh-btn-primary"
-          disabled={!!topicErr}
-          onClick={() => { if (!topicErr) { onUpdate(draft); onCancel() } }}
-        >
-          Save
-        </button>
-      </div>
-    </motion.div>
-  )
-}
-
 // ── Edit: Hub device ──────────────────────────────────────────────────────────
 
 function EditHubCard({ device, onUpdate, onRemove, areas, onCancel, usedTopics }) {
@@ -383,93 +305,9 @@ function HubCard({ device, onEdit }) {
   )
 }
 
-// ── Terminal widget ────────────────────────────────────────────────────────────
-
-function OsTerminalCard({ device, onRawPublish, onEdit, onRemove }) {
-  const [cmd, setCmd] = useState('')
-  const [lastCmd, setLastCmd] = useState(null)
-  const inputRef = useRef(null)
-
-  const send = () => {
-    const c = cmd.trim()
-    if (!c) return
-    onRawPublish?.(device.topic, c)
-    setLastCmd(c)
-    setCmd('')
-    inputRef.current?.focus()
-  }
-
-  return (
-    <motion.div
-      className="sh-card"
-      variants={cardVariants}
-      whileHover={{ y: -2, boxShadow: '0 8px 32px oklch(0 0 0 / 0.18)' }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-    >
-      <div className="sh-card-top">
-        <div className="sh-card-icon">
-          <Icon name="terminal" size={20} />
-          <span className="sh-card-status-dot" />
-        </div>
-        <div className="sh-card-meta">
-          <div className="sh-card-room mono">{device.room.toUpperCase()}</div>
-          <div className="sh-card-name">{device.name}</div>
-        </div>
-        <div className="sh-card-actions">
-          <button className="sh-card-gear" onClick={onEdit} title="Edit">
-            <Icon name="gear" size={13} />
-          </button>
-        </div>
-      </div>
-
-      <div className="sh-card-body" style={{ padding: '8px 12px 12px' }}>
-        {lastCmd && (
-          <div
-            className="mono"
-            style={{ fontSize: 11, color: 'var(--ink-dim)', marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-            title={lastCmd}
-          >
-            $ {lastCmd}
-          </div>
-        )}
-        <form
-          onSubmit={e => { e.preventDefault(); send() }}
-          style={{ display: 'flex', gap: 8, alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}
-        >
-          <span className="mono" style={{ fontSize: 14, color: 'var(--accent)', flexShrink: 0, lineHeight: 1 }}>$</span>
-          <input
-            ref={inputRef}
-            value={cmd}
-            onChange={e => setCmd(e.target.value)}
-            placeholder="raw command…"
-            className="mono"
-            style={{ flex: 1, fontSize: 13, background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink)', padding: '2px 0' }}
-          />
-          <button
-            type="submit"
-            disabled={!cmd.trim()}
-            className="sh-icon-btn"
-            title="Send"
-          >
-            <Icon name="send" size={13} />
-          </button>
-        </form>
-      </div>
-
-      {device.topic && (
-        <div className="sh-card-topics">
-          <span className="sh-card-topic-chip" title={device.topic}>
-            <b>PUB</b>{device.topic}
-          </span>
-        </div>
-      )}
-    </motion.div>
-  )
-}
-
 // ── Device card (digital / analog) ────────────────────────────────────────────
 
-const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas, onRawPublish, devices }) {
+const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas, devices }) {
   const [editing, setEditing] = useState(false)
   const max = device.max ?? 255
   const isOn = device.type === 'digital' ? device.on : device.value > 0
@@ -478,22 +316,9 @@ const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas,
     const usedTopics = (devices || [])
       .filter(d => d.id !== device.id && d.topic)
       .map(d => d.topic.trim())
-    if (device.type === 'os_terminal')
-      return <EditTerminalCard device={device} onUpdate={onUpdate} onRemove={onRemove} areas={areas} onCancel={() => setEditing(false)} usedTopics={usedTopics} />
     if (device.type === 'hub')
       return <EditHubCard device={device} onUpdate={onUpdate} onRemove={onRemove} areas={areas} onCancel={() => setEditing(false)} usedTopics={usedTopics} />
     return <EditCard device={device} onUpdate={onUpdate} onRemove={onRemove} areas={areas} onCancel={() => setEditing(false)} usedTopics={usedTopics} />
-  }
-
-  if (device.type === 'os_terminal') {
-    return (
-      <OsTerminalCard
-        device={device}
-        onRawPublish={onRawPublish}
-        onEdit={() => setEditing(true)}
-        onRemove={onRemove}
-      />
-    )
   }
 
   if (device.type === 'hub') {
