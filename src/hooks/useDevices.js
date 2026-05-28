@@ -34,9 +34,11 @@ export function useDevices({ baseTopicRef, onNodeStatus, onDevicesAdded }) {
     return !isNaN(parseInt(v, 10))
   }
 
-  const handleMqttMessage = useCallback((topic, val) => {
+  const handleMqttMessage = useCallback((topic, val, packet) => {
     // node status: {base}/nodes/{id}/status
     if (/\/nodes\/[^/]+\/status$/.test(topic)) {
+      // ข้าม retained message (ส่งมาตอน subscribe) — แสดง toast เฉพาะ live status change
+      if (packet?.retain) return
       const nodeId = topic.split('/nodes/')[1]?.split('/')[0]
       if (nodeId) onNodeStatusRef.current?.(nodeId, val)
       return

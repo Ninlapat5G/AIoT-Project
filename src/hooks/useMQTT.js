@@ -33,7 +33,8 @@ export function useMQTT({ broker, port, baseTopic, onMessage }) {
         protocolVersion: 5,
       }
 
-      if (port) {
+      const brokerHasPort = /:\d+/.test(broker.replace(/^[a-z]+:\/\//, ''))
+      if (port && !brokerHasPort) {
         const parsedPort = parseInt(port, 10)
         if (!isNaN(parsedPort)) connectOptions.port = parsedPort
       }
