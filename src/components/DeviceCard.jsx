@@ -274,7 +274,11 @@ function HubCard({ device, onEdit }) {
       <div className="sh-card-top">
         <div className="sh-card-icon">
           <Icon name="sparkle" size={20} />
-          <span className="sh-card-status-dot" style={{ background: 'var(--accent)' }} />
+          <span
+            className="sh-card-status-dot"
+            style={{ background: device.online === false ? 'oklch(0.65 0.22 25)' : 'var(--accent)' }}
+            title={device.online === false ? 'offline' : 'online'}
+          />
         </div>
         <div className="sh-card-meta">
           <div className="sh-card-room mono">{device.room.toUpperCase()}</div>
@@ -293,11 +297,6 @@ function HubCard({ device, onEdit }) {
         {device.topic && (
           <span className="sh-card-topic-chip" title={device.topic + '/cmd'}>
             <b>CMD</b>{device.topic}/cmd
-          </span>
-        )}
-        {device.topic && (
-          <span className="sh-card-topic-chip sub" title={device.topic + '/output'}>
-            <b>OUT</b>{device.topic}/output
           </span>
         )}
       </div>

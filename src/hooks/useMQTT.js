@@ -78,8 +78,9 @@ export function useMQTT({ broker, port, baseTopic, onMessage }) {
             ? userProps.find(([k]) => k === 'stream_status')?.[1]
             : userProps?.stream_status
 
-          if (streamStatus === 'chunk') {
-            if (val) handler.chunks.push(val)
+          if (streamStatus === 'chunk' || streamStatus === 'ping') {
+            // ping = heartbeat: รีเซ็ตตัวจับเวลาเฉย ๆ ไม่เก็บเป็นผลลัพธ์
+            if (streamStatus === 'chunk' && val) handler.chunks.push(val)
             clearTimeout(handler.timer)
             handler.timer = setTimeout(() => {
               c.unsubscribe(topic)
@@ -87,8 +88,8 @@ export function useMQTT({ broker, port, baseTopic, onMessage }) {
               handler.resolve({ chunks: handler.chunks, timedOut: true })
             }, handler.idleTimeoutMs)
           } else {
-            // stream_status='end' or no property → final message
-            if (val && val !== '(mqtt_end)') handler.chunks.push(val)
+            // stream_status='end' → จบ stream
+            if (val) handler.chunks.push(val)
             clearTimeout(handler.timer)
             c.unsubscribe(topic)
             replyHandlersRef.current.delete(corrId)

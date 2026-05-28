@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { initialDevices } from '../data'
 import { saveDevices, loadDevices } from '../utils/storage'
-import { normalizeBase, buildCmdTopic, buildStateTopic } from '../utils/mqttTopic'
+import { normalizeBase, buildCmdTopic, buildStateTopic, buildFullTopic } from '../utils/mqttTopic'
 
 function migrateDevice(d) {
   if (!d.topic && d.pubTopic) {
@@ -95,6 +95,22 @@ export function useDevices({ baseTopicRef, onNodeStatus, onDevicesAdded }) {
           return [...kept, ...toAdd]
         })
       } catch { /* ignore malformed manifest */ }
+      return
+    }
+
+    // hub status: {base}/hub/{name}/status → อัปเดตจุดสถานะ online ของ hub card
+    if (/\/status$/.test(topic) && !/\/nodes\/[^/]+\/status$/.test(topic)) {
+      const base = normalizeBase(baseTopicRef.current)
+      setDevices(prev => {
+        let matched = false
+        const next = prev.map(d => {
+          if (d.type !== 'hub' || !d.topic) return d
+          if (topic !== buildFullTopic(`${d.topic}/status`, base)) return d
+          matched = true
+          return { ...d, online: val === 'online' }
+        })
+        return matched ? next : prev
+      })
       return
     }
 

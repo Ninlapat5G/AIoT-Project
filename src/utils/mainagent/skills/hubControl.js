@@ -30,6 +30,9 @@ export const hubControl = {
     if (!device || device.type !== 'hub') {
       return { ok: false, summary: `✗ Hub: ไม่พบ hub device ที่ topic ${topic}` }
     }
+    if (device.online === false) {
+      return { ok: false, summary: `✗ ${device.name}: ออฟไลน์อยู่ — เปิดเครื่อง hub ก่อน` }
+    }
 
     const base = normalizeBase(baseTopicRef.current)
     const cmdTopic    = buildCmdTopic(device.topic, base).replace(/\/set$/, '/cmd')
@@ -41,9 +44,10 @@ export const hubControl = {
     }, { once: true })
 
     // ส่งคำสั่งพร้อม responseTopic unique — hub จะตอบกลับที่ topic นั้น
+    // idle 10 วิ: hub ส่ง heartbeat ระหว่างทำงาน ถ้าเงียบเกิน 10 วิ = ติดต่อไม่ได้
     const { chunks, timedOut, noClient } = await mqttRequestResponse(cmdTopic, task, {
-      idleTimeoutMs: 60000,
-      messageExpiryInterval: 30,
+      idleTimeoutMs: 10000,
+      messageExpiryInterval: 10,
     })
 
     if (noClient) {
