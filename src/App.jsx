@@ -106,8 +106,8 @@ export default function App() {
 
     if (!isFinal) return
 
-    // publish state command ไปบอร์ด
-    if (next.topic) {
+    // publish state command ไปบอร์ด (sensor อ่านอย่างเดียว — ไม่สั่ง)
+    if (next.topic && next.type !== 'sensor') {
       const base    = normalizeBase(baseTopicRef.current)
       const payload = next.type === 'digital' ? (next.on ? 'true' : 'false') : String(next.value)
       mqttPublish(buildCmdTopic(next.topic, base), payload)

@@ -67,19 +67,24 @@ export function useDevices({ baseTopicRef, onNodeStatus, onDevicesAdded }) {
           // อุปกรณ์ใหม่ที่ยังไม่มี → เพิ่ม (ของเดิมไม่แตะ ชื่อที่ผู้ใช้แก้ไว้จึงไม่ถูกเขียนทับ)
           const toAdd = (manifest.devices || [])
             .filter(md => md.topic && !prev.some(d => d.topic === md.topic))
-            .map(md => ({
-              id:         `disc-${md.topic.replace(/[^a-z0-9]/gi, '-')}`,
-              name:       md.name || md.topic.split('/').pop() || md.topic,
-              room:       'Living Room',
-              type:       md.type === 'analog' ? 'analog' : 'digital',
-              on:         false,
-              icon:       'bulb',
-              topic:      md.topic,
-              pin:        md.pin ?? '',
-              nodeId:     manifest.nodeId,
-              configured: md.configured ?? true,
-              ...(md.type === 'analog' ? { value: 0, max: 255 } : {}),
-            }))
+            .map(md => {
+              const type = md.type === 'sensor' ? 'sensor'
+                         : md.type === 'analog' ? 'analog' : 'digital'
+              return {
+                id:         `disc-${md.topic.replace(/[^a-z0-9]/gi, '-')}`,
+                name:       md.name || md.topic.split('/').pop() || md.topic,
+                room:       'Living Room',
+                type,
+                on:         false,
+                icon:       type === 'sensor' ? 'gauge' : 'bulb',
+                topic:      md.topic,
+                pin:        md.pin ?? '',
+                nodeId:     manifest.nodeId,
+                configured: md.configured ?? true,
+                ...(type === 'analog' ? { value: 0, max: md.max ?? 255 } : {}),
+                ...(type === 'sensor' ? { value: 0, unit: md.unit || '' } : {}),
+              }
+            })
 
           // อุปกรณ์ของ node นี้ที่หายไปจาก manifest = ถูกลบจากเครื่องอื่น → เอาออก
           const kept = prev.filter(d => d.nodeId !== nodeId || manifestTopics.has(d.topic))
@@ -112,6 +117,8 @@ export function useDevices({ baseTopicRef, onNodeStatus, onDevicesAdded }) {
           return { ...d, on: val === 'true' || val === '1' || val === 'on' || val === 'ON' }
         if (d.type === 'analog')
           return { ...d, value: Math.max(0, Math.min(d.max ?? 255, parseInt(val, 10) || 0)) }
+        if (d.type === 'sensor')
+          return { ...d, value: parseFloat(val) || 0 }
         return d
       })
       return matched ? next : prev

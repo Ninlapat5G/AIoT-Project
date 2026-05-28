@@ -305,6 +305,119 @@ function HubCard({ device, onEdit }) {
   )
 }
 
+// ── Edit: Sensor device ────────────────────────────────────────────────────────
+
+function EditSensorCard({ device, onUpdate, onRemove, areas, onCancel, usedTopics }) {
+  const [draft, setDraft] = useState(device)
+  const set = patch => setDraft(d => ({ ...d, ...patch }))
+
+  const topicErr = topicError(draft.topic) || dupTopicError(draft.topic, usedTopics)
+
+  return (
+    <motion.div
+      className="sh-card sh-card-editing"
+      initial={{ opacity: 0, scale: 0.97 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.15 }}
+    >
+      <div className="sh-card-edit-head">
+        <span className="sh-card-edit-eye mono">EDIT SENSOR</span>
+        <button className="sh-card-gear" style={{ opacity: 1 }} onClick={onCancel}>
+          <Icon name="close" size={13} />
+        </button>
+      </div>
+      <div className="sh-card-edit-body">
+        <label className="sh-field">
+          <span className="mono">NAME</span>
+          <input value={draft.name} onChange={e => set({ name: e.target.value })} />
+        </label>
+        <label className="sh-field">
+          <span className="mono">AREA</span>
+          <select value={draft.room} onChange={e => set({ room: e.target.value })}>
+            {[...new Set([draft.room, ...(areas || [])])].map(a => (
+              <option key={a}>{a}</option>
+            ))}
+          </select>
+        </label>
+        <label className="sh-field">
+          <span className="mono">UNIT</span>
+          <input value={draft.unit || ''} onChange={e => set({ unit: e.target.value })} placeholder="°C" />
+        </label>
+        <label className="sh-field">
+          <span className="mono">MQTT TOPIC</span>
+          <input
+            value={draft.topic || ''}
+            onChange={e => set({ topic: e.target.value })}
+            className="mono"
+            style={topicErr ? { borderColor: 'oklch(0.65 0.22 25)' } : {}}
+          />
+          {topicErr && (
+            <span className="mono" style={{ fontSize: 10, color: 'oklch(0.72 0.22 25)' }}>
+              ⚠ {topicErr}
+            </span>
+          )}
+        </label>
+      </div>
+      <div className="sh-card-edit-foot">
+        <button className="sh-card-remove" onClick={() => onRemove(device.id)}>Remove</button>
+        <div className="flex-1" />
+        <button className="sh-btn-ghost" onClick={onCancel}>Cancel</button>
+        <button
+          className="sh-btn-primary"
+          disabled={!!topicErr}
+          onClick={() => { if (!topicErr) { onUpdate(draft); onCancel() } }}
+        >
+          Save
+        </button>
+      </div>
+    </motion.div>
+  )
+}
+
+// ── Sensor widget — read-only ค่า + หน่วย ─────────────────────────────────────
+
+function SensorCard({ device, onEdit }) {
+  return (
+    <motion.div
+      className="sh-card"
+      variants={cardVariants}
+      whileHover={{ y: -2, boxShadow: '0 8px 32px oklch(0 0 0 / 0.18)' }}
+      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+    >
+      <div className="sh-card-top">
+        <div className="sh-card-icon">
+          <Icon name="gauge" size={20} />
+          <span className="sh-card-status-dot" />
+        </div>
+        <div className="sh-card-meta">
+          <div className="sh-card-room mono">{device.room.toUpperCase()}</div>
+          <div className="sh-card-name">{device.name}</div>
+        </div>
+        <div className="sh-card-actions">
+          <button className="sh-card-gear" onClick={onEdit} title="Edit">
+            <Icon name="gear" size={13} />
+          </button>
+        </div>
+      </div>
+
+      <div className="sh-card-body">
+        <div className="sh-card-readout">
+          <span className="sh-card-val mono">{Number(device.value ?? 0).toFixed(1)}</span>
+          {device.unit && <span className="sh-card-unit mono">{device.unit}</span>}
+        </div>
+      </div>
+
+      {device.topic && (
+        <div className="sh-card-topics">
+          <span className="sh-card-topic-chip sub" title={device.topic + '/state'}>
+            <b>STATE</b>{device.topic}/state
+          </span>
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
 // ── Device card (digital / analog) ────────────────────────────────────────────
 
 const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas, devices }) {
@@ -318,11 +431,17 @@ const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas,
       .map(d => d.topic.trim())
     if (device.type === 'hub')
       return <EditHubCard device={device} onUpdate={onUpdate} onRemove={onRemove} areas={areas} onCancel={() => setEditing(false)} usedTopics={usedTopics} />
+    if (device.type === 'sensor')
+      return <EditSensorCard device={device} onUpdate={onUpdate} onRemove={onRemove} areas={areas} onCancel={() => setEditing(false)} usedTopics={usedTopics} />
     return <EditCard device={device} onUpdate={onUpdate} onRemove={onRemove} areas={areas} onCancel={() => setEditing(false)} usedTopics={usedTopics} />
   }
 
   if (device.type === 'hub') {
     return <HubCard device={device} onEdit={() => setEditing(true)} />
+  }
+
+  if (device.type === 'sensor') {
+    return <SensorCard device={device} onEdit={() => setEditing(true)} />
   }
 
   return (
