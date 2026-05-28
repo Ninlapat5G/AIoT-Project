@@ -7,7 +7,7 @@ export default function SimulatorPanel({ settings, onClose }) {
   const [simName, setSimName]   = useState('ไฟห้องนอน')
   const [simTopic, setSimTopic] = useState('bedroom/light')
   const [simType, setSimType]   = useState('digital')
-  const [simStatus, setSimStatus] = useState('offline')
+  const [simStatus, setSimStatus] = useState('idle')
   const [logs, setLogs]         = useState([])
 
   const simRef = useRef(null)
@@ -56,9 +56,10 @@ export default function SimulatorPanel({ settings, onClose }) {
 
   const statusColor = {
     online:     'var(--accent)',
-    offline:    'var(--ink-xdim)',
+    offline:    'oklch(0.65 0.22 25)',
     connecting: 'oklch(0.75 0.18 55)',
     error:      'oklch(0.65 0.22 25)',
+    idle:       'var(--ink-xdim)',
   }[simStatus] || 'var(--ink-xdim)'
 
   return (

@@ -105,7 +105,9 @@ export function createSimulator({ broker, port, baseTopic, name, topic, type, on
           },
         },
       }
-      if (port) {
+      // ถ้า broker URL มี port อยู่แล้ว (เช่น wss://host:8884/mqtt) ไม่ต้องส่งซ้ำ
+      const brokerHasPort = /:\d+/.test(broker.replace(/^[a-z]+:\/\//, ''))
+      if (port && !brokerHasPort) {
         const p = parseInt(port, 10)
         if (!isNaN(p)) connectOptions.port = p
       }
