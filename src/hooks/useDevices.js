@@ -13,17 +13,14 @@ function migrateDevice(d) {
 // onNodeStatus(nodeId, status) — App.jsx ใช้แสดง toast
 // onDevicesAdded(manifest, addedDevices) — App.jsx ใช้แสดง toast "พบอุปกรณ์ใหม่"
 export function useDevices({ baseTopicRef, onNodeStatus, onDevicesAdded }) {
-  const loaded = loadDevices()
   const [devices, setDevices] = useState(() =>
-    (loaded.devices ?? initialDevices).map(migrateDevice)
+    (loadDevices() ?? initialDevices).map(migrateDevice)
   )
-
-  const removedTopicsRef = useRef(new Set(loaded.removedTopics))
 
   const devicesRef = useRef(devices)
   useEffect(() => { devicesRef.current = devices }, [devices])
 
-  useEffect(() => { saveDevices(devices, [...removedTopicsRef.current]) }, [devices])
+  useEffect(() => { saveDevices(devices) }, [devices])
 
   const onNodeStatusRef = useRef(onNodeStatus)
   useEffect(() => { onNodeStatusRef.current = onNodeStatus }, [onNodeStatus])
@@ -55,7 +52,7 @@ export function useDevices({ baseTopicRef, onNodeStatus, onDevicesAdded }) {
         // setDevices จัดการได้เองโดยตรง — ไม่มี circular dep
         setDevices(prev => {
           const toAdd = (manifest.devices || [])
-            .filter(md => md.topic && !prev.some(d => d.topic === md.topic) && !removedTopicsRef.current.has(md.topic))
+            .filter(md => md.topic && !prev.some(d => d.topic === md.topic))
             .map(md => ({
               id:         `disc-${md.topic.replace(/[^a-z0-9]/gi, '-')}`,
               name:       md.topic.split('/').pop() || md.topic,
@@ -104,11 +101,7 @@ export function useDevices({ baseTopicRef, onNodeStatus, onDevicesAdded }) {
   }, [baseTopicRef])
 
   const removeDevice = useCallback(id => {
-    setDevices(prev => {
-      const device = prev.find(x => x.id === id)
-      if (device?.topic) removedTopicsRef.current.add(device.topic)
-      return prev.filter(x => x.id !== id)
-    })
+    setDevices(prev => prev.filter(x => x.id !== id))
   }, [])
 
   return { devices, setDevices, devicesRef, handleMqttMessage, removeDevice }

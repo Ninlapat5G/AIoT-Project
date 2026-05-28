@@ -126,6 +126,17 @@ export default function App() {
     }
   }, [mqttPublish, setDevices, devicesRef, baseTopicRef])
 
+  const handleRemoveDevice = useCallback(id => {
+    const device = devicesRef.current.find(d => d.id === id)
+    if (device?.nodeId && mqttPublish) {
+      mqttPublish(`nodes/${device.nodeId}/manifest`, '', { qos: 1, retain: true })
+    }
+    if (device?.topic && mqttPublish) {
+      mqttPublish(`${device.topic}/state`, '', { qos: 1, retain: true })
+    }
+    removeDevice(id)
+  }, [removeDevice, mqttPublish, devicesRef])
+
   // ── Raw MQTT publish (used by DeviceCard terminal widget) ─────────────────────
   // terminal ส่ง command ตรงๆ ไปที่ device.topic (ไม่ต่อ /set)
   const handleRawPublish = useCallback((topic, payload) => {
@@ -328,7 +339,7 @@ export default function App() {
                         <DeviceCard
                           device={d}
                           onUpdate={updateDevice}
-                          onRemove={removeDevice}
+                          onRemove={handleRemoveDevice}
                           areas={areas}
                           onRawPublish={handleRawPublish}
                         />

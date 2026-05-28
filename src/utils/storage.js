@@ -21,14 +21,13 @@ const ls = {
 export const saveSettings = obj => ls.set(KEYS.SETTINGS, obj)
 export const loadSettings = ()  => ls.get(KEYS.SETTINGS)
 
-export const saveDevices = (arr, removedTopics = []) =>
-  ls.set(KEYS.DEVICES, { devices: arr, removedTopics })
+export const saveDevices = arr => ls.set(KEYS.DEVICES, arr)
 
 export const loadDevices = () => {
   const v = ls.get(KEYS.DEVICES)
-  if (!v) return { devices: null, removedTopics: [] }
-  if (Array.isArray(v)) return { devices: v, removedTopics: [] }  // backward compat
-  return { devices: v.devices ?? null, removedTopics: v.removedTopics ?? [] }
+  if (!v) return null
+  if (Array.isArray(v)) return v
+  return v.devices ?? null
 }
 
 export const saveAreas = arr => ls.set(KEYS.AREAS, arr)
