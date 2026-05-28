@@ -128,8 +128,27 @@ export default function App() {
 
   const handleRemoveDevice = useCallback(id => {
     const device = devicesRef.current.find(d => d.id === id)
+
+    // broadcast การลบผ่าน manifest (retained) — เครื่องอื่นที่เปิดอยู่จะ sync ตาม
     if (device?.nodeId && mqttPublish) {
-      mqttPublish(`nodes/${device.nodeId}/manifest`, '', { qos: 1, retain: true })
+      const siblings = devicesRef.current.filter(d => d.nodeId === device.nodeId && d.id !== id)
+      if (siblings.length === 0) {
+        // ตัวสุดท้ายของ node → ล้าง manifest ทั้งก้อน (payload ว่าง = สัญญาณลบ)
+        mqttPublish(`nodes/${device.nodeId}/manifest`, '', { qos: 1, retain: true })
+      } else {
+        // ยังเหลืออุปกรณ์อื่น → republish manifest โดยตัดเฉพาะตัวที่ลบออก
+        const manifest = JSON.stringify({
+          nodeId: device.nodeId,
+          devices: siblings.map(d => ({
+            topic: d.topic,
+            name: d.name,
+            type: d.type,
+            pin: d.pin ?? '',
+            configured: d.configured ?? true,
+          })),
+        })
+        mqttPublish(`nodes/${device.nodeId}/manifest`, manifest, { qos: 1, retain: true })
+      }
     }
     if (device?.topic && mqttPublish) {
       mqttPublish(`${device.topic}/state`, '', { qos: 1, retain: true })

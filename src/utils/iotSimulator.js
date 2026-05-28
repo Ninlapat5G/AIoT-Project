@@ -6,7 +6,9 @@ import { normalizeBase, buildFullTopic } from './mqttTopic'
 
 export function createSimulator({ broker, port, baseTopic, name, topic, type, onLog, onStatusChange }) {
   const base = normalizeBase(baseTopic)
-  const nodeId = `sim-${topic.replace(/[^a-z0-9]/gi, '')}-${Math.random().toString(36).slice(2, 6)}`
+  // nodeId คงที่ตาม topic — reconnect รอบหน้าใช้ตัวเดิม manifest จึงทับของเก่าได้สะอาด
+  // (เลี่ยง random suffix ที่ทำให้เกิด manifest ค้างหลายก้อนต่อ 1 อุปกรณ์)
+  const nodeId = `sim-${topic.replace(/[^a-z0-9]/gi, '')}`
   const statusTopic  = buildFullTopic(`nodes/${nodeId}/status`, base)
   const manifestTopic = buildFullTopic(`nodes/${nodeId}/manifest`, base)
   const cmdTopic     = buildFullTopic(`${topic}/set`, base)
@@ -39,6 +41,7 @@ export function createSimulator({ broker, port, baseTopic, name, topic, type, on
       fw: '1.0.0-sim',
       devices: [{
         topic,
+        name,
         type,
         configured: true,
         stateTopic,
