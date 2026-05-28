@@ -41,6 +41,13 @@ function topicError(t) {
   return null
 }
 
+// กัน topic ซ้ำกับอุปกรณ์อื่น — topic คือ "ที่อยู่" ของอุปกรณ์ ถ้าซ้ำจะคุมแยกกันไม่ได้
+function dupTopicError(t, usedTopics) {
+  if (!t || !usedTopics) return null
+  if (usedTopics.includes(t.trim())) return 'topic นี้ถูกใช้กับอุปกรณ์อื่นแล้ว'
+  return null
+}
+
 function pinError(p) {
   if (p === '' || p == null) return null
   const n = Number(p)
@@ -50,11 +57,11 @@ function pinError(p) {
 
 // ── Edit: Digital / Analog device ─────────────────────────────────────────────
 
-const EditCard = memo(function EditCard({ device, onUpdate, onRemove, areas, onCancel }) {
+const EditCard = memo(function EditCard({ device, onUpdate, onRemove, areas, onCancel, usedTopics }) {
   const [draft, setDraft] = useState(device)
   const set = patch => setDraft(d => ({ ...d, ...patch }))
 
-  const topicErr = topicError(draft.topic)
+  const topicErr = topicError(draft.topic) || dupTopicError(draft.topic, usedTopics)
   const pErr     = pinError(draft.pin)
   const hasErr   = !!(topicErr || pErr)
 
@@ -175,11 +182,11 @@ const EditCard = memo(function EditCard({ device, onUpdate, onRemove, areas, onC
 
 // ── Edit: Terminal device ──────────────────────────────────────────────────────
 
-function EditTerminalCard({ device, onUpdate, onRemove, areas, onCancel }) {
+function EditTerminalCard({ device, onUpdate, onRemove, areas, onCancel, usedTopics }) {
   const [draft, setDraft] = useState(device)
   const set = patch => setDraft(d => ({ ...d, ...patch }))
 
-  const topicErr = topicError(draft.topic)
+  const topicErr = topicError(draft.topic) || dupTopicError(draft.topic, usedTopics)
 
   return (
     <motion.div
@@ -253,11 +260,11 @@ function EditTerminalCard({ device, onUpdate, onRemove, areas, onCancel }) {
 
 // ── Edit: Hub device ──────────────────────────────────────────────────────────
 
-function EditHubCard({ device, onUpdate, onRemove, areas, onCancel }) {
+function EditHubCard({ device, onUpdate, onRemove, areas, onCancel, usedTopics }) {
   const [draft, setDraft] = useState(device)
   const set = patch => setDraft(d => ({ ...d, ...patch }))
 
-  const topicErr = topicError(draft.topic)
+  const topicErr = topicError(draft.topic) || dupTopicError(draft.topic, usedTopics)
 
   return (
     <motion.div
@@ -462,17 +469,20 @@ function OsTerminalCard({ device, onRawPublish, onEdit, onRemove }) {
 
 // ── Device card (digital / analog) ────────────────────────────────────────────
 
-const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas, onRawPublish }) {
+const DeviceCard = memo(function DeviceCard({ device, onUpdate, onRemove, areas, onRawPublish, devices }) {
   const [editing, setEditing] = useState(false)
   const max = device.max ?? 255
   const isOn = device.type === 'digital' ? device.on : device.value > 0
 
   if (editing) {
+    const usedTopics = (devices || [])
+      .filter(d => d.id !== device.id && d.topic)
+      .map(d => d.topic.trim())
     if (device.type === 'os_terminal')
-      return <EditTerminalCard device={device} onUpdate={onUpdate} onRemove={onRemove} areas={areas} onCancel={() => setEditing(false)} />
+      return <EditTerminalCard device={device} onUpdate={onUpdate} onRemove={onRemove} areas={areas} onCancel={() => setEditing(false)} usedTopics={usedTopics} />
     if (device.type === 'hub')
-      return <EditHubCard device={device} onUpdate={onUpdate} onRemove={onRemove} areas={areas} onCancel={() => setEditing(false)} />
-    return <EditCard device={device} onUpdate={onUpdate} onRemove={onRemove} areas={areas} onCancel={() => setEditing(false)} />
+      return <EditHubCard device={device} onUpdate={onUpdate} onRemove={onRemove} areas={areas} onCancel={() => setEditing(false)} usedTopics={usedTopics} />
+    return <EditCard device={device} onUpdate={onUpdate} onRemove={onRemove} areas={areas} onCancel={() => setEditing(false)} usedTopics={usedTopics} />
   }
 
   if (device.type === 'os_terminal') {

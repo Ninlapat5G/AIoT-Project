@@ -361,6 +361,7 @@ export default function App() {
                           onRemove={handleRemoveDevice}
                           areas={areas}
                           onRawPublish={handleRawPublish}
+                          devices={devices}
                         />
                       </div>
                     ))}
