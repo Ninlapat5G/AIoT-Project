@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { initialDevices } from '../data'
-import { saveDevices, loadDevices, saveRemovedTopics, loadRemovedTopics } from '../utils/storage'
+import { saveDevices, loadDevices } from '../utils/storage'
 import { normalizeBase, buildCmdTopic, buildStateTopic } from '../utils/mqttTopic'
 
 function migrateDevice(d) {
@@ -13,16 +13,17 @@ function migrateDevice(d) {
 // onNodeStatus(nodeId, status) — App.jsx ใช้แสดง toast
 // onDevicesAdded(manifest, addedDevices) — App.jsx ใช้แสดง toast "พบอุปกรณ์ใหม่"
 export function useDevices({ baseTopicRef, onNodeStatus, onDevicesAdded }) {
+  const loaded = loadDevices()
   const [devices, setDevices] = useState(() =>
-    (loadDevices() ?? initialDevices).map(migrateDevice)
+    (loaded.devices ?? initialDevices).map(migrateDevice)
   )
+
+  const removedTopicsRef = useRef(new Set(loaded.removedTopics))
 
   const devicesRef = useRef(devices)
   useEffect(() => { devicesRef.current = devices }, [devices])
 
-  useEffect(() => { saveDevices(devices) }, [devices])
-
-  const removedTopicsRef = useRef(new Set(loadRemovedTopics()))
+  useEffect(() => { saveDevices(devices, [...removedTopicsRef.current]) }, [devices])
 
   const onNodeStatusRef = useRef(onNodeStatus)
   useEffect(() => { onNodeStatusRef.current = onNodeStatus }, [onNodeStatus])
@@ -105,10 +106,7 @@ export function useDevices({ baseTopicRef, onNodeStatus, onDevicesAdded }) {
   const removeDevice = useCallback(id => {
     setDevices(prev => {
       const device = prev.find(x => x.id === id)
-      if (device?.topic) {
-        removedTopicsRef.current.add(device.topic)
-        saveRemovedTopics([...removedTopicsRef.current])
-      }
+      if (device?.topic) removedTopicsRef.current.add(device.topic)
       return prev.filter(x => x.id !== id)
     })
   }, [])
