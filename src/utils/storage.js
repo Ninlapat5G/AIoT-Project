@@ -24,6 +24,9 @@ export const loadSettings = ()  => ls.get(KEYS.SETTINGS)
 export const saveDevices = arr => ls.set(KEYS.DEVICES, arr)
 export const loadDevices = ()  => ls.get(KEYS.DEVICES)
 
+export const saveRemovedTopics = arr => ls.set('sh_removed_topics', arr)
+export const loadRemovedTopics = ()  => ls.get('sh_removed_topics') ?? []
+
 export const saveAreas = arr => ls.set(KEYS.AREAS, arr)
 export const loadAreas = ()  => ls.get(KEYS.AREAS)
 
