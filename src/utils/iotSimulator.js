@@ -22,7 +22,7 @@ export function createSimulator({ broker, port, baseTopic, name, topic, type, on
 
   function publishState() {
     if (!client?.connected) return
-    const payload = type === 'digital' ? String(state) : String(state)
+    const payload = String(state)
     client.publish(stateTopic, payload, {
       qos: 1, retain: true,
       properties: {

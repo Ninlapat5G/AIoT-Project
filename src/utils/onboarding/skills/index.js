@@ -12,12 +12,6 @@ export const SKILLS = {
   [farewell.type]:      farewell,
 }
 
-export function buildPlanPrompt() {
-  return Object.values(SKILLS)
-    .map(sk => `### ${sk.type}\n${sk.planPrompt}`)
-    .join('\n\n')
-}
-
 // รวม responseGuide ของทุก skill ใน plan — response node เอาไปประกอบเป็น prompt
 export function collectResponseGuides(plan) {
   const types = (plan?.steps || []).map(s => s.type)

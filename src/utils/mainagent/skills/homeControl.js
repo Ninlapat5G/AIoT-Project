@@ -58,7 +58,6 @@ export const homeControl = {
       return {
         ok: true,
         summary: `[สถานะ] ${device.name}: ${stateDesc}`,
-        is_query: true,
       }
     }
 
@@ -73,10 +72,13 @@ export const homeControl = {
           return
         }
 
+        // payload อาจเป็น ON/OFF (จาก AI) หรือ true/false (จากปุ่ม) — normalize ก่อนเทียบ
+        const digitalOn = ['true', 'on', '1'].includes(payload.toLowerCase())
+
         // อัปเดต state ทั้ง ref + React state
         const applyUpdate = d => {
           if (d.id !== device.id) return d
-          if (d.type === 'digital') return { ...d, on: payload === 'true' || payload === 'ON' || payload === '1' }
+          if (d.type === 'digital') return { ...d, on: digitalOn }
           if (d.type === 'analog')  return { ...d, value: parseInt(payload, 10) || 0 }
           return d
         }
@@ -89,8 +91,7 @@ export const homeControl = {
             ? `${device.name} ปรับจาก ${prevVal} → ${payload}`
             : `${device.name} ตั้งเป็น ${payload}`
         } else {
-          const on = payload === 'true' || payload === 'ON' || payload === '1'
-          summary = `${on ? 'เปิด' : 'ปิด'} ${device.name}`
+          summary = `${digitalOn ? 'เปิด' : 'ปิด'} ${device.name}`
         }
         resolve({ ok: true, summary, device: device.name })
       })

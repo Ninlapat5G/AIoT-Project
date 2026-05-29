@@ -13,6 +13,12 @@ export default function ChatPage({
   const scrollRef = useRef(null)
   const recognitionRef = useRef(null)
 
+  // speech recognition ตั้งครั้งเดียวตอน mount — ถ้า capture onSend/setDraft ตรงๆ จะค้างเวอร์ชันแรก
+  // (ตอน onboarding) ทำให้สั่งเสียงไม่ทำงานหลัง onboarding จบ → อ่านผ่าน ref ที่อัปเดตทุก render แทน
+  const onSendRef = useRef(onSend)
+  const setDraftRef = useRef(setDraft)
+  useEffect(() => { onSendRef.current = onSend; setDraftRef.current = setDraft })
+
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
@@ -24,8 +30,8 @@ export default function ChatPage({
       recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
         if (transcript.trim()) {
-          onSend(transcript.trim())
-          setDraft('')
+          onSendRef.current(transcript.trim())
+          setDraftRef.current('')
         }
       };
 

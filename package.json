@@ -2,7 +2,7 @@
   "name": "synapta-smarthome",
   "private": true,
   "version": "0.3.0",
-  "description": "AIoT Smart Home Dashboard — React + LangGraph agent, MQTT control, streaming OS terminal",
+  "description": "AIoT Smart Home Dashboard — React + LangGraph agent, MQTT device control, remote hub agent",
   "type": "module",
   "scripts": {
     "dev": "vite",

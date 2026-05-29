@@ -197,11 +197,11 @@ export default function SettingsPage({ settings, onSave, mqttStatus = 'offline',
                     {s.skills?.filter(x => x.enabled).length || 0}/{s.skills?.length || 0} ENABLED
                   </span>
                 </h3>
-                <p>Tools เสริมที่ AI เรียกได้ · <strong>mqtt_read</strong> และ <strong>mqtt_publish</strong> รองรับ real-time</p>
+                <p>Tools เสริมที่ AI เรียกได้ · <strong>mqtt_publish</strong> ควบคุมอุปกรณ์แบบ real-time</p>
               </div>
             </div>
             <div className="sh-builtin-note mono">
-              <Icon name="bolt" size={11} /> Built-in (ไม่สามารถปิดได้): <strong>device_list</strong> · <strong>device_set_state</strong>
+              <Icon name="bolt" size={11} /> Built-in (ทำงานอัตโนมัติ ไม่ต้องเปิด): อ่านรายการและสถานะอุปกรณ์จาก Knowledge Graph
             </div>
             <div className="sh-skills">
               {(s.skills || []).map(sk => (
