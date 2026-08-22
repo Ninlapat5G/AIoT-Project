@@ -3,10 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createSimulator } from '../utils/iotSimulator'
 import Icon from './ui/Icon'
 
+const MAX_OPTIONS = [255, 1023]
+
 export default function SimulatorPanel({ settings, onClose }) {
   const [simName, setSimName]   = useState('ไฟห้องนอน')
   const [simTopic, setSimTopic] = useState('bedroom/light')
   const [simType, setSimType]   = useState('digital')
+  const [simMax, setSimMax]     = useState(255)
+  const [simUnit, setSimUnit]   = useState('°C')
+  const [simSensorValue, setSimSensorValue] = useState('25.0')
   const [simStatus, setSimStatus] = useState('idle')
   const [logs, setLogs]         = useState([])
 
@@ -40,10 +45,16 @@ export default function SimulatorPanel({ settings, onClose }) {
       name:       simName || simTopic,
       topic:      simTopic.trim(),
       type:       simType,
+      max:        simMax,
+      unit:       simUnit,
       onLog:      addLog,
       onStatusChange: setSimStatus,
     })
     simRef.current.connect()
+  }
+
+  const handlePublishSensor = () => {
+    simRef.current?.publishSensorValue(simSensorValue)
   }
 
   const handleDisconnect = () => {
@@ -124,7 +135,7 @@ export default function SimulatorPanel({ settings, onClose }) {
           <label className="sh-field">
             <span className="mono">TYPE</span>
             <div className="sh-seg flex">
-              {['digital', 'analog'].map(t => (
+              {['digital', 'analog', 'sensor'].map(t => (
                 <button
                   key={t} type="button"
                   className={simType === t ? 'on' : ''}
@@ -136,6 +147,31 @@ export default function SimulatorPanel({ settings, onClose }) {
               ))}
             </div>
           </label>
+
+          {simType === 'analog' && (
+            <label className="sh-field">
+              <span className="mono">MAX VALUE</span>
+              <div className="sh-seg flex">
+                {MAX_OPTIONS.map(m => (
+                  <button
+                    key={m} type="button"
+                    className={simMax === m ? 'on' : ''}
+                    onClick={() => setSimMax(m)}
+                    disabled={isOnline}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </label>
+          )}
+
+          {simType === 'sensor' && (
+            <label className="sh-field">
+              <span className="mono">UNIT</span>
+              <input value={simUnit} onChange={e => setSimUnit(e.target.value)} placeholder="°C" disabled={isOnline} />
+            </label>
+          )}
 
           {/* Status */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0' }}>
@@ -172,6 +208,25 @@ export default function SimulatorPanel({ settings, onClose }) {
               </>
             )}
           </div>
+
+          {/* sensor เป็น read-only — ไม่รับ cmd จากแอปเหมือน digital/analog
+              ต้องมีปุ่มยิงค่าเองแทน เพื่อทดสอบว่า AI อ่านค่า sensor ได้จริง */}
+          {isOnline && simType === 'sensor' && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+              <label className="sh-field" style={{ flex: 1 }}>
+                <span className="mono">VALUE{simUnit ? ` (${simUnit})` : ''}</span>
+                <input
+                  value={simSensorValue}
+                  onChange={e => setSimSensorValue(e.target.value)}
+                  className="mono"
+                  placeholder="25.0"
+                />
+              </label>
+              <button className="sh-btn-primary" onClick={handlePublishSensor}>
+                Publish
+              </button>
+            </div>
+          )}
 
           {/* Log */}
           <div style={{

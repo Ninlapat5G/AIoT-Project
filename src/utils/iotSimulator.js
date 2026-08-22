@@ -4,7 +4,7 @@ import { normalizeBase, buildFullTopic } from './mqttTopic'
 // จำลอง ESP32 SynaptaNode ใน browser — ใช้สำหรับทดสอบ MQTT 5 flow
 // ไม่แชร์ client กับ Web App หลัก — ใช้ connection แยกต่างหาก
 
-export function createSimulator({ broker, port, baseTopic, name, topic, type, onLog, onStatusChange }) {
+export function createSimulator({ broker, port, baseTopic, name, topic, type, max = 255, unit = '', onLog, onStatusChange }) {
   const base = normalizeBase(baseTopic)
   // nodeId คงที่ตาม topic — reconnect รอบหน้าใช้ตัวเดิม manifest จึงทับของเก่าได้สะอาด
   // (เลี่ยง random suffix ที่ทำให้เกิด manifest ค้างหลายก้อนต่อ 1 อุปกรณ์)
@@ -47,6 +47,10 @@ export function createSimulator({ broker, port, baseTopic, name, topic, type, on
         stateTopic,
         cmdTopic,
         configTopic,
+        // ส่ง max/unit ไปด้วย — useDevices.js อ่าน field พวกนี้จาก manifest
+        // ตอน auto-discover device ใหม่ (มีผลแค่ตอนที่ device ยังไม่มีในเครื่องปลายทาง)
+        ...(type === 'analog' ? { max } : {}),
+        ...(type === 'sensor' ? { unit } : {}),
       }],
     })
     client.publish(manifestTopic, manifest, {
@@ -60,10 +64,21 @@ export function createSimulator({ broker, port, baseTopic, name, topic, type, on
     if (type === 'digital') {
       state = payload === 'true' || payload === 'on' || payload === 'ON' || payload === '1'
     } else {
-      state = Math.max(0, Math.min(255, parseInt(payload, 10) || 0))
+      // clamp ด้วย max ที่ตั้งไว้จริง (255 หรือ 1023) แทนของตายตัวเดิม
+      // ไม่งั้นทดสอบ 10-bit PWM (max 1023) ไม่ได้ เพราะค่าโดนเพดานที่ 255 เสมอ
+      state = Math.max(0, Math.min(max, parseInt(payload, 10) || 0))
     }
     log(`received cmd: ${payload}`)
     publishState()
+  }
+
+  // เผยแพร่ค่า sensor ด้วยตนเอง — sensor เป็น read-only ไม่รับ cmd จากแอปหลัก
+  // (ต่างจาก digital/analog ที่ state ถูกขับเคลื่อนโดย handleCmd)
+  function publishSensorValue(value) {
+    state = parseFloat(value)
+    if (Number.isNaN(state)) state = 0
+    publishState()
+    log(`sensor value published: ${state}${unit}`)
   }
 
   function handleConfig(payload, packet) {
@@ -118,7 +133,8 @@ export function createSimulator({ broker, port, baseTopic, name, topic, type, on
       client.on('connect', () => {
         onStatusChange?.('online')
         client.publish(statusTopic, 'online', { qos: 1, retain: true })
-        client.subscribe([cmdTopic, configTopic], { qos: 1 })
+        // sensor เป็น read-only — ไม่มี /set หรือ /config ให้รับฟัง
+        if (type !== 'sensor') client.subscribe([cmdTopic, configTopic], { qos: 1 })
         publishManifest()
         publishState()
       })
@@ -157,5 +173,6 @@ export function createSimulator({ broker, port, baseTopic, name, topic, type, on
     },
 
     isConnected: () => !!client?.connected,
+    publishSensorValue,
   }
 }
