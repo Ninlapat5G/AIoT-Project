@@ -113,15 +113,16 @@ function execReadSettings(settings, devicesRef) {
   }
 }
 
-function execToggleSkill({ skill_name, enabled }, settings, onSettingsChange) {
+// คืน nextSettings แทนที่จะเรียก onSettingsChange ตรงๆ — เพื่อให้ผู้เรียกไล่
+// ประกอบผลจากหลาย tool call ในรอบเดียวกันเข้าด้วยกันได้ก่อน commit ทีเดียว
+function execToggleSkill({ skill_name, enabled }, settings) {
   const skill = (settings.skills || []).find(sk => sk.name === skill_name)
   if (!skill) return { success: false, error: `ไม่พบ skill "${skill_name}"` }
 
   const updatedSkills = settings.skills.map(sk =>
     sk.name === skill_name ? { ...sk, enabled } : sk
   )
-  onSettingsChange({ ...settings, skills: updatedSkills })
-  return { success: true, skill_name, enabled }
+  return { success: true, skill_name, enabled, nextSettings: { ...settings, skills: updatedSkills } }
 }
 
 // ── Runner ────────────────────────────────────────────────────────────────────
@@ -145,18 +146,25 @@ export async function runSettingsAgent({ query, settings, devicesRef, onSettings
 
   if (!resp1.tool_calls?.length) return resp1.content || ''
 
-  // Execute tools
-  const toolMsgs = resp1.tool_calls.map(tc => {
+  // Execute tools — ไล่ทำทีละ call ตามลำดับ (ไม่ใช้ .map() ขนาน) แล้วสะสม
+  // ผลลัพธ์การแก้ settings ไว้ใน workingSettings ก่อน commit ทีเดียวตอนจบ
+  // กัน toggle_skill หลาย call ในรอบเดียวกันอ่าน settings ก้อนเดิมแล้วทับกันเอง
+  let workingSettings = settings
+  const toolMsgs = []
+  for (const tc of resp1.tool_calls) {
     let result
     if (tc.name === 'read_settings') {
-      result = execReadSettings(settings, devicesRef)
+      result = execReadSettings(workingSettings, devicesRef)
     } else if (tc.name === 'toggle_skill') {
-      result = execToggleSkill(tc.args, settings, onSettingsChange)
+      const { nextSettings, ...toolResult } = execToggleSkill(tc.args, workingSettings)
+      if (nextSettings) workingSettings = nextSettings
+      result = toolResult
     } else {
       result = { error: `Unknown tool: ${tc.name}` }
     }
-    return new ToolMessage({ content: JSON.stringify(result), name: tc.name, tool_call_id: tc.id })
-  })
+    toolMsgs.push(new ToolMessage({ content: JSON.stringify(result), name: tc.name, tool_call_id: tc.id }))
+  }
+  if (workingSettings !== settings) onSettingsChange(workingSettings)
 
   // Pass 2 — final answer with tool results
   const resp2 = await llm.invoke([...allMsgs, resp1, ...toolMsgs], { signal })

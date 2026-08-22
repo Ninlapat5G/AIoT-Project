@@ -29,6 +29,10 @@ export default function SimulatorPanel({ settings, onClose }) {
   const handleConnect = () => {
     if (!simTopic.trim()) return
 
+    // ปุ่ม Connect กดซ้ำได้ตอนสถานะ error/offline — ต้องตัด client เก่าก่อน
+    // ไม่งั้น client เก่าจะพยายาม reconnect ค้างอยู่เบื้องหลังพร้อมกับตัวใหม่
+    simRef.current?.disconnect()
+
     simRef.current = createSimulator({
       broker:     settings.mqtt?.broker   || 'broker.hivemq.com',
       port:       settings.mqtt?.port     || '',

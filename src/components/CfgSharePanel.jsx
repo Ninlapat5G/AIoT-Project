@@ -53,7 +53,7 @@ function SuccessCard({ title, sub }) {
   )
 }
 
-export default function CfgSharePanel({ settings, onSave, mqttPublish, mqttWaitForMessage, sensorCache }) {
+export default function CfgSharePanel({ settings, onSave, mqttPublish, mqttWaitForMessage, sensorCache, setDevices, setAreas }) {
   const [mode, setMode]   = useState('idle')
   const [pin,  setPin]    = useState('')
   const [secs, setSecs]   = useState(TTL)
@@ -162,9 +162,11 @@ export default function CfgSharePanel({ settings, onSave, mqttPublish, mqttWaitF
       if (!encrypted) throw new Error('ไม่พบ config — ตรวจสอบ PIN หรือลองใหม่')
 
       const data = await decryptCfg(encrypted, p)
+      // เขียนทั้ง localStorage และ React state — เขียนแค่ localStorage เฉยๆ
+      // จะโดน useDevices/useAreas เขียนทับด้วยค่าเดิมทันทีที่ state เปลี่ยนครั้งถัดไป
       if (data.settings) onSave(data.settings)
-      if (data.devices)  saveDevices(data.devices)
-      if (data.areas)    saveAreas(data.areas)
+      if (data.devices)  { saveDevices(data.devices); setDevices?.(data.devices) }
+      if (data.areas)    { saveAreas(data.areas);     setAreas?.(data.areas) }
 
       mqttPublish(ackTarget, 'ok', { qos: 1 })
       setMode('imported')

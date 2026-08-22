@@ -28,8 +28,11 @@ const pageVariants = {
   exit: { opacity: 0, y: -6, transition: { duration: 0.15 } },
 }
 
+// ใช้กับ <motion.div initial="hidden" animate="visible"> — ต้องชื่อ variant
+// ตรงกับ initial/animate ที่ประกาศตอนใช้งาน ไม่งั้น staggerChildren จะไม่ทำงาน
 const gridVariants = {
-  animate: { transition: { staggerChildren: 0.06 } },
+  hidden:  {},
+  visible: { transition: { staggerChildren: 0.06 } },
 }
 
 export default function App() {
@@ -40,10 +43,14 @@ export default function App() {
   const [mobileNavOpen, setMobileNav] = useState(false)
   const [toast, setToast] = useState(null)
   const [simulatorOpen, setSimulatorOpen] = useState(false)
+  const toastTimerRef = useRef(null)
 
   const showToast = useCallback((type, text) => {
+    // เคลียร์ timer ของ toast ก่อนหน้าก่อนเสมอ — กันมันมายิง setToast(null)
+    // ทับ toast ใหม่ที่เพิ่งขึ้นมา ตอนสองใบโผล่ใกล้กัน
+    clearTimeout(toastTimerRef.current)
     setToast({ type, text })
-    setTimeout(() => setToast(null), type === 'error' ? 5000 : 3000)
+    toastTimerRef.current = setTimeout(() => setToast(null), type === 'error' ? 5000 : 3000)
   }, [])
 
   useEffect(() => { localStorage.setItem('sh-page', page) }, [page])
@@ -106,8 +113,9 @@ export default function App() {
 
     if (!isFinal) return
 
-    // publish state command ไปบอร์ด (sensor อ่านอย่างเดียว — ไม่สั่ง)
-    if (next.topic && next.type !== 'sensor') {
+    // publish state command ไปบอร์ด — เฉพาะ digital/analog เท่านั้น
+    // (sensor อ่านอย่างเดียวไม่สั่ง, hub ไม่มี on/value ให้ publish จะได้ "undefined")
+    if (next.topic && (next.type === 'digital' || next.type === 'analog')) {
       const base    = normalizeBase(baseTopicRef.current)
       const payload = next.type === 'digital' ? (next.on ? 'true' : 'false') : String(next.value)
       mqttPublish(buildCmdTopic(next.topic, base), payload)
@@ -424,6 +432,8 @@ export default function App() {
                     mqttPublish={mqttStatus === 'connected' ? mqttPublish : null}
                     mqttWaitForMessage={mqttStatus === 'connected' ? mqttWaitForMessage : null}
                     sensorCache={sensorCache}
+                    setDevices={setDevices}
+                    setAreas={setAreas}
                   />
                 </ErrorBoundary>
               </motion.div>

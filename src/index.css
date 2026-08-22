@@ -637,6 +637,8 @@
   .sh-md-link:hover { opacity: 0.8; }
   .sh-md-code { @apply px-1 py-0.5 rounded text-[11px]; background: var(--bg); font-family: var(--font-mono); }
   .sh-md-pre  { @apply p-2.5 rounded-lg text-[11px] overflow-x-auto my-1.5; background: var(--bg); font-family: var(--font-mono); line-height: 1.5; }
+  /* code ที่อยู่ในบล็อก pre แล้ว ไม่ต้องใส่ padding/background ของ pill ซ้ำ */
+  .sh-md-pre .sh-md-code { padding: 0; background: none; border-radius: 0; font-size: inherit; }
   .sh-msg-text p      { @apply mb-1.5 last:mb-0; }
   .sh-msg-text ul     { @apply list-disc pl-4 mb-1.5 space-y-0.5; }
   .sh-msg-text ol     { @apply list-decimal pl-4 mb-1.5 space-y-0.5; }

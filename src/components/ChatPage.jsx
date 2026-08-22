@@ -42,6 +42,9 @@ export default function ChatPage({
       };
       recognitionRef.current = recognition;
     }
+
+    // ปิดไมค์ตอน unmount — ไม่งั้นถ้าออกจากหน้าแชทระหว่างฟังอยู่ ไมค์จะค้างทำงานต่อ
+    return () => { recognitionRef.current?.stop() };
   }, []);
 
   useEffect(() => {
@@ -62,8 +65,13 @@ export default function ChatPage({
       recognitionRef.current.stop();
       setIsListening(false);
     } else {
-      recognitionRef.current.start();
-      setIsListening(true);
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (err) {
+        // start() โยน InvalidStateError ถ้าเรียกซ้อนตอนที่ยัง active อยู่ (เช่นกดเร็วสองที)
+        console.error("Mic start error:", err);
+      }
     }
   };
 

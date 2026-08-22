@@ -19,14 +19,21 @@ export function visibleDevices(devices, settings) {
 }
 
 export function findDeviceByTopic(devices, topic) {
-  return (devices || []).find(d =>
-    d.topic && (
-      d.topic === topic ||
-      d.topic.endsWith('/' + topic) ||
-      topic === d.topic + '/set' ||
-      topic === d.topic + '/state'
-    )
-  ) || null
+  if (!topic) return null
+  const list = devices || []
+
+  // จับคู่ตรงตัวก่อนเสมอ — กรณีปกติที่สุด (step.topic มาจาก KG โดยตรง)
+  const exact = list.find(d => d.topic === topic)
+  if (exact) return exact
+
+  // รองรับกรณีที่ topic เป็น full /set หรือ /state path
+  const withSuffix = list.find(d => d.topic && (topic === d.topic + '/set' || topic === d.topic + '/state'))
+  if (withSuffix) return withSuffix
+
+  // fallback แบบ suffix match — ใช้เฉพาะตอนไม่กำกวม (เจอตัวเดียว)
+  // กันสั่งผิดอุปกรณ์เมื่อ topic สั้นไปตรงกับ suffix ของหลายตัว
+  const suffixMatches = list.filter(d => d.topic && d.topic.endsWith('/' + topic))
+  return suffixMatches.length === 1 ? suffixMatches[0] : null
 }
 
 export function findDeviceByName(devices, name) {
@@ -39,6 +46,7 @@ export function describeDeviceState(device) {
   if (!device) return 'unknown'
   if (device.type === 'digital') return device.on ? 'ON' : 'OFF'
   if (device.type === 'analog')  return `${device.value}/${device.max ?? 255}`
+  if (device.type === 'sensor')  return `${device.value ?? '—'}${device.unit || ''}`
   return 'n/a'
 }
 

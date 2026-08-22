@@ -151,14 +151,18 @@ export function useMQTT({ broker, port, baseTopic, onMessage }) {
   const waitForMessage = useCallback((fullTopic, timeoutMs = 10000) => {
     return new Promise(resolve => {
       const set = listenersRef.current.get(fullTopic) ?? new Set()
-      const handler = result => resolve(result)
-      set.add(handler)
-      listenersRef.current.set(fullTopic, set)
-      setTimeout(() => {
+
+      // เคลียร์ timeout timer ทันทีที่ข้อความมาถึงก่อนหมดเวลา — ไม่งั้น timer
+      // จะยังทำงานค้างอยู่จนครบ timeoutMs เปล่าๆ (สูงสุด 300s ในเส้นทาง PIN share)
+      const handler = result => { clearTimeout(timer); resolve(result) }
+      const timer = setTimeout(() => {
         const s = listenersRef.current.get(fullTopic)
         if (s) { s.delete(handler); if (!s.size) listenersRef.current.delete(fullTopic) }
         resolve(null)
       }, timeoutMs)
+
+      set.add(handler)
+      listenersRef.current.set(fullTopic, set)
     })
   }, [])
 

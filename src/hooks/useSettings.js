@@ -7,27 +7,35 @@ import { extractNameFromText } from '../utils/onboarding/onboarding'
 const LAST_DETECTED_PROMPT_KEY = 'sh_last_detected_prompt'
 const LAST_DETECTED_BIO_KEY    = 'sh_last_detected_bio'
 
-export function useSettings() {
-  const [settings, setSettings] = useState(() => {
-    const saved = loadSettings()
-    if (!saved) return DEFAULT_SETTINGS
+// รวม saved settings เข้ากับ DEFAULT_SETTINGS — ใช้ทั้งตอนโหลดจาก localStorage
+// และตอน handleSaveSettings เพื่อกัน settings ที่ shape ไม่ครบ (เช่น import JSON
+// เก่า/ตัดบางฟิลด์ทิ้ง) พัง component ที่อ่าน settings.mqtt.* ตรงๆ
+function mergeWithDefaults(saved) {
+  if (!saved) return DEFAULT_SETTINGS
 
-    // Merge skills: only keep skills that exist in DEFAULT_SETTINGS (filters out removed skills)
-    const defaultByName = Object.fromEntries(DEFAULT_SETTINGS.skills.map(s => [s.name, s]))
-    const savedNames = new Set((saved.skills || []).map(s => s.name))
-    const mergedSkills = [
-      ...(saved.skills || [])
-        .filter(s => defaultByName[s.name])
-        .map(s => ({ ...defaultByName[s.name], enabled: s.enabled })),
-      ...DEFAULT_SETTINGS.skills.filter(s => !savedNames.has(s.name)),
-    ]
-    return {
-      ...DEFAULT_SETTINGS,
-      ...saved,
-      mqtt: { ...DEFAULT_SETTINGS.mqtt, ...saved.mqtt },
-      skills: mergedSkills,
-    }
-  })
+  // เติม built-in skill ที่หายไปกลับเข้ามา ยกเว้นตัวที่ user ลบทิ้งเองไปแล้ว
+  // (เก็บชื่อไว้ใน _removedBuiltinSkills กันมันโผล่กลับมาทุกครั้งที่โหลด)
+  const removedBuiltins = new Set(saved._removedBuiltinSkills || [])
+  const defaultByName = Object.fromEntries(DEFAULT_SETTINGS.skills.map(s => [s.name, s]))
+  const savedNames = new Set((saved.skills || []).map(s => s.name))
+  const mergedSkills = [
+    ...(saved.skills || [])
+      .filter(s => defaultByName[s.name])
+      .map(s => ({ ...defaultByName[s.name], enabled: s.enabled })),
+    ...DEFAULT_SETTINGS.skills.filter(s => !savedNames.has(s.name) && !removedBuiltins.has(s.name)),
+  ]
+
+  return {
+    ...DEFAULT_SETTINGS,
+    ...saved,
+    mqtt:    { ...DEFAULT_SETTINGS.mqtt,    ...saved.mqtt },
+    profile: { ...DEFAULT_SETTINGS.profile, ...saved.profile },
+    skills:  mergedSkills,
+  }
+}
+
+export function useSettings() {
+  const [settings, setSettings] = useState(() => mergeWithDefaults(loadSettings()))
 
   // Keep a ref in sync so MQTT/tool utilities can read the latest baseTopic
   // without needing it as a dependency in their own useCallbacks.
@@ -107,8 +115,9 @@ export function useSettings() {
   }, [settings.profile?.userBio, settings.profile?.displayName]) // eslint-disable-line
 
   const handleSaveSettings = useCallback(s => {
-    setSettings(s)
-    saveSettings(s)
+    const merged = mergeWithDefaults(s)
+    setSettings(merged)
+    saveSettings(merged)
   }, [])
 
   return { settings, handleSaveSettings, baseTopicRef }

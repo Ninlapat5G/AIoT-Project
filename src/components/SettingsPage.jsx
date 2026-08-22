@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import Icon from './ui/Icon'
 import Toggle from './ui/Toggle'
 import CfgSharePanel from './CfgSharePanel'
+import { DEFAULT_SETTINGS } from '../data'
 import { saveDevices, loadDevices, saveAreas, loadAreas } from '../utils/storage'
 
 const MQTT_STATUS_LABEL = {
@@ -22,12 +23,19 @@ const MQTT_DOT_STYLE = {
 }
 
 export default function SettingsPage({ settings, onSave, mqttStatus = 'offline', onClearAll,
-  mqttPublish, mqttWaitForMessage, sensorCache }) {
+  mqttPublish, mqttWaitForMessage, sensorCache, setDevices, setAreas }) {
   const [s, setS] = useState(settings)
 
   useEffect(() => { setS(settings) }, [settings])
 
-  const save = updater => setS(p => { const u = updater(p); onSave(u); return u })
+  // updater ต้องเป็น pure function ที่รับ state ปัจจุบันแล้วคืน state ใหม่ —
+  // เรียก onSave() แยกออกมานอก setS() เพราะ setState updater ต้อง pure,
+  // เรียก side effect ข้างในทำให้ React เตือนและ double-fire ใน StrictMode
+  const save = updater => {
+    const next = updater(s)
+    setS(next)
+    onSave(next)
+  }
 
   const set    = (k, v)       => save(p => ({ ...p, [k]: v }))
   const setMq  = (k, v)       => save(p => ({ ...p, mqtt: { ...p.mqtt, [k]: v } }))
@@ -35,7 +43,20 @@ export default function SettingsPage({ settings, onSave, mqttStatus = 'offline',
 
   const toggleSkill  = id       => save(p => ({ ...p, skills: p.skills.map(sk => sk.id === id ? { ...sk, enabled: !sk.enabled } : sk) }))
   const updateSkill  = (id, patch) => save(p => ({ ...p, skills: p.skills.map(sk => sk.id === id ? { ...sk, ...patch } : sk) }))
-  const removeSkill  = id       => save(p => ({ ...p, skills: p.skills.filter(sk => sk.id !== id) }))
+
+  // ลบ skill — ถ้าเป็น built-in ต้องจำชื่อไว้ใน _removedBuiltinSkills
+  // กัน useSettings merge มันกลับเข้ามาใหม่ตอนโหลดรอบหน้า
+  const removeSkill = id => save(p => {
+    const target = p.skills.find(sk => sk.id === id)
+    const isBuiltin = target && DEFAULT_SETTINGS.skills.some(d => d.name === target.name)
+    return {
+      ...p,
+      skills: p.skills.filter(sk => sk.id !== id),
+      ...(isBuiltin
+        ? { _removedBuiltinSkills: [...new Set([...(p._removedBuiltinSkills || []), target.name])] }
+        : {}),
+    }
+  })
 
   const addSkill = () => {
     const id = 'skill-' + Date.now().toString(36)
@@ -51,15 +72,17 @@ export default function SettingsPage({ settings, onSave, mqttStatus = 'offline',
     }
   }
 
-  const exportData = () => {
+  const exportData = async () => {
     try {
       const allData = {
         settings: s,
         devices: loadDevices() || [],
         areas: loadAreas() || [],
       }
-      navigator.clipboard.writeText(JSON.stringify(allData, null, 2))
-      alert('คัดลอกข้อมูล JSON ลง Clipboard เรียบร้อยแล้วฮะ! 🚀')
+      // ต้อง await — clipboard เขียนไม่สำเร็จบางเบราว์เซอร์คืน rejected promise
+      // ไม่ใช่ throw แบบ sync ถ้าไม่รอ alert สำเร็จจะขึ้นทั้งที่ไม่มีอะไรถูกก๊อป
+      await navigator.clipboard.writeText(JSON.stringify(allData, null, 2))
+      alert('คัดลอกข้อมูล JSON ลง Clipboard เรียบร้อยแล้วฮะ! 🚀\n⚠️ ไฟล์นี้มี API key อยู่แบบไม่เข้ารหัส เก็บให้ดีนะฮะ')
     } catch (err) {
       alert('เกิดข้อผิดพลาดในการคัดลอก: ' + err.message)
     }
@@ -67,9 +90,13 @@ export default function SettingsPage({ settings, onSave, mqttStatus = 'offline',
 
   const importData = async () => {
     const apply = data => {
+      // onSave() ผ่าน handleSaveSettings ซึ่ง merge default ให้เอง (กัน settings
+      // ที่ shape ไม่ครบพัง App) — setS ตามไปแค่ optimistic update ในหน้านี้
       if (data.settings) { setS(data.settings); onSave(data.settings) }
-      if (data.devices) saveDevices(data.devices)
-      if (data.areas) saveAreas(data.areas)
+      // เขียนทั้ง localStorage และ React state — ถ้าอัปเดตแค่ localStorage
+      // useDevices/useAreas จะเขียนทับด้วยค่าเดิมใน state ทันทีที่มีการเปลี่ยนแปลงถัดไป
+      if (data.devices) { saveDevices(data.devices); setDevices?.(data.devices) }
+      if (data.areas)   { saveAreas(data.areas);     setAreas?.(data.areas) }
       alert('โหลดข้อมูลสำเร็จแล้วฮะ! 🚀')
     }
     try {
@@ -339,6 +366,8 @@ export default function SettingsPage({ settings, onSave, mqttStatus = 'offline',
               mqttPublish={mqttPublish}
               mqttWaitForMessage={mqttWaitForMessage}
               sensorCache={sensorCache}
+              setDevices={setDevices}
+              setAreas={setAreas}
             />
           </section>
 

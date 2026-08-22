@@ -59,9 +59,13 @@ function routeAfterRouter(state) {
   return 'plan_executor'
 }
 
+// จำกัดจำนวนรอบของ evaluator loop (คำสั่งแบบมีเงื่อนไขซ้อน) กัน LLM
+// ตอบ needs_next_round=true วนไม่จบจนชน LangGraph recursion limit
+const MAX_EVALUATOR_ROUNDS = 3
+
 function routeAfterExecutor(state) {
   if (state.has_failed_step) return 'response'
-  if (state.needs_next_round) return 'evaluator'
+  if (state.needs_next_round && (state.router_round || 0) < MAX_EVALUATOR_ROUNDS) return 'evaluator'
   return 'response'
 }
 
@@ -155,6 +159,9 @@ export async function runAgent(params) {
       completed: [],
     })
   } catch (err) {
+    // user กด Stop → ปล่อยให้ AbortError ทะลุขึ้นไปให้ caller (useChat) จัดการเอง
+    if (err?.name === 'AbortError' || signal?.aborted) throw err
+
     console.error('[Agent] fatal error:', err)
     const errorReply = 'ขอโทษนะคะ เกิดข้อผิดพลาดชั่วคราว กรุณาลองใหม่อีกครั้งค่ะ'
     onStream?.(errorReply)

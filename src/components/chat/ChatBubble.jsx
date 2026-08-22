@@ -10,9 +10,11 @@ const mdComponents = {
       {children}
     </a>
   ),
-  code: ({ inline, children }) => inline
-    ? <code className="sh-md-code">{children}</code>
-    : <pre className="sh-md-pre"><code>{children}</code></pre>,
+  // react-markdown v10 ไม่ส่ง prop `inline` มาให้แล้ว — fenced code block กับ
+  // inline code ต่างกันตรงที่ตัวแรกมี <pre> ครอบ ส่วนตัวหลังไม่มี จึงแยกด้วย
+  // การ override `pre` แทน (code ที่ไม่ได้อยู่ใน pre = inline โดยธรรมชาติ)
+  pre:  ({ children }) => <pre className="sh-md-pre">{children}</pre>,
+  code: ({ node, children }) => <code className="sh-md-code">{children}</code>,
 }
 
 const AvatarLogo = () => (

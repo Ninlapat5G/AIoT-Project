@@ -130,7 +130,7 @@ export function useDevices({ baseTopicRef, onNodeStatus, onDevicesAdded }) {
 
         matched = true
         if (d.type === 'digital')
-          return { ...d, on: val === 'true' || val === '1' || val === 'on' || val === 'ON' }
+          return { ...d, on: ['true', '1', 'on'].includes(val.toLowerCase().trim()) }
         if (d.type === 'analog')
           return { ...d, value: Math.max(0, Math.min(d.max ?? 255, parseInt(val, 10) || 0)) }
         if (d.type === 'sensor')
